@@ -1,4 +1,3 @@
-<img src="docs/screenshots/logo.png" alt="Soquel" width="96" align="left">
 
 # Soquel
 
@@ -11,7 +10,7 @@ tokens on other chains are fine too, Solana and Bitcoin included. Shitcoins get 
 
 Questions or bugs: atg271@gmail.com
 
-<br clear="left">
+<hr>
 
 ## Status
 
