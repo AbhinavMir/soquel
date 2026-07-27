@@ -306,7 +306,10 @@ enum CommandRegistry {
         .command(Command("go.gitRoot", "Git Repository Root", #selector(M.menuGoToGitRoot(_:)))),
         .command(Command("go.goToFolder", "Go to Folder…", #selector(M.menuGoToFolder(_:)), Shortcut("g", [.command, .shift]))),
         .separator,
-        .command(Command("go.addFavourite", "Add to Favourites", #selector(M.menuAddFavourite(_:)))),
+        // Adds or removes, so it can be pressed without first working out
+        // whether the folder is already pinned.
+        .command(Command("go.addFavourite", "Add to Sidebar", #selector(M.menuAddFavourite(_:)),
+                         Shortcut("l", [.command, .shift]))),
         .separator,
         .command(Command("go.saveWorkspace", "Save Workspace…", #selector(M.menuSaveWorkspace(_:)), Shortcut("s", [.command, .shift]))),
         .command(Command("go.manageWorkspaces", "Manage Workspaces…", #selector(M.menuManageWorkspaces(_:)))),

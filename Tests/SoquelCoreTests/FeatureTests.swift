@@ -384,3 +384,51 @@ final class TypeSelectTests: XCTestCase {
         XCTAssertEqual(FileListViewController.typeSelectTimeout, 1.0)
     }
 }
+
+/// One button that both pins a folder and unpins it, and reads as filled when
+/// the folder is already there.
+final class FavouriteToggleTests: XCTestCase {
+    private func layout() -> SidebarLayout {
+        var layout = SidebarLayout(groups: [])
+        _ = layout.addGroup(title: "Favourites")
+        return layout
+    }
+
+    func testAFolderIsFoundWhicheverWayItsPathIsWritten() {
+        var l = layout()
+        let group = l.groups[0].id
+        l.addItem(SidebarItem(path: "/tmp/soq/Work"), toGroup: group)
+
+        XCTAssertTrue(l.isPinned(URL(fileURLWithPath: "/tmp/soq/Work")))
+        // The same folder reached by a path that needs standardising.
+        XCTAssertTrue(l.isPinned(URL(fileURLWithPath: "/tmp/soq/Other/../Work")))
+        XCTAssertFalse(l.isPinned(URL(fileURLWithPath: "/tmp/soq/Work-archive")),
+                       "a folder whose name merely starts the same is not the same folder")
+    }
+
+    func testPinningThenUnpinningLeavesNothingBehind() {
+        var l = layout()
+        let group = l.groups[0].id
+        let url = URL(fileURLWithPath: "/tmp/soq/Work")
+
+        l.addItem(SidebarItem(path: url.path), toGroup: group)
+        XCTAssertTrue(l.isPinned(url))
+
+        let existing = try! XCTUnwrap(l.pin(for: url))
+        l.removeItem(id: existing.id)
+        XCTAssertFalse(l.isPinned(url))
+        XCTAssertTrue(l.groups[0].items.isEmpty)
+    }
+
+    func testAFolderPinnedInAnyGroupCounts() {
+        var l = layout()
+        let second = l.addGroup(title: "Projects")
+        l.addItem(SidebarItem(path: "/tmp/soq/Work"), toGroup: second)
+        XCTAssertTrue(l.isPinned(URL(fileURLWithPath: "/tmp/soq/Work")))
+    }
+
+    func testTheButtonIsInTheDefaultToolbar() {
+        XCTAssertTrue(ToolbarCatalogue.defaultIDs.contains("favourite"))
+        XCTAssertNotNil(ToolbarCatalogue.action(id: "favourite"))
+    }
+}

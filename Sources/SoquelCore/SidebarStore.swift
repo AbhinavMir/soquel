@@ -63,6 +63,22 @@ struct SidebarLayout: Codable, Equatable {
 
     var containsAnyItem: Bool { groups.contains { !$0.items.isEmpty } }
 
+    /// The pinned entry for a folder, wherever it is filed.
+    ///
+    /// Compared on the standardised URL, so ~/Documents and /Users/x/Documents
+    /// are the same pin rather than two.
+    func pin(for url: URL) -> SidebarItem? {
+        let wanted = url.standardizedFileURL
+        for group in groups {
+            if let found = group.items.first(where: { $0.url.standardizedFileURL == wanted }) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    func isPinned(_ url: URL) -> Bool { pin(for: url) != nil }
+
     // MARK: - Mutation
 
     mutating func addItem(_ item: SidebarItem, toGroup groupID: UUID? = nil) {

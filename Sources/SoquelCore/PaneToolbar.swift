@@ -50,6 +50,10 @@ enum ToolbarCatalogue {
                       isOn: { Prefs.foldersFirst }),
         ToolbarAction("find", "Find by Name", "magnifyingglass", #selector(M.menuFindByName(_:))),
         ToolbarAction("findContents", "Find in Contents", "doc.text.magnifyingglass", #selector(M.menuFindInContents(_:))),
+        // Filled when the folder in front of you is already pinned, so the one
+        // button reads as both "add" and "remove".
+        ToolbarAction("favourite", "Add to Sidebar", "star", #selector(M.menuAddFavourite(_:)),
+                      isOn: { M.favouriteIsOn() }),
         ToolbarAction("newFolder", "New Folder", "folder.badge.plus", #selector(M.menuNewFolder(_:))),
         ToolbarAction("split", "Split Pane", "rectangle.split.2x1", #selector(M.menuSplitVertically(_:))),
         ToolbarAction("terminal", "Open in Terminal", "terminal", #selector(M.menuOpenInTerminal(_:))),
@@ -65,7 +69,8 @@ enum ToolbarCatalogue {
 
     static func action(id: String) -> ToolbarAction? { all.first { $0.id == id } }
 
-    static let defaultIDs = ["up", "listView", "iconView", "columnView", "hidden", "find", "newFolder", "terminal"]
+    static let defaultIDs = ["up", "listView", "iconView", "columnView", "hidden",
+                             "find", "favourite", "newFolder", "terminal"]
 
     /// The chosen buttons, in order. Unknown ids from an older build are dropped
     /// rather than crashing the bar.

@@ -598,10 +598,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         applyDefaultSplitPositions()
     }
 
+    /// What the favourite button acts on: the selected folder, or failing that
+    /// the one being looked at. Selecting a folder and pressing the button
+    /// should pin that folder rather than its parent.
+    var favouriteTarget: URL? {
+        if let selected = focusedList?.selectedURLs().first, selected.hasDirectoryPath {
+            return selected
+        }
+        return focusedList?.url
+    }
+
+    /// Pins the folder, or unpins it when it is already pinned.
+    ///
+    /// One button doing both ways round: a star that fills when the folder is
+    /// pinned is only honest if pressing it again takes the pin away.
     @objc func menuAddFavourite(_ sender: Any?) {
-        guard let url = focusedList?.url else { return }
-        sidebar.pin(url)
-        statusLeft.stringValue = "Pinned “\(url.lastPathComponent)” to the sidebar"
+        guard let url = favouriteTarget else { return }
+        var layout = SidebarStore.layout
+        if let existing = layout.pin(for: url) {
+            layout.removeItem(id: existing.id)
+            SidebarStore.layout = layout
+            statusLeft.stringValue = "Removed “\(url.lastPathComponent)” from the sidebar"
+        } else {
+            sidebar.pin(url)
+            statusLeft.stringValue = "Pinned “\(url.lastPathComponent)” to the sidebar"
+        }
+    }
+
+    /// Whether the toolbar's star should read as filled. Asks the key window,
+    /// since the toolbar item is shared and the catalogue has no controller.
+    static func favouriteIsOn() -> Bool {
+        guard let controller = NSApp.keyWindow?.windowController as? MainWindowController,
+              let url = controller.favouriteTarget else { return false }
+        return SidebarStore.layout.isPinned(url)
     }
 
     @objc func menuSortByName(_ sender: Any?) { sort(by: .name) }

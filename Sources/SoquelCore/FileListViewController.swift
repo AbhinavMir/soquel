@@ -448,6 +448,17 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         restoreCollectionSelection(urls)
     }
 
+    /// Says how to back out, for as long as a drag is under way.
+    ///
+    /// AppKit cancels a drag when Escape is pressed, but nothing says so
+    /// anywhere, so a drag picked up by accident has to be carried back to
+    /// where it started. `reportStatus` puts the ordinary line back when the
+    /// drag ends, however it ends.
+    private func reportDragHint(count: Int) {
+        delegate?.fileList(self, didReportStatus:
+            "Dragging \(count) item\(count == 1 ? "" : "s") — press esc to cancel")
+    }
+
     private func reportStatus() {
         delegate?.fileList(self, didChangeSelection: selectedURLs())
         let selected = selectedURLs().count
@@ -1746,6 +1757,22 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         items.indices.contains(row) ? items[row].url as NSURL : nil
     }
 
+    /// Says how to back out, for the length of the drag.
+    ///
+    /// AppKit cancels a drag when Escape is pressed, but nothing anywhere says
+    /// so, and a drag picked up by accident otherwise has to be carried back to
+    /// where it started. The line goes in the status bar and is taken away when
+    /// the drag ends, however it ends.
+    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
+                   willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
+        reportDragHint(count: rowIndexes.count)
+    }
+
+    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
+                   endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        reportStatus()
+    }
+
     // Drop in
     func tableView(
         _ tableView: NSTableView,
@@ -1847,6 +1874,16 @@ extension FileListViewController: NSCollectionViewDataSource, NSCollectionViewDe
 
     func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) {
         collectionSelectionChanged()
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession,
+                        willBeginAt screenPoint: NSPoint, forItemsAt indexPaths: Set<IndexPath>) {
+        reportDragHint(count: indexPaths.count)
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession,
+                        endedAt screenPoint: NSPoint, dragOperation operation: NSDragOperation) {
+        reportStatus()
     }
 
     func collectionView(_ collectionView: NSCollectionView, pasteboardWriterForItemAt indexPath: IndexPath) -> NSPasteboardWriting? {
