@@ -1,8 +1,8 @@
 # Working state
 
-Branch: `bug-sweep` (off `main` at 48cdf79). No PR yet. 495 tests pass.
+Branch: `bug-sweep` (off `main` at 48cdf79). No PR yet. 497 tests pass.
 
-**20 of 38 fixed and closed.** 18 open: 11 Wrong Result, 7 UI.
+**23 of 38 fixed and closed.** 15 open: 8 Wrong Result, 7 UI.
 
 ## What this is
 
@@ -39,11 +39,16 @@ Labels: `data loss`, `Wrong Result`, `UI`. Nothing else.
   blank line and no ". " is cut on character count instead of becoming one
   8 MB passage. No empty passages. The index loads off the main thread.
 
+- **#16 #19 #26 — threading** (`24ae20a`)
+  Disk map and file search use a generation rather than a resettable Bool, so a
+  cancelled walk cannot be resurrected by the next run and a superseded one
+  reports nothing. Cancelling and being replaced stay distinct: a cancelled run
+  still calls back with `cancelled` set. SettingsStore's two dispatch sources
+  are swapped under their own lock.
+
 ## Next
 
 Clusters worth doing together:
-- **Threading:** #16 fileWatcher raced, #26 unsynchronized cancellation flag,
-  #19 cancelled scan resurrected
 - **Disk map / scanning:** #20 unreadable counted as zero, #25 volumes walked
   twice, #31 trashing restarts the scan, #37 "smaller items" sentinel,
   #39 depth off by one
