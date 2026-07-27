@@ -1030,6 +1030,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Navigates the focused pane to a file's folder and selects it.
+    /// Points the focused pane at a folder. Used for a folder handed over by
+    /// the system — `reveal` would go to its parent and select it, which is
+    /// not what double-clicking a folder means.
+    func open(folder url: URL) {
+        guard let list = focusedList else { return }
+        list.navigate(to: url)
+        list.focusTable()
+    }
+
     func reveal(_ url: URL) {
         guard let list = focusedList else { return }
         list.navigate(to: url.deletingLastPathComponent())

@@ -67,6 +67,34 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// Opens folders handed over by the system.
+    ///
+    /// This is what makes Soquel usable as the handler for folders: without it,
+    /// double-clicking one in Finder, or dropping it on the Dock icon, would
+    /// launch the application at the home directory and lose the folder. A file
+    /// rather than a folder is passed back to whatever normally opens it, since
+    /// Soquel is a file manager and not an editor of anything.
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        var folders: [URL] = []
+        var files: [URL] = []
+        for url in urls {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            else { continue }
+            if isDirectory.boolValue { folders.append(url) } else { files.append(url) }
+        }
+
+        for (index, url) in folders.enumerated() {
+            // The first folder goes into the window that already exists — at
+            // launch that is the empty one made by applicationDidFinishLaunching
+            // — and any others get their own.
+            if index > 0 || windowControllers.isEmpty { newWindow(nil) }
+            windowControllers.last?.open(folder: url)
+        }
+        for url in files { NSWorkspace.shared.open(url) }
+        if !folders.isEmpty { NSApp.activate(ignoringOtherApps: true) }
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
         Log.info(.app, "Soquel quitting")
         for controller in windowControllers { controller.saveSession() }

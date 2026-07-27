@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Support/Soquel.icns from Support/icon/soquel-logo.png.
+# Builds Support/Soquel.icns. The artwork is drawn by scripts/make-icon.py.
 #
 # A blue squircle with the folder in white on top of it.
 #
