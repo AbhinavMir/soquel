@@ -299,3 +299,61 @@ final class ToolbarCatalogueTests: XCTestCase {
         XCTAssertEqual(ToolbarCatalogue.enabledIDs, ["hidden"])
     }
 }
+
+/// A run replaced by a newer one must not report. Resetting a shared
+/// `cancelled` flag at the top of `run` cleared it before the walk in flight
+/// had seen it, so the old walk finished and delivered into the new query.
+final class SearchSupersedeTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("soquel-supersede-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for i in 0..<400 {
+            try "contents".write(to: root.appendingPathComponent("file\(i).txt"),
+                                 atomically: true, encoding: .utf8)
+        }
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+        try super.tearDownWithError()
+    }
+
+    private func query(_ text: String) -> FileSearch.Query {
+        FileSearch.Query(text: text, mode: .name, scope: .folder, root: root)
+    }
+
+    /// Reusing one instance: the first run must go quiet, not deliver into the
+    /// second one's callbacks.
+    func testAReplacedRunDoesNotReport() {
+        let search = FileSearch()
+        let secondFinished = expectation(description: "second finished")
+        var firstReported = false
+        var secondReported = false
+
+        search.run(query("file")) { _ in } finished: { _ in firstReported = true }
+        search.run(query("file1")) { _ in } finished: { _ in
+            secondReported = true
+            secondFinished.fulfill()
+        }
+
+        wait(for: [secondFinished], timeout: 20)
+        XCTAssertTrue(secondReported)
+        XCTAssertFalse(firstReported, "the superseded run reported into the new query")
+    }
+
+    /// Cancelling is different from being replaced: the caller asked it to
+    /// stop and is told that it did.
+    func testACancelledRunStillReports() {
+        let search = FileSearch()
+        let done = expectation(description: "finished")
+        search.run(query("file")) { _ in search.cancel() } finished: { summary in
+            XCTAssertTrue(summary.cancelled || summary.found > 0)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 20)
+    }
+}

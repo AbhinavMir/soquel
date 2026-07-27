@@ -56,10 +56,41 @@ final class DiskMap {
     }
 
     private let queue = DispatchQueue(label: "app.soquel.diskmap", qos: .utility)
-    private var cancelled = false
+
+    /// Which walk is the live one.
+    ///
+    /// A plain `cancelled` flag that `scan` reset could resurrect a walk that
+    /// had been cancelled but had not yet noticed: close the panel mid-scan,
+    /// reopen it on another folder, and the first walk ran to completion with
+    /// the flag cleared, delivering the *old* folder's tree into the panel and
+    /// leaving it looking finished while the new scan had not begun. Starting
+    /// and cancelling both move the generation on, so a walk can tell whether
+    /// it is still the one being waited for and no reset can undo a cancel.
+    private let lock = NSLock()
+    private var generation = 0
+    /// The generation of the most recent `scan`. `cancel` moves `generation`
+    /// on without touching this, which separates "stop, and tell me" from
+    /// "forget this, another scan has started".
+    private var lastStarted = 0
 
     /// Stops the walk. Safe to call from the main thread mid-scan.
-    func cancel() { cancelled = true }
+    func cancel() {
+        lock.lock(); generation += 1; lock.unlock()
+    }
+
+    /// Whether this walk should still be walking.
+    private func isCurrent(_ token: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return token == generation
+    }
+
+    /// Whether this walk's tree is still wanted. A scan replaced by a newer
+    /// one reports nothing: delivering its tree put the previous folder back
+    /// into the panel and left it looking finished.
+    private func shouldDeliver(_ token: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return token == lastStarted
+    }
 
     /// Scans `root`. `progress` and `finished` are called on the main queue;
     /// `finished` gets nil if the scan was cancelled.
@@ -68,14 +99,25 @@ final class DiskMap {
         progress: @escaping (Progress) -> Void,
         finished: @escaping (Node?) -> Void
     ) {
-        cancelled = false
+        lock.lock()
+        generation += 1
+        lastStarted = generation
+        let token = generation
+        lock.unlock()
+
         queue.async { [weak self] in
             guard let self else { return }
+            // A superseded walk bails at its next check rather than holding
+            // the serial queue while the one that replaced it waits.
+            guard self.isCurrent(token) else {
+                if self.shouldDeliver(token) { DispatchQueue.main.async { finished(nil) } }
+                return
+            }
             var seenInodes = Set<UInt64>()
             var scanned = 0
             var lastReport = 0
 
-            let node = self.walk(root, seenInodes: &seenInodes, scanned: &scanned) { count, bytes, path in
+            let node = self.walk(root, token: token, seenInodes: &seenInodes, scanned: &scanned) { count, bytes, path in
                 // Reporting every file would spend more time on the main queue
                 // than on the disk.
                 guard count - lastReport >= 500 else { return }
@@ -85,14 +127,16 @@ final class DiskMap {
                 }
             }
 
+            let stopped = !self.isCurrent(token)
+            guard self.shouldDeliver(token) else { return }
             DispatchQueue.main.async {
-                if self.cancelled {
+                if stopped {
                     Log.info(.scan, "Disk scan of \(root.path) cancelled after \(scanned) items")
                 } else {
                     Log.info(.scan, "Disk scan of \(root.path): \(scanned) items, "
                         + "\(node?.bytes ?? 0) bytes")
                 }
-                finished(self.cancelled ? nil : node)
+                finished(stopped ? nil : node)
             }
         }
     }
@@ -104,11 +148,12 @@ final class DiskMap {
     /// Finder's own numbers go wrong.
     private func walk(
         _ url: URL,
+        token: Int,
         seenInodes: inout Set<UInt64>,
         scanned: inout Int,
         report: (Int, Int64, String) -> Void
     ) -> Node? {
-        if cancelled { return nil }
+        if !isCurrent(token) { return nil }
 
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey,
@@ -143,8 +188,8 @@ final class DiskMap {
         var total: Int64 = 0
         var files = 0
         for child in contents {
-            if cancelled { return nil }
-            guard let node = walk(child, seenInodes: &seenInodes, scanned: &scanned, report: report)
+            if !isCurrent(token) { return nil }
+            guard let node = walk(child, token: token, seenInodes: &seenInodes, scanned: &scanned, report: report)
             else { continue }
             total += node.bytes
             files += node.fileCount

@@ -167,7 +167,42 @@ final class FileSearch {
         }
     }
 
-    private var cancelled = false
+    /// Which run is the live one.
+    ///
+    /// `cancelled` was a plain Bool written from the main thread and read on
+    /// the walk queue with nothing between them — a data race the optimiser is
+    /// free to fold away. It was also reset at the top of `run`, so reusing one
+    /// instance (cancel, then run again) cleared the flag before the walk in
+    /// flight had observed it: the old filesystem-wide walk ran to completion
+    /// and the new query queued up behind it. Starting and cancelling both move
+    /// the generation on, so neither can undo the other.
+    private let lock = NSLock()
+    private var generation = 0
+    /// The generation of the most recent `run`. `cancel` moves `generation` on
+    /// without touching this, which is what separates "stop, and tell me you
+    /// stopped" from "forget this, I have asked for something else".
+    private var lastStarted = 0
+
+    /// Whether this walk should still be walking.
+    private func isCurrent(_ token: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return token == generation
+    }
+
+    /// Whether this walk's results are still wanted. A cancelled run reports
+    /// back — the caller asked it to stop and can see `cancelled` in the
+    /// summary — but a run replaced by a newer one says nothing at all.
+    private func shouldDeliver(_ token: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return token == lastStarted
+    }
+
+    private func beginRun() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        generation += 1
+        lastStarted = generation
+        return generation
+    }
     private let queue = DispatchQueue(label: "app.soquel.search", qos: .userInitiated)
 
     /// Files larger than this are not read for a contents search; they are
@@ -175,7 +210,9 @@ final class FileSearch {
     /// Anything skipped for this reason is counted and reported.
     static let maximumContentsBytes = 8 * 1024 * 1024
 
-    func cancel() { cancelled = true }
+    func cancel() {
+        lock.lock(); generation += 1; lock.unlock()
+    }
 
     /// Builds the matcher, or returns nil when a regular expression does not
     /// compile — the caller shows the error rather than searching for nothing.
@@ -256,7 +293,7 @@ final class FileSearch {
         batch: @escaping ([Hit]) -> Void,
         finished: @escaping (Summary) -> Void
     ) {
-        cancelled = false
+        let token = beginRun()
         guard !query.text.isEmpty else {
             finished(Summary())
             return
@@ -302,7 +339,7 @@ final class FileSearch {
                 )
 
                 while let candidate = enumerator?.nextObject() as? URL {
-                    if self.cancelled { summary.cancelled = true; break outer }
+                    if !self.isCurrent(token) { summary.cancelled = true; break outer }
                     summary.examined += 1
 
                     if let limit = query.maximumDepth,
@@ -368,7 +405,10 @@ final class FileSearch {
                     if pending.count >= 40 {
                         let flush = pending.sorted { $0.rank < $1.rank }
                         pending = []
-                        DispatchQueue.main.async { batch(flush) }
+                        DispatchQueue.main.async {
+                            guard self.shouldDeliver(token) else { return }
+                            batch(flush)
+                        }
                     }
                 }
             }
@@ -376,6 +416,11 @@ final class FileSearch {
             let remainder = pending.sorted { $0.rank < $1.rank }
             let outcome = summary
             DispatchQueue.main.async {
+                // A superseded run says nothing. Its hits belong to a query the
+                // user has moved on from, and its summary would stop the
+                // spinner for the search that replaced it. A cancelled run
+                // still reports, with `cancelled` set.
+                guard self.shouldDeliver(token) else { return }
                 if !remainder.isEmpty { batch(remainder) }
                 finished(outcome)
             }

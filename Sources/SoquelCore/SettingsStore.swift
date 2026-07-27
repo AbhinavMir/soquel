@@ -33,6 +33,10 @@ final class SettingsStore {
     let url: URL
     private var values: [String: Any] = [:]
     private let lock = NSLock()
+    /// Guards the two watcher sources. Separate from `lock`, which guards the
+    /// values: a watcher's handler reads the values, so one lock for both
+    /// would have the handler waiting on the thread that is replacing it.
+    private let watcherLock = NSLock()
     private var watcher: DispatchSourceFileSystemObject?
     /// A second source on the file itself. The directory only reports entries
     /// appearing and disappearing, so an editor that saves in place — writing
@@ -157,7 +161,11 @@ final class SettingsStore {
     /// from a text editor replaces the file, and a file handle would be left
     /// pointing at the old inode.
     func startWatching() {
-        guard watcher == nil else { return }
+        watcherLock.lock()
+        let already = watcher != nil
+        watcherLock.unlock()
+        guard !already else { return }
+
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let descriptor = open(directory.path, O_EVTONLY)
@@ -176,17 +184,33 @@ final class SettingsStore {
         }
         source.setCancelHandler { close(descriptor) }
         source.resume()
+        watcherLock.lock()
+        let displaced = watcher
         watcher = source
+        watcherLock.unlock()
+        displaced?.cancel()
         watchFile()
     }
 
     /// Watches the settings file itself, for saves that write in place.
+    ///
+    /// Called from two threads: `startWatching` on main, and the directory
+    /// source's handler on a utility queue. Unsynchronised, both could build a
+    /// source and assign, and the loser was released without ever being
+    /// cancelled — which libdispatch treats as fatal — leaking its descriptor.
+    /// Swapping under a lock means whichever assignment happens second cancels
+    /// the one it displaces, so no live source is ever dropped.
     private func watchFile() {
-        fileWatcher?.cancel()
-        fileWatcher = nil
-
         let descriptor = open(url.path, O_EVTONLY)
-        guard descriptor >= 0 else { return }
+        guard descriptor >= 0 else {
+            // The file is gone; the watcher pointing at it is no use either.
+            watcherLock.lock()
+            let orphan = fileWatcher
+            fileWatcher = nil
+            watcherLock.unlock()
+            orphan?.cancel()
+            return
+        }
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor, eventMask: [.write, .extend, .rename, .delete],
@@ -195,7 +219,13 @@ final class SettingsStore {
         source.setEventHandler { [weak self] in self?.reloadIfChangedOutside() }
         source.setCancelHandler { close(descriptor) }
         source.resume()
+
+        watcherLock.lock()
+        let displaced = fileWatcher
         fileWatcher = source
+        watcherLock.unlock()
+        // Outside the lock: cancel runs the handler that closes the descriptor.
+        displaced?.cancel()
     }
 
     /// Whether a change on disk is really someone else's.
