@@ -16,7 +16,7 @@ Questions or bugs: atg271@gmail.com
 Download `Soquel.dmg` from [Releases](https://github.com/AbhinavMir/soquel/releases), open it, drag
 Soquel to Applications. macOS 13 or later.
 
-It is not signed by Apple, so the first launch needs a right-click, then Open.
+Signed and notarised, so it opens with a normal double-click.
 
 From source:
 
@@ -100,8 +100,8 @@ The code is in the `SoquelCore` library rather than in the executable so that it
 ## Known gaps
 
 Bugs and missing pieces are tracked as
-[issues](https://github.com/AbhinavMir/soquel/issues). The app is not signed or notarised, there is
-no accessibility pass yet, and SFTP would need a File Provider extension that has not been written.
+[issues](https://github.com/AbhinavMir/soquel/issues). There is no accessibility pass yet, and SFTP
+would need a File Provider extension that has not been written.
 
 Soquel does not replace Finder at the system level, and cannot — macOS reserves that. It can be made
 the handler for folders, which covers most of it.

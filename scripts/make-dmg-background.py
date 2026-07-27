@@ -63,17 +63,15 @@ d.polygon([(x1, y), (x1 - 18 * S, y - 11 * S), (x1 - 18 * S, y + 11 * S)], fill=
 # No labels under the icons: Finder draws those itself, and a second set
 # underneath them reads as a mistake.
 
-# The two things that make a first run look broken when nobody warns you:
-# an unnotarised build is refused once, and a file manager without Full Disk
-# Access shows Desktop and Documents as empty. Both are said here, and again
-# in the window the application opens on its first launch.
-d.line([(60 * S, 312 * S), ((W - 60) * S, 312 * S)], fill=(226, 230, 235), width=S)
+# Notarised, so there is no Gatekeeper prompt to warn about. The one thing
+# left that makes a first run look broken is protected folders reading as
+# empty, and the application says that itself on first launch too.
+d.line([(60 * S, 322 * S), ((W - 60) * S, 322 * S)], fill=(226, 230, 235), width=S)
 
-centred(d, "First launch: right-click Soquel, then Open", 328, font(12, bold=True), INK)
-centred(d, "macOS asks this once, for any app not sold through the App Store.",
-        348, font(11), MUTED)
-centred(d, "Soquel then offers to set up Full Disk Access — without it, "
-           "Desktop and Documents look empty.", 374, font(11), MUTED)
+centred(d, "Soquel will ask for Full Disk Access when it first opens", 340,
+        font(12, bold=True), INK)
+centred(d, "Without it, Desktop, Documents and Downloads show as empty.",
+        362, font(11), MUTED)
 
 img.resize((W, H), Image.LANCZOS).save("Support/dmg/background.png")
 img.save("Support/dmg/background@2x.png")
