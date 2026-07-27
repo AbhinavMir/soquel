@@ -46,6 +46,15 @@ final class SettingsStore {
     /// What we last wrote, so our own writes do not look like outside edits.
     private var lastWritten: Data?
     private var writeScheduled = false
+    /// Bumped by every change to `values`, and caught up to by the writer only
+    /// once a write has landed. The two differing means the file is behind
+    /// memory — a change made while a write was in flight, or a write that
+    /// failed — and the file must then not be read back over memory.
+    private var changeCount = 0
+    private var writtenChangeCount = 0
+    /// Whether the last write failed. Kept so the debounce does not retry a
+    /// write that cannot succeed, every quarter second, for the rest of the run.
+    private var lastWriteFailed = false
     /// When we last wrote. An atomic write is a create followed by a rename,
     /// and the watcher sees both — on the first of them the file may still
     /// hold the previous contents.
@@ -90,6 +99,7 @@ final class SettingsStore {
         } else {
             values.removeValue(forKey: key)
         }
+        changeCount += 1
         lock.unlock()
         scheduleWrite()
     }
@@ -107,6 +117,13 @@ final class SettingsStore {
     var allKeys: [String] {
         lock.lock(); defer { lock.unlock() }
         return values.keys.sorted()
+    }
+
+    /// Whether memory holds values the file does not, for the tests: no change
+    /// may be left with neither a write done nor a write pending.
+    var hasUnwrittenChanges: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return changeCount != writtenChangeCount
     }
 
     // MARK: - Disk
@@ -128,33 +145,87 @@ final class SettingsStore {
         writeScheduled = true
         lock.unlock()
         guard !alreadyScheduled else { return }
+        armWriteTimer()
+    }
 
+    private func armWriteTimer() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self else { return }
-            // Cleared after the write, not before: while it is set the watcher
-            // knows memory is ahead of the file.
             self.writeNow()
-            self.lock.lock()
-            self.writeScheduled = false
-            self.lock.unlock()
+            self.finishScheduledWrite()
         }
+    }
+
+    /// Ends a debounced pass, and arms another if memory has moved on since the
+    /// write took its snapshot.
+    ///
+    /// The flag is cleared after the write, not before: while it is set the
+    /// watcher knows memory is ahead of the file. It used to be cleared
+    /// unconditionally, which stranded any set() landing between the snapshot
+    /// and here — such a set() finds the flag still set and so arms no timer of
+    /// its own, and was then left without one: the value stayed in memory only,
+    /// lost at quit, and meanwhile the older file no longer looked pending and
+    /// could be read back over it.
+    func finishScheduledWrite() {
+        lock.lock()
+        // Both read and written under one hold, so a set() either bumps the
+        // count before the check or finds the flag already cleared and arms its
+        // own timer. Splitting them would let one slip between the two.
+        let pending = changeCount != writtenChangeCount && !lastWriteFailed
+        writeScheduled = pending
+        lock.unlock()
+        if pending { armWriteTimer() }
     }
 
     func writeNow() {
         lock.lock()
         let snapshot = values
-        lock.unlock()
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: snapshot, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        ) else { return }
-        lock.lock()
-        lastWritten = data
+        // Taken with the snapshot, not at the end: a set() arriving while the
+        // write is in flight leaves changeCount ahead of it, which is how the
+        // debounce knows that another pass is owed.
+        let snapshotCount = changeCount
+        // Stamped before the write rather than after it: an atomic save is a
+        // create plus a rename, and the watcher can read the file while that is
+        // still in flight, so the settling window has to already cover it.
         lastWriteTime = Date()
         lock.unlock()
+
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: snapshot, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ) else {
+            noteWriteFailed("settings could not be encoded as JSON; not written")
+            return
+        }
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
-        try? data.write(to: url, options: .atomic)
+        do {
+            try data.write(to: url, options: .atomic)
+            lock.lock()
+            lastWritten = data
+            writtenChangeCount = snapshotCount
+            lastWriteFailed = false
+            lock.unlock()
+        } catch {
+            // lastWritten keeps the bytes that did reach the file. It used to
+            // be set to these ones before the write was even attempted, and the
+            // write itself was a `try?` — so an unwritable Application Support,
+            // a full disk or a sandbox denial left the store believing the file
+            // held values it had never received. The next watcher event read
+            // the old file, found it different from what we thought we had
+            // written, took it for someone else's edit and adopted it: every
+            // setting the user had just changed reverted, with nothing said
+            // anywhere. A directory event from theme.json is enough to set that
+            // off, so it did not even need the user to touch settings.json.
+            noteWriteFailed("could not write \(url.path): \(error.localizedDescription)")
+        }
+    }
+
+    private func noteWriteFailed(_ reason: String) {
+        lock.lock()
+        lastWriteFailed = true
+        lock.unlock()
+        Log.error(.settings, reason)
     }
 
     /// Watches the containing directory rather than the file: an atomic save
@@ -230,17 +301,20 @@ final class SettingsStore {
 
     /// Whether a change on disk is really someone else's.
     ///
-    /// Three ways it is ours, and taking any of them for an outside edit means
+    /// Four ways it is not, and taking any of them for an outside edit means
     /// overwriting what the user just did with what the file used to say:
     ///
     /// - the bytes are exactly what we last wrote;
     /// - a write is still pending, so memory is ahead of the file by design;
+    /// - a change has not reached the file at all, because it landed while a
+    ///   write was in flight or because the write failed;
     /// - the write only just happened, and an atomic save is a create plus a
     ///   rename, so the watcher can read the file between the two.
     func shouldAdopt(_ data: Data, now: Date = Date()) -> Bool {
         lock.lock(); defer { lock.unlock() }
         if let lastWritten, data == lastWritten { return false }
         if writeScheduled { return false }
+        if changeCount != writtenChangeCount { return false }
         if let lastWriteTime, now.timeIntervalSince(lastWriteTime) < Self.settlingWindow { return false }
         return true
     }
@@ -271,6 +345,7 @@ final class SettingsStore {
             lock.lock()
             if JSONSerialization.isValidJSONObject([value]) {
                 values[key] = value
+                changeCount += 1
                 found = true
             }
             lock.unlock()

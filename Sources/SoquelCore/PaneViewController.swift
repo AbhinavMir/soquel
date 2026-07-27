@@ -383,13 +383,33 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         activeList?.focusTable()
     }
 
+    /// Whether the path field really took focus. `makeFirstResponder` is
+    /// reached through an optional window, so nil means the pane is in no
+    /// window at all, and false means the responder in place refused to
+    /// resign — an inline rename holding a name AppKit will not accept does
+    /// exactly that. Only true leaves a field that can be typed in.
+    static func pathFieldTookFocus(_ firstResponderMoved: Bool?) -> Bool {
+        firstResponderMoved == true
+    }
+
     func beginEditingPath() {
         guard let url = currentURL else { return }
         pathField.stringValue = url.path
+        // The field has to be on show before it can take first responder.
         pathField.isHidden = false
         pathBarScroll.isHidden = true
-        view.window?.makeFirstResponder(pathField)
-        pathField.currentEditor()?.selectAll(nil)
+        // The result of the move used to be discarded and the breadcrumbs
+        // hidden for good. When the move failed the pane was left with no path
+        // bar and a field with no editor behind it: nothing was selected,
+        // typing went nowhere, and Escape never reached
+        // control(_:textView:doCommandBy:) to put the bar back, so the pane
+        // stayed dead until the user navigated some other way.
+        guard Self.pathFieldTookFocus(view.window?.makeFirstResponder(pathField)),
+              let editor = pathField.currentEditor() else {
+            endEditingPath()
+            return
+        }
+        editor.selectAll(nil)
     }
 
     @objc private func pathFieldCommitted() {

@@ -593,6 +593,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let hidden = sidebar.view.isHidden
         sidebar.view.isHidden = !hidden
         outerSplit.adjustSubviews()
+        // adjustSubviews alone left the divider where it was, so hiding the
+        // sidebar blanked its column instead of giving the width to the panes.
+        applyDefaultSplitPositions()
     }
 
     @objc func menuAddFavourite(_ sender: Any?) {
@@ -832,8 +835,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         for pane in panes { pane.refreshToolbar() }
     }
 
-    /// Puts the sidebar and the inspector at their default widths and leaves
-    /// the rest to the panes.
+    /// Where the two outer dividers belong in a split `total` points wide.
+    ///
+    /// A column that is off gets none of the width: its divider sits on its own
+    /// edge — 0 for the sidebar, the trailing edge for the inspector — so the
+    /// panes take the space rather than it being left blank.
+    static func outerDividerPositions(
+        total: CGFloat, sidebarShown: Bool, inspectorShown: Bool
+    ) -> (sidebar: CGFloat, inspector: CGFloat) {
+        (sidebarShown ? defaultSidebarWidth : 0,
+         inspectorShown ? total - defaultInspectorWidth : total)
+    }
+
+    /// Puts the sidebar and the inspector at their default widths, gives a
+    /// hidden one no width at all, and leaves the rest to the panes.
     ///
     /// The inspector divider is placed first: moving the right divider outward
     /// is what creates room for the panes, and doing it second would squeeze
@@ -843,10 +858,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let total = outerSplit.bounds.width
         guard total > Self.minimumSidebarWidth + Self.minimumPaneWidth else { return }
 
-        if Prefs.showInspector, outerSplit.arrangedSubviews.count >= 3 {
-            outerSplit.setPosition(total - Self.defaultInspectorWidth, ofDividerAt: 1)
+        let positions = Self.outerDividerPositions(
+            total: total,
+            sidebarShown: !sidebar.view.isHidden,
+            inspectorShown: !inspector.isHidden
+        )
+        // Divider 1 used to be skipped whenever the inspector was off, and no
+        // other code path moved it, so the inspector's 280pt stayed reserved
+        // and blank for as long as the window was open.
+        if outerSplit.arrangedSubviews.count >= 3 {
+            outerSplit.setPosition(positions.inspector, ofDividerAt: 1)
         }
-        outerSplit.setPosition(Self.defaultSidebarWidth, ofDividerAt: 0)
+        outerSplit.setPosition(positions.sidebar, ofDividerAt: 0)
         hasPositionedSplits = true
         debugLog("split widths: " + outerSplit.arrangedSubviews.map { "\($0.frame.width)" }.joined(separator: ", "))
     }
@@ -1257,11 +1280,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     // MARK: - Split view constraints
 
+    /// The floor for the sidebar|panes divider. A sidebar that is off has none:
+    /// the width floor applies to a column in use, and applying it to a hidden
+    /// one held the divider 140pt from the edge over a blank column.
+    static func outerMinimumSidebarCoordinate(sidebarShown: Bool) -> CGFloat {
+        sidebarShown ? minimumSidebarWidth : 0
+    }
+
+    /// The ceiling for the panes|inspector divider, in the same coordinates as
+    /// the proposal. An inspector that is off may go to the trailing edge; the
+    /// minimum width applied to a hidden one reserved 220pt of blank column.
+    static func outerMaximumInspectorCoordinate(proposedMax: CGFloat, inspectorShown: Bool) -> CGFloat {
+        inspectorShown ? proposedMax - minimumInspectorWidth : proposedMax
+    }
+
+    /// Whether `adjustSubviews` may change the width of one of the outer
+    /// split's columns. The sidebar and the inspector hold their widths while
+    /// they are on show and the panes absorb the rest; a hidden one has to be
+    /// resizable, since pinning it is what kept its column on screen after it
+    /// was switched off.
+    static func outerColumnResizes(isFixedColumn: Bool, isHidden: Bool) -> Bool {
+        !isFixedColumn || isHidden
+    }
+
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMin: CGFloat, ofSubviewAt index: Int) -> CGFloat {
         if splitView === outerSplit {
             // Divider 0 is sidebar|panes; divider 1 is panes|inspector.
             return index == 0
-                ? Self.minimumSidebarWidth
+                ? Self.outerMinimumSidebarCoordinate(sidebarShown: !sidebar.view.isHidden)
                 : proposedMin + Self.minimumPaneWidth
         }
         let minimum = splitView.isVertical ? Self.minimumPaneWidth : Self.minimumPaneHeight
@@ -1274,8 +1320,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                 // The sidebar never grows past this, and always leaves room for a pane.
                 return min(Self.maximumSidebarWidth, max(Self.minimumSidebarWidth, proposedMax - Self.minimumPaneWidth))
             }
-            // The inspector keeps at least its minimum width.
-            return proposedMax - Self.minimumInspectorWidth
+            return Self.outerMaximumInspectorCoordinate(
+                proposedMax: proposedMax, inspectorShown: !inspector.isHidden
+            )
         }
         let minimum = splitView.isVertical ? Self.minimumPaneWidth : Self.minimumPaneHeight
         return proposedMax - minimum
@@ -1292,8 +1339,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     func splitView(_ splitView: NSSplitView, shouldAdjustSizeOfSubview view: NSView) -> Bool {
-        // Sidebar and inspector keep their widths on resize; panes absorb it.
-        splitView !== outerSplit || (view !== sidebar.view && view !== inspector)
+        guard splitView === outerSplit else { return true }
+        return Self.outerColumnResizes(
+            isFixedColumn: view === sidebar.view || view === inspector,
+            isHidden: view.isHidden
+        )
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {

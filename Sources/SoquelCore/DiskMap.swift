@@ -14,17 +14,29 @@ final class DiskMap {
         let isDirectory: Bool
         private(set) var bytes: Int64
         private(set) var fileCount: Int
+        /// How many items at or under here had no readable size.
+        ///
+        /// Unreadable items used to be dropped from the tree or charged zero
+        /// bytes, which is the one answer that is never right. On macOS every
+        /// TCC-protected location under the home folder — ~/Library/Mail,
+        /// ~/Library/Messages, Photos libraries, local Time Machine snapshots —
+        /// refuses to open without Full Disk Access, so scanning ~/ reported
+        /// 40 GB of a 200 GB home folder and drew the folders that did open as
+        /// proportionally huge. Counting the misses is what lets the panel say
+        /// the total is a floor rather than offering it as the answer.
+        private(set) var unreadableCount: Int
         /// Largest first, which is the order the drawing wants.
         private(set) var children: [Node]
         weak var parent: Node?
 
         init(url: URL, name: String, isDirectory: Bool, bytes: Int64,
-             fileCount: Int, children: [Node] = []) {
+             fileCount: Int, unreadableCount: Int = 0, children: [Node] = []) {
             self.url = url
             self.name = name
             self.isDirectory = isDirectory
             self.bytes = bytes
             self.fileCount = fileCount
+            self.unreadableCount = unreadableCount
             self.children = children
             for child in children { child.parent = self }
         }
@@ -41,6 +53,27 @@ final class DiskMap {
         }
 
         var depth: Int { (parent?.depth ?? -1) + 1 }
+
+        /// The names from the scan root down to here.
+        ///
+        /// A rescan builds an entirely new tree, so nothing can hold on to a
+        /// node across one. Holding on to the trail and following it back down
+        /// is how the panel keeps its place.
+        var trail: [String] { ancestry.dropFirst().map(\.name) }
+
+        /// Follows `trail` down from here as far as it still goes.
+        ///
+        /// Stops at the deepest folder that survived, so trashing the folder
+        /// that was on screen lands on its parent rather than back at the root.
+        /// Sibling names are unique within a folder, so the walk is exact.
+        func descendant(along trail: [String]) -> Node {
+            var node = self
+            for name in trail {
+                guard let next = node.children.first(where: { $0.name == name }) else { break }
+                node = next
+            }
+            return node
+        }
 
         /// Share of the parent, 0 when the parent is empty.
         var fractionOfParent: Double {
@@ -133,8 +166,10 @@ final class DiskMap {
                 if stopped {
                     Log.info(.scan, "Disk scan of \(root.path) cancelled after \(scanned) items")
                 } else {
+                    let unreadable = node?.unreadableCount ?? 0
                     Log.info(.scan, "Disk scan of \(root.path): \(scanned) items, "
-                        + "\(node?.bytes ?? 0) bytes")
+                        + "\(node?.bytes ?? 0) bytes"
+                        + (unreadable > 0 ? ", \(unreadable) unreadable" : ""))
                 }
                 finished(stopped ? nil : node)
             }
@@ -146,6 +181,10 @@ final class DiskMap {
     /// Symlinks are not followed — a link to a parent folder would never
     /// terminate — and a hard-linked inode counts once, which is where
     /// Finder's own numbers go wrong.
+    ///
+    /// Anything that cannot be read still comes back as a node, carrying zero
+    /// bytes and an unreadable count of one. It used to come back as nil, or as
+    /// an empty folder, so the picture lost it without saying so.
     private func walk(
         _ url: URL,
         token: Int,
@@ -157,12 +196,17 @@ final class DiskMap {
 
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey,
-            .fileAllocatedSizeKey, .fileResourceIdentifierKey, .fileSizeKey,
+            .fileAllocatedSizeKey, .fileResourceIdentifierKey,
         ]
-        guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
-        if values.isSymbolicLink == true { return nil }
-
         let name = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+
+        guard let values = try? url.resourceValues(forKeys: keys) else {
+            // Not even whether it is a folder is known, so it is charged
+            // nothing and counted as a miss.
+            return Node(url: url, name: name, isDirectory: false, bytes: 0,
+                        fileCount: 0, unreadableCount: 1)
+        }
+        if values.isSymbolicLink == true { return nil }
 
         if values.isDirectory != true {
             // A file already counted under another name is real, but its bytes
@@ -173,16 +217,34 @@ final class DiskMap {
                     return Node(url: url, name: name, isDirectory: false, bytes: 0, fileCount: 1)
                 }
             }
-            let bytes = Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
+            // Allocated size only. `fileSize` is the logical length, which
+            // charges a sparse file allocating 4 KB for its whole 10 GB extent,
+            // and it used to stand in whenever the allocated size was missing.
+            // With no allocated size the size is simply unknown, which is not
+            // the same as zero.
+            guard let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize else {
+                return Node(url: url, name: name, isDirectory: false, bytes: 0,
+                            fileCount: 1, unreadableCount: 1)
+            }
+            let bytes = Int64(allocated)
             scanned += 1
             report(scanned, bytes, url.path)
             return Node(url: url, name: name, isDirectory: false, bytes: bytes, fileCount: 1)
         }
 
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: url, includingPropertiesForKeys: Array(keys),
-            options: [.skipsSubdirectoryDescendants]
-        )) ?? []
+        var unreadable = 0
+        var contents: [URL] = []
+        do {
+            contents = try FileManager.default.contentsOfDirectory(
+                at: url, includingPropertiesForKeys: Array(keys),
+                options: [.skipsSubdirectoryDescendants]
+            )
+        } catch {
+            // A folder that will not open is not an empty folder. Folding the
+            // failure into `?? []` made the two indistinguishable, which is how
+            // a permission-denied ~/Library/Mail came out as 0 bytes.
+            unreadable = 1
+        }
 
         var children: [Node] = []
         var total: Int64 = 0
@@ -193,13 +255,14 @@ final class DiskMap {
             else { continue }
             total += node.bytes
             files += node.fileCount
+            unreadable += node.unreadableCount
             children.append(node)
         }
 
         children.sort { $0.bytes > $1.bytes }
         report(scanned, total, url.path)
         return Node(url: url, name: name, isDirectory: true, bytes: total,
-                    fileCount: files, children: children)
+                    fileCount: files, unreadableCount: unreadable, children: children)
     }
 }
 
@@ -216,6 +279,27 @@ struct SunburstSegment: Equatable {
     /// Radians, clockwise from twelve o'clock.
     let start: Double
     let end: Double
+    /// True for the combined "smaller items" wedge, which stands for a set of
+    /// children rather than for anything on disk.
+    ///
+    /// Consumers used to recognise it by comparing `name` against "smaller
+    /// items", so a folder actually called that could not be opened by click
+    /// and its right-click menu never appeared. Worse, the name is all that
+    /// stopped a Move to Trash on the aggregate deleting the parent folder,
+    /// whose URL it carries.
+    let isAggregate: Bool
+
+    init(url: URL, name: String, bytes: Int64, isDirectory: Bool, ring: Int,
+         start: Double, end: Double, isAggregate: Bool = false) {
+        self.url = url
+        self.name = name
+        self.bytes = bytes
+        self.isDirectory = isDirectory
+        self.ring = ring
+        self.start = start
+        self.end = end
+        self.isAggregate = isAggregate
+    }
 
     var sweep: Double { end - start }
 
@@ -269,7 +353,8 @@ enum SunburstLayout {
             if sweep > 0 {
                 result.append(SunburstSegment(
                     url: node.url, name: "smaller items", bytes: hidden,
-                    isDirectory: true, ring: ring + 1, start: cursor, end: cursor + sweep
+                    isDirectory: true, ring: ring + 1, start: cursor, end: cursor + sweep,
+                    isAggregate: true
                 ))
             }
         }

@@ -239,7 +239,7 @@ enum FolderCompare {
                             + "Copying a file over it would delete the folder and everything in it.",
                     ])
                 }
-                _ = try manager.replaceItemAt(plan.destination, withItemAt: copyToStaging(plan.source))
+                try replaceItem(at: plan.destination, with: plan.source)
             } else {
                 try manager.copyItem(at: plan.source, to: plan.destination)
             }
@@ -250,13 +250,29 @@ enum FolderCompare {
 
     /// `replaceItemAt` consumes the item it is given, so it must never be
     /// handed the source file itself — that would move the original out of the
-    /// folder being copied from.
-    private static func copyToStaging(_ source: URL) throws -> URL {
-        let staging = FileManager.default.temporaryDirectory
-            .appendingPathComponent("soquel-sync-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+    /// folder being copied from. The stand-in copy is staged with
+    /// `.itemReplacementDirectory`, which is the only way to be sure it lands
+    /// on the destination's own volume.
+    ///
+    /// It used to be staged in `temporaryDirectory`, which is always on the
+    /// boot volume: replacing a file on an external drive or a network mount
+    /// then failed with POSIX 18, "Cross-device link", so syncing to anywhere
+    /// but the boot volume copied the files that did not exist yet and threw
+    /// on the first overwrite, abandoning the rest of the run.
+    private static func replaceItem(at destination: URL, with source: URL) throws {
+        let manager = FileManager.default
+        let staging = try manager.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: destination,
+            create: true
+        )
+        // replaceItemAt consumes the item but not the directory holding it, and
+        // a throw part-way leaves the whole copy behind, so removal is ours on
+        // both paths.
+        defer { try? manager.removeItem(at: staging) }
         let copy = staging.appendingPathComponent(source.lastPathComponent)
-        try FileManager.default.copyItem(at: source, to: copy)
-        return copy
+        try manager.copyItem(at: source, to: copy)
+        _ = try manager.replaceItemAt(destination, withItemAt: copy)
     }
 }

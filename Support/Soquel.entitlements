@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Not sandboxed. A file manager that can only see what a file picker
+         handed it is not a file manager, and the sandbox has no way to grant
+         "the whole disk" the way Full Disk Access does. -->
+
+    <!-- Opening the current folder in Terminal, or a file in an editor, sends
+         an Apple event to that application. Under the hardened runtime that is
+         refused without this. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

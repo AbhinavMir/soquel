@@ -214,27 +214,25 @@ final class FileSearch {
         lock.lock(); generation += 1; lock.unlock()
     }
 
-    /// Builds the matcher, or returns nil when a regular expression does not
-    /// compile — the caller shows the error rather than searching for nothing.
+    /// Checks the query text without building anything, so a caller can show
+    /// the error before it starts a search.
     static func compile(_ query: Query) -> Result<Void, Error> {
-        guard query.matching == .regex else { return .success(()) }
-        do {
-            _ = try NSRegularExpression(pattern: query.text, options: query.caseSensitive ? [] : [.caseInsensitive])
-            return .success(())
-        } catch {
-            return .failure(error)
-        }
+        matcher(for: query).map { _ in () }
     }
 
-    private static func matcher(for query: Query) -> Matcher? {
+    /// Builds the matcher, or the error the pattern failed with.
+    ///
+    /// This used to swallow the `NSRegularExpression` failure with `try?` and
+    /// return nil, which left every caller with a bare "no matcher" and nothing
+    /// to say about why. Carrying the error is what lets `run` report a pattern
+    /// error rather than a search that found nothing.
+    private static func matcher(for query: Query) -> Result<Matcher, Error> {
         let text = query.caseSensitive ? query.text : query.text.lowercased()
         switch query.matching {
         case .contains:
-            return .substring(text)
+            return .success(.substring(text))
         case .regex:
-            let options: NSRegularExpression.Options = query.caseSensitive ? [] : [.caseInsensitive]
-            guard let expression = try? NSRegularExpression(pattern: query.text, options: options) else { return nil }
-            return .regex(expression)
+            return regularExpression(pattern: query.text, caseSensitive: query.caseSensitive)
         case .glob:
             // A glob is a regex with two wildcards; translating keeps one engine.
             var pattern = "^"
@@ -246,14 +244,21 @@ final class FileSearch {
                 }
             }
             pattern += "$"
-            let options: NSRegularExpression.Options = query.caseSensitive ? [] : [.caseInsensitive]
-            guard let expression = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
-            return .regex(expression)
+            return regularExpression(pattern: pattern, caseSensitive: query.caseSensitive)
         }
     }
 
-    /// Roots to walk for a scope. "Everywhere" means the whole filesystem plus
-    /// mounted volumes, not just the home folder.
+    private static func regularExpression(pattern: String, caseSensitive: Bool) -> Result<Matcher, Error> {
+        let options: NSRegularExpression.Options = caseSensitive ? [] : [.caseInsensitive]
+        do {
+            return .success(.regex(try NSRegularExpression(pattern: pattern, options: options)))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Roots to walk for a scope. "Everywhere" means the whole filesystem,
+    /// mounted volumes included, not just the home folder.
     static func roots(for query: Query) -> [URL] {
         switch query.scope {
         case .folder:
@@ -261,13 +266,14 @@ final class FileSearch {
         case .home:
             return [FileManager.default.homeDirectoryForCurrentUser]
         case .everywhere:
-            var roots = [URL(fileURLWithPath: "/")]
-            let volumes = FileManager.default.mountedVolumeURLs(
-                includingResourceValuesForKeys: nil, options: [.skipHiddenVolumes]
-            ) ?? []
-            // "/" already covers the boot volume; other mounts are separate trees.
-            roots.append(contentsOf: volumes.filter { $0.path != "/" })
-            return roots
+            // Every volume is mounted at a path below "/" — an external drive at
+            // "/Volumes/Foo" — and `FileManager.enumerator` crosses mount points,
+            // so one walk of "/" already reaches all of them. Adding the entries
+            // from `mountedVolumeURLs` as extra roots, as this used to, walked
+            // each attached volume a second time: every hit on it appeared twice,
+            // `examined` counted it twice, and the result limit was reached
+            // halfway through the filesystem while reporting the cap as a total.
+            return [URL(fileURLWithPath: "/")]
         }
     }
 
@@ -307,8 +313,20 @@ final class FileSearch {
             return
         }
 
-        guard let matcher = Self.matcher(for: query) else {
-            finished(Summary())
+        let matcher: Matcher
+        switch Self.matcher(for: query) {
+        case .success(let built):
+            matcher = built
+        case .failure(let error):
+            // A pattern that does not compile used to finish with a default
+            // Summary — nothing found, nothing examined, nothing said — which
+            // the panel prints as "No matches in 0 items", indistinguishable
+            // from a search that ran and came back empty. `SearchWindowController`
+            // escapes it only because it calls `compile` first; a saved search
+            // restored from disk with a broken pattern does not.
+            var summary = Summary()
+            summary.notes.append("pattern error: \(error.localizedDescription)")
+            finished(summary)
             return
         }
         let roots = Self.roots(for: query)
@@ -340,17 +358,26 @@ final class FileSearch {
 
                 while let candidate = enumerator?.nextObject() as? URL {
                     if !self.isCurrent(token) { summary.cancelled = true; break outer }
-                    summary.examined += 1
-
-                    if let limit = query.maximumDepth,
-                       candidate.standardizedFileURL.pathComponents.count - rootDepth > limit {
-                        enumerator?.skipDescendants()
-                        continue
-                    }
 
                     let values = try? candidate.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
                     let isDirectory = values?.isDirectory ?? false
                     let name = candidate.lastPathComponent
+
+                    if let limit = query.maximumDepth {
+                        // Counted from this root, so a direct child sits at 1.
+                        let depth = candidate.standardizedFileURL.pathComponents.count - rootDepth
+                        // Pruning belongs at the parent, on the directory that
+                        // sits at the limit. This used to wait for the
+                        // enumerator to hand over an entry that was already
+                        // past the limit and skip descendants only then, so a
+                        // whole level below the limit was enumerated, stat'd
+                        // and — because `examined` was incremented before the
+                        // check — counted as searched. The depth test remains
+                        // the rule; `skipDescendants` is what keeps the
+                        // enumerator from producing those entries at all.
+                        if isDirectory, depth >= limit { enumerator?.skipDescendants() }
+                        if depth > limit { continue }
+                    }
 
                     if let ignores {
                         // A nested .gitignore only applies below itself, so it
@@ -364,6 +391,13 @@ final class FileSearch {
                             continue
                         }
                     }
+
+                    // Counted after the filters rather than at the top of the
+                    // loop: an entry past the depth limit is outside what was
+                    // asked for, and an ignored one is already reported on its
+                    // own line, so counting either here would put paths nobody
+                    // searched into the total the panel prints.
+                    summary.examined += 1
 
                     switch query.mode {
                     case .meaning:
@@ -448,9 +482,11 @@ final class FileSearch {
         return .noMatch
     }
 
-    /// Exposed for tests: matches a single name against a query.
+    /// Exposed for tests: matches a single name against a query. A pattern that
+    /// does not compile matches nothing here; callers that need to tell that
+    /// apart from a genuine miss go through `compile` or `run`.
     static func matches(name: String, query: Query) -> Bool {
-        guard let matcher = matcher(for: query) else { return false }
+        guard case .success(let matcher) = matcher(for: query) else { return false }
         return matcher.matches(query.caseSensitive ? name : name.lowercased())
     }
 }

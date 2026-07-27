@@ -90,6 +90,11 @@ final class SidebarViewController: NSViewController {
     /// The folder the tree is working its way down to, held while the levels
     /// load one at a time.
     fileprivate var pendingReveal: URL?
+    /// Set while reveal() moves the selection itself. AppKit posts
+    /// selectionDidChange for a programmatic selection exactly as it does for a
+    /// click, and reveal() runs because the pane has already moved, so the row
+    /// it highlights must not be handed back to the delegate as a fresh choice.
+    private var isRevealingSelection = false
 
     /// Internal drag type for reordering pinned items.
     private static let itemDragType = NSPasteboard.PasteboardType("app.soquel.sidebarItem")
@@ -498,12 +503,29 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard let node = outline.item(atRow: outline.selectedRow) as? SidebarNode else { return }
+        report(selectionOf: node)
+    }
+
+    /// Passes a selected row on to the delegate, which navigates the focused
+    /// pane to it. A selection the sidebar made itself is dropped: it came from
+    /// the pane in the first place, and sending it back navigates the pane a
+    /// second time and pushes a back-history entry for a folder it never left.
+    func report(selectionOf node: SidebarNode) {
+        guard !isRevealingSelection else { return }
         if case .savedSearch(let search) = node.kind {
             delegate?.sidebar(self, run: search)
             return
         }
         guard let url = node.url else { return }
         delegate?.sidebar(self, didSelect: url)
+    }
+
+    /// Runs `body` with selection changes kept from the delegate.
+    func suppressingSelectionReports(_ body: () -> Void) {
+        let wasSuppressed = isRevealingSelection
+        isRevealingSelection = true
+        defer { isRevealingSelection = wasSuppressed }
+        body()
     }
 
     /// Loads a tree folder's children the first time it opens. The listing is
@@ -534,45 +556,76 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         return true
     }
 
+    /// What walking the tree towards a folder found.
+    struct RevealWalk {
+        /// The nodes on the way down, root first. Each is opened.
+        var open: [SidebarNode] = []
+        /// The first node on the way down whose children have not been read
+        /// yet. The walk stops there and resumes when the load calls back.
+        var pending: SidebarNode?
+        /// The node for the folder itself, set only when the walk reached the
+        /// end of the chain.
+        var target: SidebarNode?
+    }
+
+    /// Walks `chain` down from `level`, collecting the nodes to open.
+    ///
+    /// `target` stays nil when the chain runs out early. The tree cannot show
+    /// every folder: a hidden one is absent while hidden files are off, and a
+    /// folder made after its parent was expanded is absent from that parent's
+    /// cached children, which are never re-read. This used to fall back to the
+    /// last ancestor it did find, and reveal() selected that ancestor, which
+    /// navigated the focused pane back up out of the folder just entered.
+    static func revealWalk(chain: [URL], from level: [SidebarNode]) -> RevealWalk {
+        var walk = RevealWalk()
+        var level = level
+
+        for step in chain {
+            guard let node = level.first(where: {
+                $0.url?.standardizedFileURL == step.standardizedFileURL
+            }) else { return walk }
+            walk.open.append(node)
+            if !node.childrenLoaded {
+                walk.pending = node
+                return walk
+            }
+            level = node.children
+        }
+
+        walk.target = walk.open.last
+        return walk
+    }
+
     /// Opens the tree down to `url` and selects it, so the tree follows the
     /// pane rather than drifting out of step with it.
     func reveal(_ url: URL) {
         guard Prefs.showFolderTree else { return }
-        pendingReveal = url
-        let chain = FolderTree.chain(to: url)
         guard let treeGroup = roots.first(where: {
             if case .systemGroup(let title) = $0.kind { return title == "Folders" }
             return false
         }) else { return }
 
+        pendingReveal = url
         outline.expandItem(treeGroup)
-        var level = treeGroup.children
-        var matched: SidebarNode?
 
-        for step in chain {
-            guard let node = level.first(where: { $0.url?.standardizedFileURL == step.standardizedFileURL })
-            else { break }
-            matched = node
-            if !node.childrenLoaded {
-                // Expanding starts the load; the completion calls back into
-                // here to take the next step down.
-                outline.expandItem(node)
-                return
-            }
-            outline.expandItem(node)
-            level = node.children
-        }
+        let walk = Self.revealWalk(chain: FolderTree.chain(to: url), from: treeGroup.children)
+        for node in walk.open { outline.expandItem(node) }
 
-        // The chain ran to the end, so there is nothing left to wait for.
+        // Expanding started that node's load; the completion calls back into
+        // here to take the next step down.
+        if walk.pending != nil { return }
+
+        // Either the folder was reached or the tree cannot show it. Nothing
+        // further is going to arrive for this one.
         pendingReveal = nil
 
-        if let matched {
-            let row = outline.row(forItem: matched)
-            if row >= 0 {
-                outline.selectRowIndexes([row], byExtendingSelection: false)
-                outline.scrollRowToVisible(row)
-            }
+        guard let target = walk.target else { return }
+        let row = outline.row(forItem: target)
+        guard row >= 0 else { return }
+        suppressingSelectionReports {
+            outline.selectRowIndexes([row], byExtendingSelection: false)
         }
+        outline.scrollRowToVisible(row)
     }
 
     func outlineViewItemDidCollapse(_ notification: Notification) {
@@ -691,15 +744,23 @@ enum IconPicker {
         grid.translatesAutoresizingMaskIntoConstraints = false
 
         // A row of one-click symbols; the field stays available for anything else.
+        let setter = FieldSetter(field: field)
         for symbol in SidebarIcon.suggestedSymbols.prefix(12) {
             let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)
                                     ?? NSImage(), target: nil, action: nil)
             button.bezelStyle = .smallSquare
             button.isBordered = false
             button.setAccessibilityLabel(symbol)
-            button.target = FieldSetter.shared
+            // The symbol travels on the button. It used to be looked up in a
+            // process-wide table keyed by ObjectIdentifier(button), i.e. the
+            // button's address, which neither retained the buttons nor dropped
+            // their entries when the alert went away. A later run whose buttons
+            // were allocated at addresses the previous run had freed matched
+            // the stale entries, so clicking a symbol wrote into a text field
+            // that was no longer on screen.
+            button.identifier = NSUserInterfaceItemIdentifier(symbol)
+            button.target = setter
             button.action = #selector(FieldSetter.set(_:))
-            FieldSetter.shared.register(button: button, symbol: symbol, field: field)
             grid.addArrangedSubview(button)
         }
 
@@ -711,24 +772,28 @@ enum IconPicker {
         alert.accessoryView = stack
         alert.window.initialFirstResponder = field
 
-        switch alert.runModal() {
+        // A control does not retain its target, so this run's setter is held
+        // for as long as its buttons are on screen.
+        let response = withExtendedLifetime(setter) { alert.runModal() }
+
+        switch response {
         case .alertFirstButtonReturn: return field.stringValue.trimmingCharacters(in: .whitespaces)
         case .alertSecondButtonReturn: return ""
         default: return nil
         }
     }
 
-    /// Routes a symbol button back into the text field.
+    /// Routes a symbol button back into the text field. One setter per run of
+    /// the picker: it holds that run's field, and goes when the run does.
     final class FieldSetter: NSObject {
-        static let shared = FieldSetter()
-        private var mapping: [ObjectIdentifier: (String, NSTextField)] = [:]
+        private let field: NSTextField
 
-        func register(button: NSButton, symbol: String, field: NSTextField) {
-            mapping[ObjectIdentifier(button)] = (symbol, field)
+        init(field: NSTextField) {
+            self.field = field
         }
 
         @objc func set(_ sender: NSButton) {
-            guard let (symbol, field) = mapping[ObjectIdentifier(sender)] else { return }
+            guard let symbol = sender.identifier?.rawValue, !symbol.isEmpty else { return }
             field.stringValue = symbol
         }
     }

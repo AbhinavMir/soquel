@@ -152,7 +152,7 @@ final class SunburstView: NSView {
         let midAngle = (segment.start + segment.end) / 2
         let hue = CGFloat(midAngle / (2 * .pi))
         let depth = CGFloat(segment.ring)
-        let saturation: CGFloat = segment.name == "smaller items" ? 0.05 : max(0.30, 0.72 - depth * 0.07)
+        let saturation: CGFloat = segment.isAggregate ? 0.05 : max(0.30, 0.72 - depth * 0.07)
         let brightness: CGFloat = min(0.95, 0.55 + depth * 0.08)
         let base = NSColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
         return segment == highlighted ? base.blended(withFraction: 0.25, of: .white) ?? base : base
@@ -197,8 +197,11 @@ final class SunburstView: NSView {
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let found = segment(at: point), found.isDirectory else { return }
-        // "smaller items" is a sum, not a folder, so there is nothing to enter.
-        guard found.name != "smaller items" else { return }
+        // The aggregate wedge is a sum, not a folder, so there is nothing to
+        // enter. It is recognised by its flag: matching on the name "smaller
+        // items" also caught a folder genuinely called that, which then could
+        // not be opened at all.
+        guard !found.isAggregate else { return }
         onDescend?(found.url)
     }
 

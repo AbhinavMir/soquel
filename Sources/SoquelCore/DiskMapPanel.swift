@@ -144,9 +144,13 @@ final class DiskMapPanelController: NSWindowController {
     }
 
     private var scanRoot: URL?
+    /// Where the rings were pointed when a rescan started, so the same place
+    /// can be found again in the tree the rescan builds.
+    private var pendingTrail: [String] = []
 
-    private func start(_ url: URL) {
+    private func start(_ url: URL, keepingPlace: Bool = false) {
         scanRoot = url
+        pendingTrail = keepingPlace ? (focus?.trail ?? []) : []
         root = nil
         focus = nil
         sunburst.clear()
@@ -170,13 +174,18 @@ final class DiskMapPanelController: NSWindowController {
                 return
             }
             self.root = node
-            self.setFocus(node)
+            // Back to where the rings were before the rescan, as far down as
+            // the tree still goes. A rescan used to re-centre on the scan root,
+            // so trashing one file five levels inside ~/Library/Caches left the
+            // user back at ~/ with the drill-down thrown away.
+            self.setFocus(node.descendant(along: self.pendingTrail))
+            self.pendingTrail = []
         }
     }
 
     @objc private func rescan(_ sender: Any?) {
         guard let scanRoot else { return }
-        start(scanRoot)
+        start(scanRoot, keepingPlace: true)
     }
 
     @objc private func goOut(_ sender: Any?) {
@@ -204,9 +213,23 @@ final class DiskMapPanelController: NSWindowController {
         sunburst.show(node)
         upButton.isEnabled = node.parent != nil
         breadcrumb.stringValue = node.url.path
-        detail.stringValue = "\(Self.byteFormatter.string(fromByteCount: node.bytes)) · "
-            + "\(node.fileCount) file\(node.fileCount == 1 ? "" : "s")"
+        detail.stringValue = Self.summary(for: node)
         rebuildList(for: node)
+    }
+
+    /// The line under the rings.
+    ///
+    /// A scan that could not read everything says so. Without it the total
+    /// reads as the answer when it is only a floor, and it is the number
+    /// someone is looking at while deciding what to throw away.
+    static func summary(for node: DiskMap.Node) -> String {
+        var text = "\(byteFormatter.string(fromByteCount: node.bytes)) · "
+            + "\(node.fileCount) file\(node.fileCount == 1 ? "" : "s")"
+        if node.unreadableCount > 0 {
+            text += " · \(node.unreadableCount) item\(node.unreadableCount == 1 ? "" : "s") "
+                + "could not be read, so the total is a minimum"
+        }
+        return text
     }
 
     private func describe(_ segment: SunburstSegment?) {
@@ -221,8 +244,7 @@ final class DiskMapPanelController: NSWindowController {
     }
 
     private func setFocusDetailOnly(_ node: DiskMap.Node) {
-        detail.stringValue = "\(Self.byteFormatter.string(fromByteCount: node.bytes)) · "
-            + "\(node.fileCount) file\(node.fileCount == 1 ? "" : "s")"
+        detail.stringValue = Self.summary(for: node)
     }
 
     // MARK: - The list beside it
@@ -324,7 +346,11 @@ final class DiskMapPanelController: NSWindowController {
     // MARK: - Acting on what is found
 
     private func showMenu(for segment: SunburstSegment, at point: NSPoint) {
-        guard segment.name != "smaller items" else { return }
+        // The aggregate wedge carries its parent's URL, so every item in this
+        // menu would act on the parent — Move to Trash included. It is spotted
+        // by its flag rather than by its name, which used to leave a folder
+        // genuinely called "smaller items" with no menu at all.
+        guard !segment.isAggregate else { return }
         let menu = NSMenu()
 
         let show = NSMenuItem(title: "Show in Soquel", action: #selector(revealHere(_:)), keyEquivalent: "")

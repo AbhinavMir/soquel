@@ -41,6 +41,15 @@ final class TransferJob {
     /// anything.
     private(set) var bytesPerSecond: Double = 0
 
+    /// The file named by the most recent `recordFailure`, cleared by the next
+    /// `advance`. The copy loop reports a failure by recording it and then
+    /// calling `advance` with zero bytes, so that the panel keeps naming the
+    /// file it was working on. `advance` used to count every named file as
+    /// copied, which meant a job where all ten files failed still summarised
+    /// itself as "10 of 10 failed — 10 copied": a reading a user could act on
+    /// by deleting sources that never arrived.
+    private var justFailedFile: String?
+
     init(sources: [URL], destination: URL, isMove: Bool, now: Date) {
         self.sources = sources
         self.destination = destination
@@ -83,7 +92,12 @@ final class TransferJob {
 
     func advance(bytes: Int64, file: String?, now: Date) {
         bytesCopied += bytes
-        if file != nil { filesCopied += 1 }
+        // A named file counts as copied unless this is the zero-byte report of
+        // the failure just recorded against that same name. Matching on both
+        // the pending failure and the name keeps a later file that happens to
+        // share a name with a failed one from being lost from the count.
+        if let file, file != justFailedFile { filesCopied += 1 }
+        justFailedFile = nil
         currentFile = file
         if let startedAt {
             let elapsed = now.timeIntervalSince(startedAt)
@@ -95,6 +109,7 @@ final class TransferJob {
     /// unreadable file must not abandon the other nine hundred.
     func recordFailure(_ url: URL, _ message: String) {
         failures.append((url, message))
+        justFailedFile = url.lastPathComponent
     }
 
     func pause() { if state == .running { state = .paused } }

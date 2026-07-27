@@ -211,15 +211,21 @@ final class SemanticIndex {
     /// out the part that makes this different from the contents search.
     static let literalWeight: Float = 0.25
 
+    /// The alphanumeric words of a piece of text, lowercased.
+    ///
+    /// The query and the text being scored are cut on the same boundaries, so
+    /// a term either is one of the words or is not there at all.
+    private static func words(in text: String) -> [String] {
+        text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+    }
+
     /// The words in a query, lowercased, with the ones too common to carry
     /// meaning dropped.
     static func terms(of text: String) -> [String] {
         let stop: Set<String> = ["the", "a", "an", "of", "for", "in", "on", "to", "and",
                                  "or", "is", "are", "was", "were", "with", "from", "by",
                                  "at", "as", "it", "this", "that", "my", "our", "your"]
-        return text.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { $0.count > 2 && !stop.contains($0) }
+        return words(in: text).filter { $0.count > 2 && !stop.contains($0) }
     }
 
     /// Whether `path` is `folder` itself or something inside it.
@@ -236,11 +242,18 @@ final class SemanticIndex {
     /// What fraction of the query's words appear in this text, counting the
     /// file's own name — a file called berlin-revenue.txt is about Berlin
     /// revenue whatever its contents say.
+    ///
+    /// A word at a time, not a substring. `contains` scored a query of "car" a
+    /// full 1.0 against a passage whose only mention was "scar" or "discard",
+    /// and "art" against "start"; a quarter of a point of invented score is
+    /// enough to lift such a passage above one that genuinely matches.
     static func literalScore(terms: [String], passage: String, path: String) -> Float {
         guard !terms.isEmpty else { return 0 }
-        let name = (path as NSString).lastPathComponent.lowercased()
-        let body = passage.lowercased()
-        let hits = terms.filter { body.contains($0) || name.contains($0) }.count
+        // The name is cut on the same boundaries, so berlin-revenue.txt offers
+        // "berlin" and "revenue" as words of their own.
+        var vocabulary = Set(words(in: passage))
+        vocabulary.formUnion(words(in: (path as NSString).lastPathComponent))
+        let hits = terms.filter { vocabulary.contains($0) }.count
         return Float(hits) / Float(terms.count)
     }
 
