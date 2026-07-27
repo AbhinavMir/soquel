@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Soquel — Build Control Center</title>
+<style>
+  :root {
+    --bg: #F5F5F7; --surface: #FFFFFF; --surface2: #EDEDF0; --ink: #1D1D1F;
+    --muted: #6E6E73; --line: #D9D9DE; --accent: #0A6CFF; --ok: #1F8A4C;
+    --run: #C77700; --fail: #C3362B; --pending: #8E8E93;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1C1C1E; --surface: #2C2C2E; --surface2: #3A3A3C; --ink: #F2F2F4;
+      --muted: #98989F; --line: #48484A; --accent: #4CA0FF; --ok: #4CC38A;
+      --run: #E5A544; --fail: #E5645A; --pending: #7C7C82;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    margin: 0; padding: 28px 18px 48px;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.86em;
+    background: var(--surface2); border-radius: 4px; padding: 1px 5px;
+  }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .project-sub { color: var(--muted); font-size: 14px; }
+  .status-pill {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
+    background: color-mix(in srgb, var(--tone, var(--run)) 15%, transparent); color: var(--tone, var(--run));
+  }
+  .status-pill.running { --tone: var(--run); }
+  .status-pill.done { --tone: var(--ok); }
+  .status-pill.blocked { --tone: var(--fail); }
+  .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .status-pill.running .dot { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .status-pill.running .dot { animation: none; } }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 640px) { .stats { grid-template-columns: 1fr 1fr; } }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
+  .stat .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .stat .value { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .stat .value.ok { color: var(--ok); }
+  .stat .value.run { color: var(--run); }
+  .stat .value.fail { color: var(--fail); }
+  .stat .value.dim { color: var(--muted); font-weight: 500; font-size: 15px; }
+
+  .grid { display: grid; grid-template-columns: 288px 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 15px 17px; }
+  .card h2 {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin: 0 0 11px;
+  }
+  ol.phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  ol.phases li { display: flex; gap: 10px; align-items: flex-start; padding: 6px 8px; border-radius: 6px; }
+  ol.phases li.active { background: var(--surface2); }
+  .ph-mark {
+    flex: none; width: 20px; height: 20px; border-radius: 50%; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .done   .ph-mark { background: var(--ok); color: var(--surface); }
+  .active .ph-mark { background: var(--run); color: var(--surface); }
+  .pending .ph-mark { background: transparent; color: var(--pending); box-shadow: inset 0 0 0 1.5px var(--pending); }
+  .ph-name { font-weight: 600; font-size: 14px; }
+  .pending .ph-name { color: var(--muted); font-weight: 500; }
+  .ph-note { font-size: 12.5px; color: var(--muted); }
+
+  ul.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  ul.log li {
+    display: flex; gap: 11px; padding: 7px 2px; border-top: 1px solid var(--line);
+    font-size: 13.5px; align-items: baseline;
+  }
+  ul.log li:first-child { border-top: none; }
+  ul.log li.fresh { animation: slidein .35s ease-out; }
+  @keyframes slidein { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { ul.log li.fresh { animation: none; } }
+  .log time {
+    flex: none; color: var(--muted); font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  }
+  .log .tag { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; width: 32px; }
+  .tag.ok { color: var(--ok); } .tag.run { color: var(--run); }
+  .tag.info { color: var(--accent); } .tag.fail { color: var(--fail); }
+
+  footer { color: var(--muted); font-size: 12.5px; display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
+  #conn { display: inline-flex; align-items: center; gap: 6px; }
+  #conn::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  #conn.stale::before { background: var(--fail); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Soquel</h1>
+    <span class="project-sub">open-source macOS file manager — build status</span>
+    <span class="status-pill running" id="pill"><span class="dot"></span><span id="pill-text">Connecting</span></span>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="grid">
+    <div class="card"><h2>Phases</h2><ol class="phases" id="phases"></ol></div>
+    <div class="card"><h2>Activity</h2><ul class="log" id="log"></ul></div>
+  </div>
+
+  <footer>
+    <span>Repo <code>~/Code/soquel</code></span>
+    <span>Swift · AppKit · SwiftPM</span>
+    <span id="conn">live</span>
+    <span id="updated"></span>
+  </footer>
+</div>
+
+<script>
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// `backticks` become <code> after escaping, so page data can never inject markup.
+const fmt = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+
+let lastSerial = null;
+let seenLog = new Set();
+let firstRender = true;
+
+function render(d) {
+  document.getElementById('stats').innerHTML = (d.stats || []).map(s =>
+    `<div class="stat"><div class="label">${esc(s.label)}</div>` +
+    `<div class="value ${esc(s.tone || '')}">${esc(s.value)}</div></div>`
+  ).join('');
+
+  document.getElementById('phases').innerHTML = (d.phases || []).map((p, i) =>
+    `<li class="${esc(p.state)}"><span class="ph-mark">${p.state === 'done' ? '&#10003;' : i + 1}</span>` +
+    `<div class="ph-body"><div class="ph-name">${esc(p.name)}</div>` +
+    `<div class="ph-note">${fmt(p.note || '')}</div></div></li>`
+  ).join('');
+
+  document.getElementById('log').innerHTML = (d.log || []).map(e => {
+    const id = e.time + '|' + e.text;
+    const fresh = !firstRender && !seenLog.has(id) ? ' fresh' : '';
+    seenLog.add(id);
+    return `<li class="${fresh.trim()}"><time>${esc(e.time)}</time>` +
+      `<span class="tag ${esc(e.tag)}">${esc(e.tag.toUpperCase())}</span>` +
+      `<span>${fmt(e.text)}</span></li>`;
+  }).join('');
+
+  const pill = document.getElementById('pill');
+  pill.className = 'status-pill ' + esc(d.status || 'running');
+  document.getElementById('pill-text').textContent = d.statusLabel || 'In progress';
+  document.getElementById('updated').textContent = 'updated ' + (d.updated || '');
+  document.title = (d.status === 'done' ? '✓ ' : '') + 'Soquel — Build Control Center';
+  firstRender = false;
+}
+
+async function poll() {
+  try {
+    // The custom header keeps ngrok's free-tier interstitial off the polled JSON.
+    const r = await fetch('status.json?t=' + Date.now(), {
+      cache: 'no-store',
+      headers: { 'ngrok-skip-browser-warning': '1' }
+    });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const serial = JSON.stringify(d);
+    if (serial !== lastSerial) { lastSerial = serial; render(d); }
+    document.getElementById('conn').classList.remove('stale');
+    document.getElementById('conn').textContent = 'live';
+  } catch (e) {
+    document.getElementById('conn').classList.add('stale');
+    document.getElementById('conn').textContent = 'reconnecting';
+  }
+}
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

@@ -1,0 +1,478 @@
+import AppKit
+
+protocol PaneDelegate: AnyObject {
+    func pane(_ pane: PaneViewController, openInOppositePane url: URL)
+    func paneDidFocus(_ pane: PaneViewController)
+    func pane(_ pane: PaneViewController, didReportStatus text: String)
+    func pane(_ pane: PaneViewController, didChangeSelection urls: [URL])
+    func paneDidChangeTabs(_ pane: PaneViewController)
+}
+
+/// A pane owns a stack of tabs, a breadcrumb path bar, and the visible file list.
+final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldDelegate {
+    weak var delegate: PaneDelegate?
+
+    private(set) var tabs: [FileListViewController] = []
+    private(set) var activeIndex = 0
+
+    var activeList: FileListViewController? {
+        tabs.indices.contains(activeIndex) ? tabs[activeIndex] : nil
+    }
+
+    /// Identity in the window's pane tree, which is what the tree stores
+    /// rather than an index that shifts as panes come and go.
+    let id = UUID()
+
+    var currentURL: URL? { activeList?.url }
+
+    private var tabBar: NSStackView!
+    private var tabBarScroll: NSScrollView!
+    private var pathBar: NSStackView!
+    private var pathBarScroll: NSScrollView!
+    private var pathField: NSTextField!
+    private var toolbar: PaneToolbarView!
+    private var filterField: NSSearchField!
+    private var toolbarObserver: NSObjectProtocol?
+    /// Column view replaces the list entirely, so it lives beside it here
+    /// rather than inside the list controller's own layout.
+    private var columnBrowser: ColumnBrowserView!
+    private var contentView: NSView!
+    private var focusIndicator: NSView!
+
+    private var isFocused = false
+
+    init(url: URL) {
+        super.init(nibName: nil, bundle: nil)
+        tabs = [makeList(url: url)]
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    // MARK: - Construction
+
+    private func makeList(url: URL) -> FileListViewController {
+        let list = FileListViewController(url: url)
+        list.delegate = self
+        return list
+    }
+
+    override func loadView() {
+        let container = ThemedContainerView()
+        container.wantsLayer = true
+        container.onAppearanceChange = { [weak self] in self?.applyTheme() }
+
+        focusIndicator = NSView()
+        focusIndicator.wantsLayer = true
+        focusIndicator.layer?.backgroundColor = Theme.accent.cgColor
+        focusIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        tabBar = NSStackView()
+        tabBar.orientation = .horizontal
+        tabBar.spacing = 2
+        tabBar.edgeInsets = NSEdgeInsets(top: 3, left: 5, bottom: 3, right: 5)
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+
+        tabBarScroll = NSScrollView()
+        tabBarScroll.documentView = tabBar
+        tabBarScroll.hasHorizontalScroller = false
+        tabBarScroll.hasVerticalScroller = false
+        tabBarScroll.drawsBackground = false
+        tabBarScroll.translatesAutoresizingMaskIntoConstraints = false
+
+        // A deep path must scroll inside the pane, never widen the window.
+        pathBar = NSStackView()
+        pathBar.orientation = .horizontal
+        pathBar.spacing = 0
+        pathBar.edgeInsets = NSEdgeInsets(top: 2, left: 6, bottom: 2, right: 6)
+        pathBar.translatesAutoresizingMaskIntoConstraints = false
+
+        // The filter sits at the top, with the toolbar directly beneath it.
+        filterField = NSSearchField()
+        filterField.placeholderString = "Filter this folder"
+        filterField.font = .systemFont(ofSize: 12)
+        filterField.target = self
+        filterField.action = #selector(paneFilterChanged)
+        filterField.sendsSearchStringImmediately = true
+        filterField.setAccessibilityLabel("Filter this folder")
+        filterField.translatesAutoresizingMaskIntoConstraints = false
+
+        toolbar = PaneToolbarView()
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+
+        // Clicking the path bar switches it to a typable field. ⇧⌘G exists, but
+        // the research is clear people expect to click and type, and judge the
+        // modal go-to-folder a worse substitute rather than an equivalent.
+        let pathClick = NSClickGestureRecognizer(target: self, action: #selector(beginEditingPathFromClick))
+        pathClick.numberOfClicksRequired = 1
+
+        pathBarScroll = NSScrollView()
+        pathBarScroll.documentView = pathBar
+        pathBarScroll.hasHorizontalScroller = false
+        pathBarScroll.hasVerticalScroller = false
+        pathBarScroll.drawsBackground = false
+        pathBarScroll.translatesAutoresizingMaskIntoConstraints = false
+        pathBarScroll.addGestureRecognizer(pathClick)
+
+        pathField = NSTextField()
+        pathField.delegate = self
+        pathField.isHidden = true
+        pathField.font = Theme.path
+        pathField.target = self
+        pathField.action = #selector(pathFieldCommitted)
+        pathField.translatesAutoresizingMaskIntoConstraints = false
+
+        contentView = NSView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        columnBrowser = ColumnBrowserView()
+        columnBrowser.translatesAutoresizingMaskIntoConstraints = false
+        columnBrowser.isHidden = true
+        columnBrowser.onOpen = { url in
+            var isDirectory: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            if !isDirectory.boolValue { NSWorkspace.shared.open(url) }
+        }
+        // Column view keeps its own selection, so it has to report it the same
+        // way the table does or the inspector and status bar go stale.
+        columnBrowser.onSelect = { [weak self] url, _ in
+            guard let self else { return }
+            self.activeList?.setColumnSelection([url])
+            self.delegate?.pane(self, didChangeSelection: [url])
+            self.delegate?.pane(self, didReportStatus: url.lastPathComponent)
+        }
+        // Return renames, Space previews, Delete trashes — in columns too.
+        columnBrowser.onKeyDown = { [weak self] event in
+            self?.activeList?.handleKeyDown(event) ?? false
+        }
+
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(focusIndicator)
+        container.addSubview(tabBarScroll)
+        container.addSubview(filterField)
+        container.addSubview(toolbar)
+        container.addSubview(pathBarScroll)
+        container.addSubview(pathField)
+        container.addSubview(divider)
+        container.addSubview(contentView)
+        container.addSubview(columnBrowser)
+
+        NSLayoutConstraint.activate([
+            focusIndicator.topAnchor.constraint(equalTo: container.topAnchor),
+            focusIndicator.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            focusIndicator.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            focusIndicator.heightAnchor.constraint(equalToConstant: Theme.focusBarHeight),
+
+            tabBarScroll.topAnchor.constraint(equalTo: focusIndicator.bottomAnchor),
+            tabBarScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tabBarScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tabBarScroll.heightAnchor.constraint(equalToConstant: 28),
+            tabBar.heightAnchor.constraint(equalTo: tabBarScroll.heightAnchor),
+
+            filterField.topAnchor.constraint(equalTo: tabBarScroll.bottomAnchor, constant: 4),
+            filterField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
+            filterField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
+
+            toolbar.topAnchor.constraint(equalTo: filterField.bottomAnchor, constant: 3),
+            toolbar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            toolbar.heightAnchor.constraint(equalToConstant: 26),
+
+            pathBarScroll.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            pathBarScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
+            pathBarScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            pathBarScroll.heightAnchor.constraint(equalToConstant: 22),
+            pathBar.heightAnchor.constraint(equalTo: pathBarScroll.heightAnchor),
+
+            pathField.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            pathField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
+            pathField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
+            pathField.heightAnchor.constraint(equalToConstant: 22),
+
+            divider.topAnchor.constraint(equalTo: pathBarScroll.bottomAnchor),
+            divider.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+
+            contentView.topAnchor.constraint(equalTo: divider.bottomAnchor),
+            contentView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            contentView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            columnBrowser.topAnchor.constraint(equalTo: divider.bottomAnchor),
+            columnBrowser.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            columnBrowser.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            columnBrowser.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        view = container
+        showActiveTab()
+        applyViewMode()
+        rebuildTabBar()
+        rebuildPathBar()
+        setFocused(false)
+    }
+
+    /// A layer's backgroundColor is a resolved CGColor, so it does not follow a
+    /// theme reload or a light/dark switch on its own.
+    func applyTheme() {
+        guard isViewLoaded else { return }
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            focusIndicator.layer?.backgroundColor = Theme.accent.cgColor
+        }
+        rebuildPathBar()
+        for tab in tabs where tab.isViewLoaded {
+            tab.applyBackground()
+            tab.view.needsDisplay = true
+        }
+        view.needsDisplay = true
+    }
+
+
+    // MARK: - Tabs
+
+    func addTab(url: URL, activate: Bool = true) {
+        let list = makeList(url: url)
+        tabs.append(list)
+        if activate { activeIndex = tabs.count - 1 }
+        showActiveTab()
+        rebuildTabBar()
+        rebuildPathBar()
+        delegate?.paneDidChangeTabs(self)
+    }
+
+    /// Returns false when the last tab would be closed — the window decides
+    /// whether that means closing the pane.
+    @discardableResult
+    func closeActiveTab() -> Bool {
+        guard tabs.count > 1 else { return false }
+        let closing = tabs.remove(at: activeIndex)
+        closing.view.removeFromSuperview()
+        closing.removeFromParent()
+        activeIndex = min(activeIndex, tabs.count - 1)
+        showActiveTab()
+        rebuildTabBar()
+        rebuildPathBar()
+        delegate?.paneDidChangeTabs(self)
+        return true
+    }
+
+    func selectTab(at index: Int) {
+        guard tabs.indices.contains(index), index != activeIndex else { return }
+        activeIndex = index
+        showActiveTab()
+        rebuildTabBar()
+        rebuildPathBar()
+    }
+
+    func nextTab() { selectTab(at: (activeIndex + 1) % max(tabs.count, 1)) }
+    func previousTab() { selectTab(at: (activeIndex - 1 + tabs.count) % max(tabs.count, 1)) }
+
+    private func showActiveTab() {
+        guard let list = activeList else { return }
+        for child in children where child !== list {
+            child.view.removeFromSuperview()
+            child.removeFromParent()
+        }
+        if list.parent !== self {
+            addChild(list)
+            list.view.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(list.view)
+            NSLayoutConstraint.activate([
+                list.view.topAnchor.constraint(equalTo: contentView.topAnchor),
+                list.view.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                list.view.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                list.view.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            ])
+        }
+        if isFocused { list.focusTable() }
+    }
+
+    private func rebuildTabBar() {
+        for sub in tabBar.arrangedSubviews { tabBar.removeArrangedSubview(sub); sub.removeFromSuperview() }
+        tabBarScroll.isHidden = tabs.count < 2
+        guard tabs.count > 1 else { return }
+
+        for (i, list) in tabs.enumerated() {
+            let button = NSButton(title: list.url.lastPathComponent.isEmpty ? "/" : list.url.lastPathComponent,
+                                  target: self, action: #selector(tabButtonClicked(_:)))
+            button.tag = i
+            button.bezelStyle = .recessed
+            button.setButtonType(.pushOnPushOff)
+            button.state = (i == activeIndex) ? .on : .off
+            button.font = .systemFont(ofSize: 11, weight: i == activeIndex ? .semibold : .regular)
+            button.toolTip = list.url.path
+            button.setAccessibilityRole(.radioButton)
+            button.setAccessibilityLabel("Tab \(i + 1) of \(tabs.count): \(list.url.lastPathComponent)")
+            tabBar.addArrangedSubview(button)
+        }
+    }
+
+    @objc private func tabButtonClicked(_ sender: NSButton) {
+        selectTab(at: sender.tag)
+        activeList?.focusTable()
+    }
+
+    // MARK: - Path bar
+
+    private func rebuildPathBar() {
+        for sub in pathBar.arrangedSubviews { pathBar.removeArrangedSubview(sub); sub.removeFromSuperview() }
+        guard let url = currentURL else { return }
+
+        var components: [URL] = []
+        var cursor: URL? = url
+        while let current = cursor {
+            components.append(current)
+            cursor = parentDirectoryURL(of: current)
+        }
+        components.reverse()
+
+        for (i, component) in components.enumerated() {
+            let name = component.lastPathComponent.isEmpty ? "/" : component.lastPathComponent
+            let button = NSButton(title: name, target: self, action: #selector(breadcrumbClicked(_:)))
+            button.bezelStyle = .inline
+            button.isBordered = false
+            let isCurrent = i == components.count - 1
+            button.font = isCurrent ? Theme.pathCurrent : Theme.path
+            button.contentTintColor = isCurrent ? Theme.accent : .secondaryLabelColor
+            button.identifier = NSUserInterfaceItemIdentifier(component.path)
+            pathBar.addArrangedSubview(button)
+            if i < components.count - 1 {
+                let sep = NSTextField(labelWithString: "/")
+                sep.textColor = .tertiaryLabelColor
+                sep.font = Theme.path
+                pathBar.addArrangedSubview(sep)
+            }
+        }
+    }
+
+    @objc private func paneFilterChanged() {
+        activeList?.setFilter(filterField.stringValue)
+    }
+
+    /// Keeps the toolbar's toggle states honest after a command changes one.
+    func refreshToolbar() {
+        // Deferred by one turn of the runloop. A toolbar button's action is
+        // sent from inside the cell's mouse tracking, so rebuilding here frees
+        // the very button that is mid-click and leaves AppKit drawing a view
+        // that no longer exists.
+        DispatchQueue.main.async { [weak self] in self?.toolbar?.rebuild() }
+    }
+
+    /// Shows either the list/icon view or the column browser.
+    func applyViewMode() {
+        guard isViewLoaded else { return }
+        let columns = Prefs.viewMode == .column
+        columnBrowser.isHidden = !columns
+        contentView.isHidden = columns
+        if columns, let url = currentURL, columnBrowser.deepestURL?.standardizedFileURL != url.standardizedFileURL {
+            columnBrowser.show(url)
+        }
+    }
+
+    /// Only an empty stretch of the bar starts editing; a click that landed on
+    /// a breadcrumb button never reaches here.
+    @objc private func beginEditingPathFromClick() {
+        beginEditingPath()
+    }
+
+    @objc private func breadcrumbClicked(_ sender: NSButton) {
+        guard let path = sender.identifier?.rawValue else { return }
+        activeList?.navigate(to: URL(fileURLWithPath: path))
+        activeList?.focusTable()
+    }
+
+    func beginEditingPath() {
+        guard let url = currentURL else { return }
+        pathField.stringValue = url.path
+        pathField.isHidden = false
+        pathBarScroll.isHidden = true
+        view.window?.makeFirstResponder(pathField)
+        pathField.currentEditor()?.selectAll(nil)
+    }
+
+    @objc private func pathFieldCommitted() {
+        // Paths pasted from a terminal often arrive quoted or with a newline.
+        var typed = pathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if typed.count > 1, typed.hasPrefix("'"), typed.hasSuffix("'") { typed = String(typed.dropFirst().dropLast()) }
+        if typed.count > 1, typed.hasPrefix("\""), typed.hasSuffix("\"") { typed = String(typed.dropFirst().dropLast()) }
+        let expanded = (typed as NSString).expandingTildeInPath
+        endEditingPath()
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) else {
+            NSSound.beep()
+            return
+        }
+        let target = URL(fileURLWithPath: expanded)
+        if isDir.boolValue {
+            activeList?.navigate(to: target)
+        } else {
+            NSWorkspace.shared.open(target)
+        }
+        activeList?.focusTable()
+    }
+
+    func endEditingPath() {
+        pathField.isHidden = true
+        pathBarScroll.isHidden = false
+    }
+
+    /// Escape abandons Go to Folder and puts the breadcrumbs back.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard control === pathField, selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        endEditingPath()
+        activeList?.focusTable()
+        return true
+    }
+
+    // MARK: - Focus
+
+    func setFocused(_ focused: Bool) {
+        isFocused = focused
+        // Presence of the bar, not just its colour, carries the focus state.
+        focusIndicator.isHidden = !focused
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            focusIndicator.layer?.backgroundColor = Theme.accent.cgColor
+        }
+        view.setAccessibilityLabel(
+            (focused ? "Focused pane" : "Pane") + ": " + (currentURL?.lastPathComponent ?? "")
+        )
+    }
+
+    func focus() {
+        activeList?.focusTable()
+    }
+
+    // MARK: - FileListDelegate
+
+    func fileList(_ list: FileListViewController, didNavigateTo url: URL) {
+        guard list === activeList else { return }
+        if Prefs.viewMode == .column { columnBrowser.show(url) }
+        rebuildPathBar()
+        rebuildTabBar()
+        delegate?.paneDidChangeTabs(self)
+    }
+
+    func fileList(_ list: FileListViewController, openInNewTab url: URL) {
+        addTab(url: url)
+    }
+
+    func fileList(_ list: FileListViewController, openInOppositePane url: URL) {
+        delegate?.pane(self, openInOppositePane: url)
+    }
+
+    func fileListDidRequestFocus(_ list: FileListViewController) {
+        delegate?.paneDidFocus(self)
+    }
+
+    func fileList(_ list: FileListViewController, didReportStatus text: String) {
+        guard list === activeList else { return }
+        delegate?.pane(self, didReportStatus: text)
+    }
+
+    func fileList(_ list: FileListViewController, didChangeSelection urls: [URL]) {
+        guard list === activeList else { return }
+        delegate?.pane(self, didChangeSelection: urls)
+    }
+}

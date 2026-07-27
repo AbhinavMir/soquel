@@ -1,0 +1,126 @@
+{
+  "updated": "2026-07-26 00:52",
+  "status": "building",
+  "statusLabel": "v0.2 in progress",
+  "stats": [
+    {
+      "label": "Build",
+      "value": "clean",
+      "tone": "ok"
+    },
+    {
+      "label": "Tests",
+      "value": "297 passing",
+      "tone": "ok"
+    },
+    {
+      "label": "App",
+      "value": "installed",
+      "tone": "ok"
+    },
+    {
+      "label": "Views",
+      "value": "list, icon, column",
+      "tone": ""
+    },
+    {
+      "label": "Settings",
+      "value": "settings.json",
+      "tone": "ok"
+    },
+    {
+      "label": "Binary",
+      "value": "1.9 MB",
+      "tone": "dim"
+    }
+  ],
+  "phases": [
+    {
+      "name": "v0.1",
+      "note": "Panes, tabs, list view, file ops, palette, sidebar — 18 review findings fixed",
+      "state": "done"
+    },
+    {
+      "name": "Views",
+      "note": "Icon and column view, archives, metadata columns, workspaces, batch rename",
+      "state": "done"
+    },
+    {
+      "name": "Search",
+      "note": "Modal panel, content search, exclusions exposed, customizable toolbar",
+      "state": "done"
+    },
+    {
+      "name": "Theming",
+      "note": "theme.json, background images with opacity, terminal launcher",
+      "state": "done"
+    },
+    {
+      "name": "Preview",
+      "note": "Quick Look preview and details inspector on the right, ⌥⌘I",
+      "state": "done"
+    },
+    {
+      "name": "Settings file",
+      "note": "Everything in settings.json, hot-reloaded from disk",
+      "state": "done"
+    },
+    {
+      "name": "Compare",
+      "note": "Folder comparison and one-way sync between the two panes",
+      "state": "done"
+    },
+    {
+      "name": "Keyboard",
+      "note": "vi-style preset and .gitignore-aware search",
+      "state": "done"
+    },
+    {
+      "name": "Next",
+      "note": "Nested pane splits, saved searches, selection shelf",
+      "state": "todo"
+    }
+  ],
+  "log": [
+    {
+      "time": "00:52",
+      "tag": "ok",
+      "text": "Keyboard-first preset: j/k move, h/l leave and enter, gg and G jump, ⌃d/⌃u move by half of what is on screen. Handled in the file list, not as menu shortcuts — a menu item keyed to j would swallow the letter in every text field."
+    },
+    {
+      "time": "00:48",
+      "tag": "ok",
+      "text": ".gitignore-aware search, off by default. Nested ignore files, negation, anchoring, ** across directories, and character classes. Verified against git check-ignore itself on a real repository."
+    },
+    {
+      "time": "00:44",
+      "tag": "ok",
+      "text": "Real thumbnails in icon view, generated off the main thread and cached by path, size and modification date. Requests are cancelled on cell reuse so scrolling never paints an image over the wrong file."
+    },
+    {
+      "time": "00:40",
+      "tag": "ok",
+      "text": "Folder compare and sync: pairs two trees by relative path, reports left only / right only / differs / same / type conflict, copies the ticked rows one direction. Quick match is size and date; checksum mode reads both sides in full. 18 new tests."
+    },
+    {
+      "time": "00:24",
+      "tag": "ok",
+      "text": "Column view was keeping its selection to itself, so rename, trash and copy all acted on the hidden table's stale rows. It now mirrors its selection and forwards key events. Rename works in icon and column view through a sheet."
+    },
+    {
+      "time": "00:12",
+      "tag": "fail",
+      "text": "The outer split view had no delegate, so its minimum and maximum widths were never consulted — the sidebar took 480pt and the inspector was squeezed to 26pt. Caught by measuring the real window, not by reading the code."
+    },
+    {
+      "time": "00:05",
+      "tag": "ok",
+      "text": "Every setting moved out of the defaults database into settings.json. Codable values are written as readable nested JSON rather than base64. The directory is watched, so editing the file in any editor takes effect without a restart."
+    },
+    {
+      "time": "23:58",
+      "tag": "ok",
+      "text": "Preview and details panel on the right: Quick Look over kind, size, dates, POSIX permissions, owner, symlink target, extended attributes, and SHA-256 on demand. Hashing on selection would make arrowing through a folder unusable."
+    }
+  ]
+}
