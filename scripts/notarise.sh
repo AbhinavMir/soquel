@@ -11,7 +11,7 @@
 #
 #   xcrun notarytool store-credentials soquel \
 #       --apple-id abhinavmir@icloud.com \
-#       --team-id VC3PV4G2ZC \
+#       --team-id P4ANTPX4G4 \
 #       --password <app-specific-password>
 #
 # The app-specific password comes from appleid.apple.com, not the account
