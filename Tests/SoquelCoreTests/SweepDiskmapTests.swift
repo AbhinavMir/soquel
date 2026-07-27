@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import SoquelCore
 
 /// Three ways the disk map told the user something untrue.

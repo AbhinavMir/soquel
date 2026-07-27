@@ -91,11 +91,19 @@ final class SweepFoldercmpTests: XCTestCase {
         return point
     }
 
-    /// Names the old staging code left in the system temporary directory.
-    private static func stagingLeftovers() -> [String] {
-        let temporary = FileManager.default.temporaryDirectory.path
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: temporary)) ?? []
-        return names.filter { $0.hasPrefix("soquel-sync-") }
+    /// Staging directories left beside the destination.
+    ///
+    /// Looked for next to the destination rather than in the shared temporary
+    /// directory. Staging moved there — `.itemReplacementDirectory` is the only
+    /// way to be sure it lands on the destination's own volume — so the
+    /// temporary directory is now the wrong place to look. It is also shared,
+    /// and anything already in it belongs to some other run, so counting
+    /// everything there reports on state this test does not own and fails on
+    /// any machine carrying litter from an older build.
+    private static func stagingLeftovers(beside destination: URL) -> [String] {
+        let parent = destination.deletingLastPathComponent().path
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: parent)) ?? []
+        return names.filter { $0.contains("Being Saved") || $0.hasPrefix("soquel-sync-") }
     }
 
     private static func contains(_ name: String, under directory: URL) -> Bool {
@@ -161,7 +169,8 @@ final class SweepFoldercmpTests: XCTestCase {
             try String(contentsOf: right.appendingPathComponent("a.txt"), encoding: .utf8),
             "left version"
         )
-        XCTAssertEqual(Self.stagingLeftovers(), [], "a staging folder was left in the temporary directory")
+        XCTAssertEqual(Self.stagingLeftovers(beside: right), [],
+                       "a staging folder was left beside the destination")
     }
 
     /// The staging folder was made before the copy that throws, and nothing
@@ -178,7 +187,8 @@ final class SweepFoldercmpTests: XCTestCase {
         )
         XCTAssertThrowsError(try FolderCompare.apply([plan]))
 
-        XCTAssertEqual(Self.stagingLeftovers(), [], "a staging folder was left in the temporary directory")
+        XCTAssertEqual(Self.stagingLeftovers(beside: right), [],
+                       "a staging folder was left beside the destination")
         XCTAssertEqual(
             try String(contentsOf: right.appendingPathComponent("a.txt"), encoding: .utf8),
             "right version", "a failed replacement destroyed the destination"
