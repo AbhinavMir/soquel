@@ -204,7 +204,11 @@ final class FolderComparePanelController: NSWindowController {
                 self.entries = result
                 // Differences start ticked: the point of opening this is to act
                 // on them, and untangling a fully unticked list is busywork.
-                self.chosen = Set(result.filter { $0.status.isDifference }.map(\.relativePath))
+                // Type conflicts do not: one side is a folder, and syncing over
+                // it would destroy a tree. Those are ticked by hand or not.
+                self.chosen = Set(result
+                    .filter { $0.status.isDifference && $0.status != .typeConflict }
+                    .map(\.relativePath))
                 self.refreshRows()
                 self.setActionsEnabled(true)
             }

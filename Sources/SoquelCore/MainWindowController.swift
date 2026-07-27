@@ -972,8 +972,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// not been, offers to do that rather than returning nothing.
     @objc func menuFindByMeaning(_ sender: Any?) {
         guard let url = focusedList?.url else { return }
+        // Compared as a path: ~/Documents-old is not inside ~/Documents, but it
+        // does start with it, so it was judged already indexed and the search
+        // came back empty with nothing offering to fix it.
         let indexed = SemanticIndex.roots.contains {
-            url.standardizedFileURL.path.hasPrefix($0.standardizedFileURL.path)
+            SemanticIndex.path(url.standardizedFileURL.path, isWithin: $0.standardizedFileURL.path)
         }
         guard indexed else {
             offerToIndex(url)
@@ -1027,6 +1030,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Navigates the focused pane to a file's folder and selects it.
+    /// Points the focused pane at a folder. Used for a folder handed over by
+    /// the system — `reveal` would go to its parent and select it, which is
+    /// not what double-clicking a folder means.
+    func open(folder url: URL) {
+        guard let list = focusedList else { return }
+        list.navigate(to: url)
+        list.focusTable()
+    }
+
     func reveal(_ url: URL) {
         guard let list = focusedList else { return }
         list.navigate(to: url.deletingLastPathComponent())
@@ -1091,10 +1103,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func menuRevealThemes(_ sender: Any?) {
-        try? FileManager.default.createDirectory(
-            at: ThemeLibrary.directoryURL, withIntermediateDirectories: true
-        )
-        NSWorkspace.shared.activateFileViewerSelecting([ThemeLibrary.directoryURL])
+        // One theme file, so this is the same thing as revealing theme.json.
+        guard let url = try? Theme.writeTemplate() else { NSSound.beep(); return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     /// Opens the settings file itself. Pending writes are flushed first, so the

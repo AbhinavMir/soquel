@@ -156,6 +156,38 @@ final class FolderCompareTests: XCTestCase {
         XCTAssertTrue(FolderCompare.plan(entries, direction: .leftToRight, left: left, right: right).isEmpty)
     }
 
+    /// File on one side, folder on the other. Syncing the file across would
+    /// delete the folder and everything in it, while the sheet counted the
+    /// whole tree as one replaced file.
+    func testPlanRefusesToPutAFileWhereAFolderIs() throws {
+        try write("I am a file", to: left, "docs")
+        try write("keep me", to: right, "docs/important.txt")
+
+        let entries = FolderCompare.compare(left: left, right: right)
+        XCTAssertEqual(entry(entries, "docs")?.status, .typeConflict)
+
+        let plans = FolderCompare.plan(entries, direction: .leftToRight, left: left, right: right)
+        XCTAssertTrue(plans.filter { $0.relativePath == "docs" }.isEmpty,
+                      "a type conflict became a plan that deletes a tree")
+    }
+
+    /// Even handed a plan that says to do it, apply() must not.
+    func testApplyRefusesToReplaceAFolderWithAFile() throws {
+        let source = try write("I am a file", to: left, "docs")
+        try write("keep me", to: right, "docs/important.txt")
+
+        let plan = FolderCompare.Plan(
+            source: source,
+            destination: right.appendingPathComponent("docs"),
+            relativePath: "docs",
+            overwrites: true
+        )
+        XCTAssertThrowsError(try FolderCompare.apply([plan]))
+        XCTAssertEqual(
+            try String(contentsOf: right.appendingPathComponent("docs/important.txt"), encoding: .utf8),
+            "keep me", "the folder's contents were destroyed")
+    }
+
     // MARK: - Applying
 
     func testApplyCopiesNewFilesAndCreatesParents() throws {

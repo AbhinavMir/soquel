@@ -39,7 +39,18 @@ struct ThemeConfig: Codable, Equatable {
 
     // MARK: - Storage
 
+    /// `~/Library/Application Support/Soquel/`.
+    ///
+    /// Tests get their own directory. The suite applies and resets themes
+    /// freely, and must not rewrite the colours of whoever is running it.
     static var directoryURL: URL {
+        if let override = ProcessInfo.processInfo.environment["SOQUEL_SUPPORT_DIR"] {
+            return URL(fileURLWithPath: override)
+        }
+        if NSClassFromString("XCTestCase") != nil {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("soquel-test-support-\(getpid())", isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("Soquel", isDirectory: true)
@@ -59,15 +70,23 @@ struct ThemeConfig: Codable, Equatable {
 
     /// Writes a fully populated file showing every slot at its current value,
     /// so the format is discoverable by opening it.
+    ///
+    /// `background` is carried through rather than defaulted: this runs when
+    /// the user asks to *look* at the file, and a look must not discard the
+    /// image they chose.
     @discardableResult
-    static func writeTemplate(from resolved: (Slot, Bool) -> NSColor) throws -> URL {
+    static func writeTemplate(
+        background: BackgroundConfig?,
+        from resolved: (Slot, Bool) -> NSColor
+    ) throws -> URL {
         var light: [String: String] = [:]
         var dark: [String: String] = [:]
         for slot in Slot.allCases {
             light[slot.rawValue] = resolved(slot, false).hexString
             dark[slot.rawValue] = resolved(slot, true).hexString
         }
-        let config = ThemeConfig(light: light, dark: dark, background: BackgroundConfig.none)
+        let config = ThemeConfig(light: light, dark: dark,
+                                 background: background ?? BackgroundConfig.none)
 
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let encoder = JSONEncoder()

@@ -5,6 +5,18 @@ import XCTest
 final class ThemeTests: XCTestCase {
     private func hex(_ color: NSColor?) -> String? { color?.hexString }
 
+    override func setUp() {
+        super.setUp()
+        try? ThemeConfig.removeFile()
+        Theme.config = .empty
+    }
+
+    override func tearDown() {
+        try? ThemeConfig.removeFile()
+        Theme.config = .empty
+        super.tearDown()
+    }
+
     // MARK: - Hex parsing
 
     func testParsesSixDigitHexWithAndWithoutHash() {
@@ -72,28 +84,64 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ThemeConfig.self, from: data), config)
     }
 
+    /// Goes through Theme.writeTemplate and reads the file back. Building the
+    /// expected dictionary locally would pass whatever writeTemplate did.
     func testTemplateContainsEverySlotForBothAppearances() throws {
-        var written: [String: [String: String]] = [:]
-        let config = ThemeConfig(
-            light: Dictionary(uniqueKeysWithValues: ThemeConfig.Slot.allCases.map {
-                ($0.rawValue, Theme.resolved($0, dark: false).hexString)
-            }),
-            dark: Dictionary(uniqueKeysWithValues: ThemeConfig.Slot.allCases.map {
-                ($0.rawValue, Theme.resolved($0, dark: true).hexString)
-            })
-        )
-        written["light"] = config.light
-        written["dark"] = config.dark
+        try Theme.writeTemplate()
+        let written = try ThemeConfig.load()
 
         for slot in ThemeConfig.Slot.allCases {
-            XCTAssertNotNil(written["light"]?[slot.rawValue], "\(slot.rawValue) missing from light")
-            XCTAssertNotNil(written["dark"]?[slot.rawValue], "\(slot.rawValue) missing from dark")
+            XCTAssertNotNil(written.light[slot.rawValue], "\(slot.rawValue) missing from light")
+            XCTAssertNotNil(written.dark[slot.rawValue], "\(slot.rawValue) missing from dark")
         }
         // Every written value must parse back, or the template teaches a format
         // the reader cannot use.
-        for value in Array(config.light.values) + Array(config.dark.values) {
+        for value in Array(written.light.values) + Array(written.dark.values) {
             XCTAssertNotNil(NSColor(hexString: value), "\(value) is not re-readable")
         }
+    }
+
+    /// "Reveal theme.json" writes the file to show it to the user. Writing the
+    /// shipped palette instead of theirs discards every colour they had set.
+    func testTemplateWritesTheColoursInForceNotTheBuiltInOnes() throws {
+        Theme.apply(ThemeConfig(light: ["accent": "#B3541E"], dark: ["accent": "#E8A87C"]))
+        try Theme.writeTemplate()
+
+        let written = try ThemeConfig.load()
+        XCTAssertEqual(written.light["accent"], "#B3541E")
+        XCTAssertEqual(written.dark["accent"], "#E8A87C")
+        // A slot never touched still comes out at its designed value.
+        XCTAssertEqual(written.light["danger"], Theme.builtIn(.danger, dark: false).hexString)
+    }
+
+    /// Same action must not throw away the background image either.
+    func testTemplateKeepsTheConfiguredBackground() throws {
+        Theme.setBackground(BackgroundConfig(
+            imagePath: "/tmp/soquel-wallpaper.png", opacity: 0.4,
+            fit: .tile, includeSidebar: true))
+        try Theme.writeTemplate()
+
+        let written = try ThemeConfig.load()
+        XCTAssertEqual(written.background?.imagePath, "/tmp/soquel-wallpaper.png")
+        XCTAssertEqual(written.background?.opacity, 0.4)
+        XCTAssertEqual(written.background?.fit, .tile)
+        XCTAssertTrue(written.background?.includeSidebar ?? false)
+    }
+
+    // MARK: - One source of truth
+
+    func testResettingClearsTheOverrides() throws {
+        Theme.apply(ThemeConfig(light: ["accent": "#B3541E"], dark: [:]))
+        try Theme.reset()
+        XCTAssertTrue(Theme.config.light.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ThemeConfig.fileURL.path))
+    }
+
+    /// The suite applies and resets themes constantly. Doing that to the real
+    /// file destroys the colours of whoever is running the tests.
+    func testTestsDoNotWriteToTheRealSupportFolder() {
+        XCTAssertFalse(ThemeConfig.directoryURL.path.hasSuffix("Application Support/Soquel"))
+        XCTAssertFalse(ThemeConfig.fileURL.path.hasSuffix("Application Support/Soquel/theme.json"))
     }
 
     /// Selection is deliberately opaque so text can invert on top of it; a

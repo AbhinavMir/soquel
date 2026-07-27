@@ -54,16 +54,24 @@ enum Theme {
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
     }
 
+    /// Back to the shipped colours.
     static func reset() throws {
         try ThemeConfig.removeFile()
         config = .empty
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
     }
 
-    /// Writes a template containing every slot at its built-in value.
+    /// Writes a template containing every slot at the value actually in force,
+    /// and keeps the configured background.
+    ///
+    /// This runs when the user asks to see the file. Writing built-in colours
+    /// here would silently discard whatever they had set — the file is meant to
+    /// show them their theme, not replace it.
     @discardableResult
     static func writeTemplate() throws -> URL {
-        try ThemeConfig.writeTemplate { slot, isDark in builtIn(slot, dark: isDark) }
+        try ThemeConfig.writeTemplate(background: config.background) { slot, isDark in
+            resolved(slot, dark: isDark)
+        }
     }
 
     // MARK: - Built-in palette

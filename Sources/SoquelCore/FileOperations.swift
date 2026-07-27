@@ -200,8 +200,7 @@ final class OperationEngine {
                             throw error
                         }
                         do {
-                            try fm.removeItem(at: destination)
-                            try fm.moveItem(at: staged, to: destination)
+                            try Self.swapIntoPlace(staged: staged, destination: destination, fileManager: fm)
                         } catch {
                             // Put a moved source back where it came from.
                             if move { try? fm.moveItem(at: staged, to: source) }
@@ -342,8 +341,53 @@ final class OperationEngine {
         return false
     }
 
+    /// Puts a staged item at `destination`, keeping whatever is already there
+    /// until the swap has actually happened.
+    ///
+    /// Removing the destination first opens a window where a failed move loses
+    /// both copies: the original is already gone, and the caller's recovery
+    /// disposes of the staged one. Another process claiming the freed name, or
+    /// the parent turning read-only, is enough. Moving the existing item aside
+    /// instead means every failure path still has it to put back.
+    static func swapIntoPlace(staged: URL, destination: URL, fileManager fm: FileManager) throws {
+        var wasDirectory: ObjCBool = false
+        let existed = fm.fileExists(atPath: destination.path, isDirectory: &wasDirectory)
+
+        // Where the existing item went, so it can come back if the swap fails.
+        var movedAside: URL?
+        var inTrash: NSURL?
+
+        if existed {
+            // A replaced folder goes to the Trash rather than being deleted: a
+            // tree of files is not something to destroy on one confirmation,
+            // and a replace is never recorded in the undo stack. Trashing it
+            // directly keeps its own name, so it is findable. A single file is
+            // moved aside and removed — a large copy would fill the Trash.
+            if wasDirectory.boolValue, (try? fm.trashItem(at: destination, resultingItemURL: &inTrash)) != nil {
+                // now in the Trash, under its own name
+            } else {
+                let aside = uniqueURL(
+                    for: destination.deletingLastPathComponent()
+                        .appendingPathComponent(".soquel-replaced-" + destination.lastPathComponent),
+                    fileManager: fm
+                )
+                try fm.moveItem(at: destination, to: aside)
+                movedAside = aside
+            }
+        }
+
+        do {
+            try fm.moveItem(at: staged, to: destination)
+        } catch {
+            if let movedAside { try? fm.moveItem(at: movedAside, to: destination) }
+            else if let recovered = inTrash as URL? { try? fm.moveItem(at: recovered, to: destination) }
+            throw error
+        }
+        if let movedAside { try? fm.removeItem(at: movedAside) }
+    }
+
     /// Stage beside the destination, then swap. A failure at any point leaves
-    /// the existing file untouched.
+    /// the existing item untouched.
     private func replaceItem(at destination: URL, with source: URL, move: Bool, fileManager fm: FileManager) throws {
         let directory = destination.deletingLastPathComponent()
         let staged = Self.uniqueURL(
@@ -358,8 +402,7 @@ final class OperationEngine {
             throw error
         }
         do {
-            try fm.removeItem(at: destination)
-            try fm.moveItem(at: staged, to: destination)
+            try Self.swapIntoPlace(staged: staged, destination: destination, fileManager: fm)
         } catch {
             if move { try? fm.moveItem(at: staged, to: source) }
             else { try? fm.removeItem(at: staged) }

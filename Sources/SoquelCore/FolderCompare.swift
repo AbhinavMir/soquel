@@ -201,6 +201,13 @@ enum FolderCompare {
             let source = direction == .leftToRight ? entry.left : entry.right
             let other = direction == .leftToRight ? entry.right : entry.left
             guard let source, !source.isDirectory else { return nil }
+            // A file must never take the place of a folder. replaceItemAt would
+            // delete that folder and everything inside it, and the folder's
+            // children are separate entries this plan drops — so the tree would
+            // vanish while the sheet reported "1 existing file will be
+            // replaced". A type conflict is a decision for the person, not
+            // something to resolve silently.
+            if let other, other.isDirectory { return nil }
 
             let destinationRoot = direction == .leftToRight ? rightRoot : leftRoot
             return Plan(
@@ -221,7 +228,17 @@ enum FolderCompare {
         for plan in plans {
             let parent = plan.destination.deletingLastPathComponent()
             try manager.createDirectory(at: parent, withIntermediateDirectories: true)
-            if manager.fileExists(atPath: plan.destination.path) {
+            var destinationIsDirectory: ObjCBool = false
+            if manager.fileExists(atPath: plan.destination.path, isDirectory: &destinationIsDirectory) {
+                // plan() already drops these. Refusing here too means a
+                // hand-built or stale plan cannot delete a tree either.
+                guard !destinationIsDirectory.boolValue else {
+                    throw CocoaError(.fileWriteFileExists, userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "“\(plan.relativePath)” is a folder on the other side. "
+                            + "Copying a file over it would delete the folder and everything in it.",
+                    ])
+                }
                 _ = try manager.replaceItemAt(plan.destination, withItemAt: copyToStaging(plan.source))
             } else {
                 try manager.copyItem(at: plan.source, to: plan.destination)

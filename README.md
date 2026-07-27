@@ -1,4 +1,3 @@
-
 # Soquel
 
 The last file manager you'll ever need. And it's open source!
@@ -12,52 +11,75 @@ Questions or bugs: atg271@gmail.com
 
 <hr>
 
-## Status
+## Install
 
-Version 0.1 — the initial release scope is implemented and the app runs. See [Roadmap](#roadmap).
+Download `Soquel.dmg` from [Releases](https://github.com/AbhinavMir/soquel/releases), open it, drag
+Soquel to Applications. macOS 13 or later.
 
-## Build and run
+It is not signed by Apple, so the first launch needs a right-click, then Open.
+
+From source:
 
 ```sh
-swift build            # library, executable, tests
-swift test             # 26 tests
-./scripts/build-app.sh # produces build/Soquel.app
-open build/Soquel.app
+swift build
+swift test
+./scripts/build-app.sh    # build/Soquel.app
 ```
 
-Requires macOS 13 or later and a Swift 5.9+ toolchain.
+## What it does
 
-## What works today
+**Panes and tabs.** Split a window any number of ways, vertically or horizontally, each pane with
+its own tabs and its own folder. `⌘1`–`⌘4` jumps between them. A layout can be saved as a workspace
+and reopened later.
 
-- Sidebar with home locations, mounted volumes, and your own favourites
-- Up to four panes per window, split vertically or horizontally, each with its own tabs
-- List view with name, size, kind, and date columns; click a header to sort, folders first by default
-- Navigation by keyboard, breadcrumbs, an editable path field, history, and Git repository root
-- Create, rename, duplicate, copy, move, trash, and permanent delete, all with per-file error reporting
-- Conflict prompt showing both files' sizes and dates, with keep both / replace / skip / cancel
-- Undo for rename, create, duplicate, trash, and move
-- Copy path in six formats, plus a path relative to the Git root
-- Command palette with fuzzy matching over every command
-- In-folder filtering, hidden file toggle, Quick Look, drag and drop, Reveal in Finder
-- Open the current folder in Terminal, or the selection in your editor
-- Session restore: panes and tabs come back where you left them
-- Customisable colours: View → Edit Colours… opens a JSON file; Reload Colours (`⌃⌘Y`) applies it live
+**Four views.** List with sortable columns, icon grid, folder tree, and column view.
+
+**Search.** By name or contents, with contains, regex or glob. It reports what it skipped rather
+than quietly returning less: too large, not text, unreadable folder, result cap. Optionally honours
+`.gitignore`, including nested files and negation.
+
+**Search by meaning** (`⌃⌘F`). Finds "financial results from the German branch" in a document that
+says "the Berlin office reported strong quarterly revenue". Files are read and embedded once; after
+that a query over a thousand passages takes under a millisecond. It runs on the language model macOS
+already ships, on your own machine. Nothing is sent anywhere.
+
+**Disk map** (`⇧⌘U`). Where the space went, as nested rings you can click into.
+
+**File operations.** Create, rename, duplicate, copy, move, trash, delete. If one file fails the
+rest still go, and it names the one that failed. Conflicts offer keep both, replace, skip or cancel,
+with both sizes and dates shown, and folders can be merged instead of replaced. `⌘Z` undoes rename,
+create, duplicate, trash and move.
+
+**Transfer queue** (`⌥⌘J`). Throughput and progress per job, with pause, resume and cancel.
+
+**Selection shelf** (`⌃⌘A`). Collect files from any number of folders, then deliver them all at
+once.
+
+**Batch rename.** Find and replace, regex, numbering, case, extension, trimming and file-date
+insertion, with a live preview.
+
+**Folder comparison** (`⇧⌘K`). Left only, right only, differs, same — compared by size and date or
+by checksum — and sync in either direction over the rows you tick.
+
+**Remote locations.** SMB, AFP, NFS, WebDAV and FTP, mounted through macOS itself.
+
+**Everything is a file you can edit.** Settings, colours, shortcuts and the sidebar are JSON under
+`~/Library/Application Support/Soquel/`. Edit one in another editor and the window redraws.
+
+Full list with shortcuts: [trysoquel.com](https://trysoquel.com).
 
 ## Keyboard
 
-Press `⌘K` for the command palette, which lists every command with its shortcut.
-Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
-
-The essentials:
+`⌘K` opens the command palette, which lists every command and its shortcut. Every shortcut can be
+rebound. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 
 | Action | Shortcut |
 | --- | --- |
 | Command palette | `⌘K` |
 | Split pane vertically / horizontally | `⌘D` / `⇧⌘D` |
-| Close tab / close pane | `⌘W` / `⇧⌘W` |
 | Focus pane by position | `⌘1`–`⌘4` |
-| Filter the current folder | `/` or `⌘F` |
-| Copy absolute path | `⌥⌘P` |
+| Filter the current folder | `/` |
+| Search / search by meaning | `⌘F` / `⌃⌘F` |
 | Go to folder | `⇧⌘G` |
 | Rename / open | `↩` / `⌘↓` |
 | Quick Look | `Space` |
@@ -66,26 +88,23 @@ The essentials:
 ## Layout
 
 ```
-Sources/SoquelCore/   application code
-Sources/Soquel/       executable entry point
-Tests/SoquelCoreTests/
-scripts/               build-app.sh, serve-status.sh
-docs/                  architecture, keybindings, security model
+Sources/SoquelCore/    application code
+Sources/Soquel/        executable entry point
+Tests/SoquelCoreTests/ 497 tests
+scripts/               build-app.sh, make-dmg.sh, install.sh
+docs/                  architecture, keybindings, settings, security
 ```
 
-Everything lives in the `SoquelCore` library so it can be tested; the executable is six lines.
+The code is in the `SoquelCore` library rather than in the executable so that it can be tested.
 
-## Roadmap
+## Known gaps
 
-Tracked in [docs/TODO.md](docs/TODO.md) — what is shipped, what is next, known gaps, and what has
-been ruled out. Short version:
+Bugs and missing pieces are tracked as
+[issues](https://github.com/AbhinavMir/soquel/issues). The app is not signed or notarised, there is
+no accessibility pass yet, and SFTP would need a File Provider extension that has not been written.
 
-- 0.2 — nested pane splits, grid view, batch rename, operation queue panel, shortcut customisation
-- 0.3 — folder comparison, workspaces, inspector, Git status column, saved searches
-- 1.0 — column view, content search, full accessibility pass, contributor documentation
-
-Explicit non-goals for 1.0: AI assistant, cloud sync, plugin marketplace, remote filesystems,
-built-in terminal emulator, and replacing Finder at the system level.
+Soquel does not replace Finder at the system level, and cannot — macOS reserves that. It can be made
+the handler for folders, which covers most of it.
 
 ## License
 

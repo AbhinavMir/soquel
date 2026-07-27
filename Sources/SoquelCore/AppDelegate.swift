@@ -27,16 +27,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.refreshAllPanes()
             }
         }
-        // A picker with nothing in it teaches nobody anything, so the bundled
-        // themes are written out once and then left alone.
-        ThemeLibrary.installBuiltInsIfMissing()
-
-        // Apply any user colour overrides before the first window is built.
+        // Apply user colour overrides before the first window is built.
+        // theme.json is the only thing consulted: nothing else stores colours,
+        // so nothing can disagree with it or overwrite it on the way up.
         Theme.reload()
-        if !ThemeLibrary.currentName.isEmpty,
-           let theme = ThemeLibrary.named(ThemeLibrary.currentName) {
-            try? ThemeLibrary.apply(theme)
-        }
         let menu = makeMainMenu()
         NSApp.mainMenu = menu
         NSApp.windowsMenu = menu.items.compactMap(\.submenu).first { $0.title == "Window" }
@@ -72,6 +66,34 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Opens folders handed over by the system.
+    ///
+    /// This is what makes Soquel usable as the handler for folders: without it,
+    /// double-clicking one in Finder, or dropping it on the Dock icon, would
+    /// launch the application at the home directory and lose the folder. A file
+    /// rather than a folder is passed back to whatever normally opens it, since
+    /// Soquel is a file manager and not an editor of anything.
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        var folders: [URL] = []
+        var files: [URL] = []
+        for url in urls {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            else { continue }
+            if isDirectory.boolValue { folders.append(url) } else { files.append(url) }
+        }
+
+        for (index, url) in folders.enumerated() {
+            // The first folder goes into the window that already exists — at
+            // launch that is the empty one made by applicationDidFinishLaunching
+            // — and any others get their own.
+            if index > 0 || windowControllers.isEmpty { newWindow(nil) }
+            windowControllers.last?.open(folder: url)
+        }
+        for url in files { NSWorkspace.shared.open(url) }
+        if !folders.isEmpty { NSApp.activate(ignoringOtherApps: true) }
+    }
 
     public func applicationWillTerminate(_ notification: Notification) {
         Log.info(.app, "Soquel quitting")
