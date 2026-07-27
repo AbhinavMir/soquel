@@ -972,8 +972,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// not been, offers to do that rather than returning nothing.
     @objc func menuFindByMeaning(_ sender: Any?) {
         guard let url = focusedList?.url else { return }
+        // Compared as a path: ~/Documents-old is not inside ~/Documents, but it
+        // does start with it, so it was judged already indexed and the search
+        // came back empty with nothing offering to fix it.
         let indexed = SemanticIndex.roots.contains {
-            url.standardizedFileURL.path.hasPrefix($0.standardizedFileURL.path)
+            SemanticIndex.path(url.standardizedFileURL.path, isWithin: $0.standardizedFileURL.path)
         }
         guard indexed else {
             offerToIndex(url)

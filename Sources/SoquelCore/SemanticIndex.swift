@@ -118,7 +118,27 @@ final class SemanticIndex {
     private var cancelled = false
     private(set) var isIndexing = false
 
-    private init() { load() }
+    private init() {
+        // Off the main thread. This runs on whoever first touches `shared`,
+        // which is the window controller during launch, and the file is one
+        // JSON document holding 512 floats per passage — a large index is
+        // hundreds of megabytes to read and parse before the window appears.
+        //
+        // Searching before the load lands returns nothing rather than
+        // blocking; the index posts soquelIndexChanged when it is ready.
+        //
+        // Tests want it loaded before they look, so they take the wait.
+        if NSClassFromString("XCTestCase") != nil {
+            load()
+        } else {
+            queue.async { [weak self] in
+                self?.load()
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .soquelIndexChanged, object: nil)
+                }
+            }
+        }
+    }
 
     // MARK: - Where it lives
 
@@ -141,12 +161,18 @@ final class SemanticIndex {
         set { Settings.set(newValue.map(\.path), forKey: "semanticRoots") }
     }
 
+    /// Adds a folder to the index, keeping the roots non-overlapping.
+    ///
+    /// A folder already covered by a root adds nothing. A folder that contains
+    /// existing roots replaces them, since it covers everything they did.
+    /// Overlapping roots would walk the shared files once per root.
     static func addRoot(_ url: URL) {
-        var current = roots.map(\.standardizedFileURL.path)
         let path = url.standardizedFileURL.path
-        guard !current.contains(path) else { return }
-        current.append(path)
-        Settings.set(current, forKey: "semanticRoots")
+        let current = roots.map(\.standardizedFileURL.path)
+        guard !current.contains(where: { self.path(path, isWithin: $0) }) else { return }
+        var kept = current.filter { !self.path($0, isWithin: path) }
+        kept.append(path)
+        Settings.set(kept, forKey: "semanticRoots")
     }
 
     static func removeRoot(_ url: URL) {
@@ -196,6 +222,17 @@ final class SemanticIndex {
             .filter { $0.count > 2 && !stop.contains($0) }
     }
 
+    /// Whether `path` is `folder` itself or something inside it.
+    ///
+    /// `hasPrefix` on the bare path is not this test: ~/Notes-archive/a.md
+    /// starts with ~/Notes, so scoping a search to one folder returned hits
+    /// from its similarly named sibling.
+    static func path(_ path: String, isWithin folder: String) -> Bool {
+        if path == folder { return true }
+        let base = folder.hasSuffix("/") ? folder : folder + "/"
+        return path.hasPrefix(base)
+    }
+
     /// What fraction of the query's words appear in this text, counting the
     /// file's own name — a file called berlin-revenue.txt is about Berlin
     /// revenue whatever its contents say.
@@ -209,6 +246,14 @@ final class SemanticIndex {
 
     func search(_ text: String, within folder: URL? = nil, limit: Int = 40, minimumScore: Float = 0.25) -> [Hit] {
         guard let query = Self.vector(for: text) else { return [] }
+        // cblas_sgemv is told to read exactly `dimensions` floats from the
+        // query, so a model of a different width would have it read past the
+        // end — garbage scores, or a crash. rebuildFlat already drops stored
+        // vectors that are the wrong length; this is the other half of it.
+        guard query.count == Self.dimensions else {
+            Log.error(.search, "sentence model is \(query.count)-dimensional, expected \(Self.dimensions)")
+            return []
+        }
         lock.lock()
         let entries = self.entries
         let flat = self.flat
@@ -232,20 +277,26 @@ final class SemanticIndex {
         // words is not ranked below one that merely resembles them.
         let queryTerms = Self.terms(of: text)
         let semanticWeight = 1 - Self.literalWeight
+        // Every entry is blended, not just the promising ones. Skipping the
+        // weak ones left two scales in the same array: an unblended 0.050 beat
+        // a blended 0.060, and a file whose name is the query — literal 1.0,
+        // which alone clears the threshold — stayed at its low semantic score
+        // and never surfaced.
         for index in scores.indices {
-            guard scores[index] > 0.05 else { continue }   // hopeless anyway
             let entry = entries[index]
             let literal = Self.literalScore(terms: queryTerms, passage: entry.passage, path: entry.path)
             scores[index] = scores[index] * semanticWeight + literal * Self.literalWeight
         }
 
+        // Compared as a path, not as a string: "/Users/x/Notes" is a prefix of
+        // "/Users/x/Notes-archive/a.md", which is a different folder.
         let prefix = folder?.standardizedFileURL.path
         var hits: [Hit] = []
         var bestPerFile: [String: Int] = [:]
 
         for (index, score) in scores.enumerated() where score >= minimumScore {
             let entry = entries[index]
-            if let prefix, !entry.path.hasPrefix(prefix) { continue }
+            if let prefix, !Self.path(entry.path, isWithin: prefix) { continue }
             // One result per file: five passages from the same document push
             // everything else off the list.
             if let seen = bestPerFile[entry.path], scores[seen] >= score { continue }
@@ -287,6 +338,14 @@ final class SemanticIndex {
             let oldEntries = self.entries
             self.lock.unlock()
 
+            // Old entries by path, built once. Filtering the whole array per
+            // unchanged file made a no-op rebuild quadratic: 20,000 files
+            // against 100,000 entries is two billion string comparisons, on
+            // this queue, with `indexed` never moving so the progress callback
+            // never fired either.
+            var oldByPath: [String: [Entry]] = [:]
+            for entry in oldEntries { oldByPath[entry.path, default: []].append(entry) }
+
             var live = Set<String>()
             for root in roots {
                 guard let walker = FileManager.default.enumerator(
@@ -298,9 +357,13 @@ final class SemanticIndex {
                 for case let url as URL in walker {
                     if self.cancelled { break }
                     guard TextExtraction.canRead(url) else { continue }
-                    seen += 1
                     let path = url.standardizedFileURL.path
-                    live.insert(path)
+                    // Roots can nest — ~/Documents and ~/Documents/Work — and
+                    // a file under both is walked once per root. Processing it
+                    // twice appended its passages twice on the first run, and
+                    // then doubled what was kept on every run after that.
+                    guard live.insert(path).inserted else { continue }
+                    seen += 1
 
                     let values = try? url.resourceValues(
                         forKeys: [.fileSizeKey, .contentModificationDateKey])
@@ -311,8 +374,8 @@ final class SemanticIndex {
                     freshStamps[path] = stamp
 
                     // Unchanged since last time: keep what was already computed.
-                    if oldStamps[path] == stamp {
-                        kept.append(contentsOf: oldEntries.filter { $0.path == path })
+                    if oldStamps[path] == stamp, let existing = oldByPath[path] {
+                        kept.append(contentsOf: existing)
                         continue
                     }
 

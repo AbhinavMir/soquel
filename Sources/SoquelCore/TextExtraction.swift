@@ -100,7 +100,9 @@ enum TextExtraction {
                 continue
             }
             if current.count + paragraph.count + 2 > target {
-                result.append(current)
+                // Guarded like the tail append below. On the first paragraph
+                // `current` is empty, so this emitted "" as a passage.
+                if current.count > 24 { result.append(current) }
                 current = String(current.suffix(overlap)) + "\n" + paragraph
             } else {
                 current += current.isEmpty ? paragraph : "\n\n" + paragraph
@@ -116,6 +118,12 @@ enum TextExtraction {
         var current = ""
         for sentence in text.components(separatedBy: ". ") {
             let piece = sentence.hasSuffix(".") ? sentence : sentence + "."
+            if piece.count > target {
+                if current.count > 24 { pieces.append(current) }
+                current = ""
+                pieces.append(contentsOf: chop(piece, target: target, overlap: overlap))
+                continue
+            }
             if current.count + piece.count > target, !current.isEmpty {
                 pieces.append(current)
                 current = String(current.suffix(overlap)) + " " + piece
@@ -124,6 +132,28 @@ enum TextExtraction {
             }
         }
         if current.count > 24 { pieces.append(current) }
+        return pieces
+    }
+
+    /// Cuts on character count, for text with nothing to break on.
+    ///
+    /// Minified JavaScript, a one-line CSV, an SVG and a single-line JSON have
+    /// neither a blank line nor ". ", so every earlier rule passes the file
+    /// through whole. That handed the embedding a string the size of the file —
+    /// up to `maximumBytes` — which stalls indexing, and then stored it
+    /// verbatim as the excerpt shown in the results.
+    private static func chop(_ text: String, target: Int, overlap: Int) -> [String] {
+        var pieces: [String] = []
+        var index = text.startIndex
+        let step = max(1, target - overlap)
+        while index < text.endIndex {
+            let end = text.index(index, offsetBy: target, limitedBy: text.endIndex) ?? text.endIndex
+            let piece = String(text[index..<end])
+            if piece.count > 24 { pieces.append(piece) }
+            if end == text.endIndex { break }
+            guard let next = text.index(index, offsetBy: step, limitedBy: text.endIndex) else { break }
+            index = next
+        }
         return pieces
     }
 }
