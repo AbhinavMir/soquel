@@ -62,6 +62,7 @@ h1 { font-size: 42px; letter-spacing: -0.022em; margin: 18px 0 6px; font-weight:
 }
 .button:hover { filter: brightness(1.07); }
 .button.quiet { background: transparent; color: var(--ink); border-color: var(--rule); }
+a.plain { color: var(--faint); text-decoration: underline; text-underline-offset: 3px; }
 .note { margin-top: 14px; font-size: 13px; color: var(--faint); }
 
 /* Pay what you like */
@@ -138,10 +139,12 @@ footer a { color: var(--faint); }
   <p class="tagline">The last file manager you'll ever need. And it's open source!</p>
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
-    <a class="button" id="download" href="https://github.com/AbhinavMir/soquel/releases">Download for macOS</a>
+    <a class="button" id="download"
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.1/Soquel-1.0.1.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note">Free and MIT licensed · Apple silicon and Intel · macOS 13 or later</p>
+  <p class="note">Version 1.0.1 · Free and MIT licensed · Apple silicon and Intel · macOS 13 or later<br>
+     <a class="plain" href="#faq">First launch needs a right-click, then Open — why</a></p>
 
 </header>
 
@@ -287,6 +290,44 @@ footer a { color: var(--faint); }
 <dl>
   <dt>Logging</dt><dd>Every notable action, to one dated file in <code>~/Library/Logs/Soquel/</code>.</dd>
   <dt>Copy Recent Logs</dt><dd>In the palette. Puts the last three minutes on the clipboard, with the build and OS named. Files older than a day are removed on their own.</dd>
+</dl>
+
+
+<h2 id="faq">Questions</h2>
+<dl>
+  <dt>macOS says it cannot check Soquel for malicious software.</dt>
+  <dd>Right-click the application and choose Open, then Open again. macOS asks
+      that once for anything not sold through the App Store. The application is
+      signed with an Apple Developer ID; it is not yet notarised, which is the
+      extra step that removes the prompt.</dd>
+
+  <dt>Desktop, Documents and Downloads look empty.</dt>
+  <dd>Those folders are protected by macOS and need Full Disk Access. Soquel
+      offers to set it up on the first launch, and the same window is under
+      Soquel → Set Up Permissions… A file manager cannot grant itself that, and
+      neither can anything else: the list is protected by System Integrity
+      Protection precisely so no program can add itself to it.</dd>
+
+  <dt>Can Soquel replace Finder?</dt>
+  <dd>Not entirely, and no application can. macOS keeps folders for Finder —
+      the call to reassign them is refused. Disks can be reassigned, so
+      double-clicking one opens it here, and anything can be opened in Soquel
+      through Open With.</dd>
+
+  <dt>Does it send anything anywhere?</dt>
+  <dd>No. Search by meaning runs on the language model macOS already ships,
+      on your own machine. There is no account, no telemetry and no update
+      check.</dd>
+
+  <dt>Where does it keep my settings?</dt>
+  <dd>Four readable JSON files in <code>~/Library/Application Support/Soquel/</code>:
+      settings, colours, saved layouts and the sidebar. Edit one in another
+      editor while Soquel is running and the window redraws. Deleting the folder
+      resets everything.</dd>
+
+  <dt>Is it really free?</dt>
+  <dd>Yes, MIT licensed, and nothing in it checks a licence. If it saved you
+      something, the address is above.</dd>
 </dl>
 
 <footer>
