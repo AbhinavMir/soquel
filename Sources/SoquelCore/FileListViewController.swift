@@ -545,6 +545,13 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     // MARK: - Keyboard-first preset
 
     /// Set by a bare `g`, cleared by the next keypress or by the timeout.
+    /// What has been typed so far to jump to a name, and when the last key
+    /// arrived. Matches the interval AppKit uses for NSTableView's own
+    /// type-select, so the two views feel the same.
+    private var typeSelectBuffer = ""
+    private var typeSelectLastKey: Date?
+    static let typeSelectTimeout: TimeInterval = 1.0
+
     private var pendingG = false
     private var pendingGExpiry: Date?
 
@@ -716,7 +723,73 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             beginFilter()
             return true
         }
+
+        // Typing a name jumps to it. NSTableView does this for itself, but the
+        // icon, tree and column views do not, so it is done here for all of
+        // them — the same keys have to mean the same thing in every view.
+        if plain || flags == [.shift], let typed = event.charactersIgnoringModifiers,
+           typed.count == 1, let scalar = typed.unicodeScalars.first,
+           !CharacterSet.controlCharacters.contains(scalar),
+           !CharacterSet.whitespaces.contains(scalar) {
+            return typeSelect(typed)
+        }
         return false
+    }
+
+    // MARK: - Type to select
+
+    /// Selects the first item whose name begins with what has been typed.
+    ///
+    /// Successive keystrokes build up a prefix, as in Finder: "re", "rep" and
+    /// so on. The buffer is dropped after a pause, so a later unrelated letter
+    /// starts a fresh search rather than extending a stale one. Typing the same
+    /// letter repeatedly cycles through the items starting with it, which is
+    /// what that gesture means everywhere else.
+    private func typeSelect(_ character: String) -> Bool {
+        guard !items.isEmpty else { return false }
+        let now = Date()
+        if let last = typeSelectLastKey, now.timeIntervalSince(last) > Self.typeSelectTimeout {
+            typeSelectBuffer = ""
+        }
+        typeSelectLastKey = now
+
+        let repeatingSameLetter = !typeSelectBuffer.isEmpty
+            && typeSelectBuffer.allSatisfy { String($0).caseInsensitiveCompare(character) == .orderedSame }
+        let prefix = repeatingSameLetter ? character : typeSelectBuffer + character
+        typeSelectBuffer = repeatingSameLetter ? typeSelectBuffer + character : prefix
+
+        // Cycling starts looking after the current row; a growing prefix starts
+        // from the top so it cannot skip past the answer.
+        let current = selectedIndex()
+        let start = repeatingSameLetter && current >= 0 ? current + 1 : 0
+        let order = (0..<items.count).map { (start + $0) % items.count }
+
+        guard let match = order.first(where: {
+            items[$0].name.lowercased().hasPrefix(prefix.lowercased())
+        }) else {
+            NSSound.beep()
+            return true     // swallowed: a letter with no match must not fall through
+        }
+        select(index: match)
+        return true
+    }
+
+    private func selectedIndex() -> Int {
+        isIconMode
+            ? (collectionView.selectionIndexPaths.first?.item ?? -1)
+            : tableView.selectedRow
+    }
+
+    private func select(index: Int) {
+        if isIconMode {
+            let path = IndexPath(item: index, section: 0)
+            collectionView.selectionIndexPaths = [path]
+            collectionView.scrollToItems(at: [path], scrollPosition: .nearestHorizontalEdge)
+            collectionSelectionChanged()
+        } else {
+            tableView.selectRowIndexes([index], byExtendingSelection: false)
+            tableView.scrollRowToVisible(index)
+        }
     }
 
     // MARK: - Commands

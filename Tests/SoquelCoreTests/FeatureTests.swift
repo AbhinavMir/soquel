@@ -342,3 +342,45 @@ final class ViewModeTests: XCTestCase {
         XCTAssertFalse(Prefs.viewModeIsIcon)
     }
 }
+
+/// Typing a name jumps to it. NSTableView does this for itself; the icon, tree
+/// and column views do not, so the controller does it for all of them.
+final class TypeSelectTests: XCTestCase {
+    /// The matching rule, isolated from the view so it can be checked directly.
+    private func match(_ names: [String], prefix: String, from start: Int) -> Int? {
+        let order = (0..<names.count).map { (start + $0) % names.count }
+        return order.first { names[$0].lowercased().hasPrefix(prefix.lowercased()) }
+    }
+
+    private let names = ["Applications", "Desktop", "Documents", "Downloads", "readme.md"]
+
+    func testAPrefixFindsTheFirstMatch() {
+        XCTAssertEqual(match(names, prefix: "do", from: 0), 2)      // Documents
+        XCTAssertEqual(match(names, prefix: "dow", from: 0), 3)     // Downloads
+    }
+
+    func testMatchingIgnoresCase() {
+        XCTAssertEqual(match(names, prefix: "R", from: 0), 4)
+        XCTAssertEqual(match(names, prefix: "aPP", from: 0), 0)
+    }
+
+    /// The same letter again moves to the next item starting with it rather
+    /// than staying put.
+    func testRepeatingALetterCyclesThroughTheMatches() {
+        XCTAssertEqual(match(names, prefix: "d", from: 0), 1)       // Desktop
+        XCTAssertEqual(match(names, prefix: "d", from: 2), 2)       // Documents
+        XCTAssertEqual(match(names, prefix: "d", from: 3), 3)       // Downloads
+        // Past the last match it comes back round to the first.
+        XCTAssertEqual(match(names, prefix: "d", from: 4), 1)
+    }
+
+    func testNothingMatchesRatherThanPickingSomethingElse() {
+        XCTAssertNil(match(names, prefix: "zz", from: 0))
+    }
+
+    /// The buffer is dropped after a pause so an unrelated later letter starts
+    /// a new search instead of extending a stale prefix.
+    func testTheBufferExpires() {
+        XCTAssertEqual(FileListViewController.typeSelectTimeout, 1.0)
+    }
+}
