@@ -78,6 +78,20 @@ struct SidebarLayout: Codable, Equatable {
         groups[index].items.append(item)
     }
 
+    /// Adds an item at a position, for a drop aimed somewhere in particular.
+    /// `addItem` always appends, which is right for a menu command and wrong
+    /// for a drag.
+    mutating func insertItem(_ item: SidebarItem, toGroup groupID: UUID, at index: Int) {
+        guard let group = groups.firstIndex(where: { $0.id == groupID }) else {
+            addItem(item, toGroup: groupID)
+            return
+        }
+        guard !groups[group].items.contains(where: {
+            $0.url.standardizedFileURL == item.url.standardizedFileURL
+        }) else { return }
+        groups[group].items.insert(item, at: max(0, min(index, groups[group].items.count)))
+    }
+
     mutating func removeItem(id: UUID) {
         for index in groups.indices {
             groups[index].items.removeAll { $0.id == id }

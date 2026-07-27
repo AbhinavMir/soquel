@@ -241,3 +241,57 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertTrue(FolderTree.roots.contains { $0.path == FileManager.default.homeDirectoryForCurrentUser.path })
     }
 }
+
+/// Drops used to land at the bottom whatever they were aimed at: the only drop
+/// the outline view accepted was the one onto the group itself, which arrives
+/// with a child index of -1 and was read as "append".
+final class SidebarDropPositionTests: XCTestCase {
+    private func layoutOfThree() -> (SidebarLayout, UUID) {
+        var layout = SidebarLayout(groups: [])
+        let group = layout.addGroup(title: "Favourites")
+        for name in ["one", "two", "three"] {
+            layout.addItem(SidebarItem(path: "/tmp/\(name)"), toGroup: group)
+        }
+        return (layout, group)
+    }
+
+    private func names(_ layout: SidebarLayout, _ group: UUID) -> [String] {
+        (layout.group(id: group)?.items ?? []).map { $0.url.lastPathComponent }
+    }
+
+    func testAnItemDroppedAtTheTopGoesToTheTop() {
+        var (layout, group) = layoutOfThree()
+        layout.insertItem(SidebarItem(path: "/tmp/new"), toGroup: group, at: 0)
+        XCTAssertEqual(names(layout, group), ["new", "one", "two", "three"])
+    }
+
+    func testAnItemDroppedInTheMiddleGoesThere() {
+        var (layout, group) = layoutOfThree()
+        layout.insertItem(SidebarItem(path: "/tmp/new"), toGroup: group, at: 2)
+        XCTAssertEqual(names(layout, group), ["one", "two", "new", "three"])
+    }
+
+    func testAPositionPastTheEndIsClampedRatherThanCrashing() {
+        var (layout, group) = layoutOfThree()
+        layout.insertItem(SidebarItem(path: "/tmp/new"), toGroup: group, at: 99)
+        XCTAssertEqual(names(layout, group).last, "new")
+    }
+
+    func testDroppingSomethingAlreadyThereChangesNothing() {
+        var (layout, group) = layoutOfThree()
+        layout.insertItem(SidebarItem(path: "/tmp/two"), toGroup: group, at: 0)
+        XCTAssertEqual(names(layout, group), ["one", "two", "three"])
+    }
+
+    /// Reordering by drag: moving the first item to the end and back.
+    func testReorderingPutsTheItemWhereItWasAimed() {
+        var (layout, group) = layoutOfThree()
+        let first = layout.group(id: group)!.items[0].id
+        layout.move(itemID: first, toGroup: group, at: 3)
+        XCTAssertEqual(names(layout, group), ["two", "three", "one"])
+
+        let moved = layout.group(id: group)!.items[2].id
+        layout.move(itemID: moved, toGroup: group, at: 0)
+        XCTAssertEqual(names(layout, group), ["one", "two", "three"])
+    }
+}

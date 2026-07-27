@@ -609,8 +609,22 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         proposedItem item: Any?,
         proposedChildIndex index: Int
     ) -> NSDragOperation {
+        // AppKit proposes the row under the pointer when the pointer is over an
+        // item, and the group with a child index only when it is exactly
+        // between two rows. Refusing the first meant the only drop that was
+        // ever accepted arrived with index -1, which was read as "append", so
+        // every drag landed at the bottom whatever it was aimed at. Retarget a
+        // drop on a row onto that row's group, at that row's position.
+        var target = item as? SidebarNode
+        if let row = target, row.groupID == nil {
+            guard let parent = outlineView.parent(forItem: row) as? SidebarNode,
+                  parent.groupID != nil else { return [] }
+            outlineView.setDropItem(parent, dropChildIndex: outlineView.childIndex(forItem: row))
+            target = parent
+        }
+
         // Only user groups accept drops; Locations is derived from the system.
-        guard let target = item as? SidebarNode, target.groupID != nil else { return [] }
+        guard let target, target.groupID != nil else { return [] }
 
         if info.draggingPasteboard.string(forType: Self.itemDragType) != nil { return .move }
 
@@ -643,8 +657,12 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         let folders = dropped.filter(\.hasDirectoryPath)
         guard !folders.isEmpty else { return false }
 
-        for folder in folders {
-            layout.addItem(SidebarItem(path: folder.path), toGroup: groupID)
+        // Inserted where they were dropped, in the order they were dragged.
+        // Appending regardless is what made a drop aimed at the top of the
+        // list appear at the bottom.
+        let start = index < 0 ? (layout.group(id: groupID)?.items.count ?? 0) : index
+        for (offset, folder) in folders.enumerated() {
+            layout.insertItem(SidebarItem(path: folder.path), toGroup: groupID, at: start + offset)
         }
         SidebarStore.layout = layout
         return true
