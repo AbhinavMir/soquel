@@ -1,6 +1,8 @@
 # Working state
 
-Branch: `bug-sweep` (off `main` at 48cdf79). No PR yet. 488 tests pass.
+Branch: `bug-sweep` (off `main` at 48cdf79). No PR yet. 495 tests pass.
+
+**20 of 38 fixed and closed.** 18 open: 11 Wrong Result, 7 UI.
 
 ## What this is
 
@@ -28,20 +30,29 @@ Labels: `data loss`, `Wrong Result`, `UI`. Nothing else.
 - Batch rename no longer stamps the current time into a filename when the
   file's own date cannot be read; the entry is reported and skipped.
 
+- **#13 #14 #15 #17 #18 #33 #35 #36 — semantic index** (`a260895`)
+  Nested roots no longer duplicate and double passages per rebuild. The
+  incremental keep is linear rather than quadratic. Folder scoping compares
+  paths, not string prefixes, so ~/Notes-archive is not inside ~/Notes. The
+  query vector's width is checked before sgemv reads it. Every entry is
+  blended, so there are no longer two score scales in one array. Text with no
+  blank line and no ". " is cut on character count instead of becoming one
+  8 MB passage. No empty passages. The index loads off the main thread.
+
 ## Next
 
-**Wrong Result (16):** #13–#20, #23–#30.
 Clusters worth doing together:
-- Semantic index: #13 nested roots duplicate passages, #14 one giant passage,
-  #15 unchecked query vector length, #17 blend cutoff scale mismatch, #18
-  hasPrefix without a separator, #33 quadratic incremental keep, #35 empty
-  passage, #36 synchronous decode on the main thread
-- Disk map / scanning: #19 cancelled scan resurrected, #20 unreadable counted
-  as zero, #25 volumes walked twice, #31 trashing restarts the scan
-- Settings/watcher: #23 lost write, #24 bytes recorded before the write
-- Threading: #16 fileWatcher raced, #26 unsynchronized cancellation flag
-
-**UI (10):** #31–#37, #39–#41.
+- **Threading:** #16 fileWatcher raced, #26 unsynchronized cancellation flag,
+  #19 cancelled scan resurrected
+- **Disk map / scanning:** #20 unreadable counted as zero, #25 volumes walked
+  twice, #31 trashing restarts the scan, #37 "smaller items" sentinel,
+  #39 depth off by one
+- **Transfers:** #29 staging in the system temp dir breaks cross-volume
+  overwrites, #30 failed copies counted as copied
+- **Settings:** #23 lost write, #24 bytes recorded before the write
+- **Leftovers:** #27 reveal selection, #28 recycled object addresses as keys,
+  #32 hidden panes cannot resize, #34 literalScore matches substrings,
+  #40 silent matcher failure, #41 breadcrumb hidden too early
 
 Feature issues #3 #4 #5 are out of scope for this sweep.
 
