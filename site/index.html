@@ -233,7 +233,7 @@ footer a { color: var(--faint); }
 <h2>Finding things</h2>
 <dl>
   <dt>Search panel <kbd>⌘F</kbd></dt><dd>Name or contents; contains, regex or glob; this folder, home, or everywhere; case, hidden files, app bundles, depth.</dd>
-  <dt>Search by meaning <kbd>⌃⌘F</kbd></dt><dd>Finds "financial results from the German branch" in a file that says "the Berlin office reported strong quarterly revenue". Text files and PDFs are read once and turned into a searchable form; after that a query over a thousand passages takes well under a millisecond. Runs on macOS's own language model, on this machine, with nothing sent anywhere.</dd>
+  <dt>Search by meaning <kbd>⌃⌘F</kbd></dt><dd>Finds "financial results from the German branch" in a file that says "the Berlin office reported strong quarterly revenue". A document that uses your actual words still wins — meaning and literal matching are blended, and the file's own name counts. Text files and PDFs are read once; after that a query over a thousand passages takes well under a millisecond. Runs on macOS's own language model, on this machine, with nothing sent anywhere.</dd>
   <dt>Search says what it skipped</dt><dd>Too large, not text, unreadable folder, result cap: each count is shown with the results.</dd>
   <dt>Search ranking</dt><dd>Name matches outrank content matches; an exact name outranks a prefix, which outranks a substring.</dd>
   <dt><code>.gitignore</code>-aware search</dt><dd>Optional. Nested ignore files, negation and anchoring all honoured, and the count skipped is reported.</dd>
