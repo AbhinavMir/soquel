@@ -46,6 +46,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         newWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        // First launch only. A file manager that cannot read Desktop or
+        // Documents looks broken rather than unpermitted, so it is worth one
+        // window saying what to grant and why.
+        WelcomeWindowController.showIfFirstLaunch()
+
         // Opens a panel straight away, for screenshots and for reproducing a
         // bug without describing six clicks first.
         if let panel = ProcessInfo.processInfo.environment["SOQUEL_OPEN"] {
@@ -103,6 +108,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         Settings.writeNow()
     }
 
+    @objc func showWelcome(_ sender: Any?) {
+        WelcomeWindowController.shared.show()
+    }
+
     @objc func newWindow(_ sender: Any?) {
         let controller = MainWindowController()
         windowControllers.append(controller)
@@ -127,6 +136,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu(title: "Soquel")
         appMenu.addItem(withTitle: "About Soquel", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Set Up Permissions…", action: #selector(showWelcome(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         let settings = appMenu.addItem(withTitle: "Settings…", action: #selector(MainWindowController.menuSettings(_:)), keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]

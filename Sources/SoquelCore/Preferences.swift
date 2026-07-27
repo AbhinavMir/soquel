@@ -10,7 +10,7 @@ enum Prefs {
         "showHiddenFiles", "foldersFirst", "favouritePaths", "viewMode",
         "showFolderTree", "showInspector", "showGitStatus", "calculateFolderSizes",
         "autoFitColumns", "iconSize", "sortOrder", "terminalBundleID", "keyboardFirst",
-        "editorBundleID", "sessionPanes", "sessionActiveTabs",
+        "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
     ]
 
     static var showHiddenFiles: Bool {

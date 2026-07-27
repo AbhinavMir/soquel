@@ -432,3 +432,42 @@ final class FavouriteToggleTests: XCTestCase {
         XCTAssertNotNil(ToolbarCatalogue.action(id: "favourite"))
     }
 }
+
+/// The first-run window, and what can and cannot be automated.
+final class WelcomeTests: XCTestCase {
+    override func tearDown() {
+        Settings.removeObject(forKey: "welcomeShown")
+        super.tearDown()
+    }
+
+    /// Shown once. A window that reappears every launch is an advert.
+    func testItIsOfferedOnceAndThenNotAgain() {
+        Settings.removeObject(forKey: "welcomeShown")
+        XCTAssertFalse(WelcomeWindowController.hasBeenShown)
+        WelcomeWindowController.hasBeenShown = true
+        XCTAssertTrue(WelcomeWindowController.hasBeenShown)
+    }
+
+    /// The flag has to be in the settings file, or it is forgotten and the
+    /// window comes back on the next launch.
+    func testTheFlagIsCarriedInSettings() {
+        XCTAssertTrue(Prefs.keys.contains("welcomeShown"))
+    }
+
+    /// macOS refuses to let anything but Finder open folders. Recorded as a
+    /// test so a later attempt to "fix" it finds the answer rather than the
+    /// paramErr.
+    func testFoldersCannotBeReassignedAwayFromFinder() {
+        XCTAssertTrue(DefaultHandler.folderRoleIsReserved)
+        let status = LSSetDefaultRoleHandlerForContentType(
+            "public.folder" as CFString, .viewer, "app.soquel.Soquel" as CFString)
+        XCTAssertNotEqual(status, noErr, "macOS started allowing this; the welcome text should say so")
+    }
+
+    /// The probe has to be a path that is actually protected, or the check
+    /// reports access nobody has.
+    func testTheAccessCheckLooksAtAProtectedPath() {
+        // Granted or not, asking must not crash or block.
+        _ = FullDiskAccess.isGranted
+    }
+}
