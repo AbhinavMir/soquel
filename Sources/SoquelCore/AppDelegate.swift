@@ -27,16 +27,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.refreshAllPanes()
             }
         }
-        // A picker with nothing in it teaches nobody anything, so the bundled
-        // themes are written out once and then left alone.
-        ThemeLibrary.installBuiltInsIfMissing()
-
-        // Apply any user colour overrides before the first window is built.
-        //
-        // theme.json is the state; the theme name stored beside it only records
-        // which preset those colours came from. Re-applying the named theme
-        // here would undo every hand edit — to the file or through the colour
-        // wells — on the next launch.
+        // Apply user colour overrides before the first window is built.
+        // theme.json is the only thing consulted: nothing else stores colours,
+        // so nothing can disagree with it or overwrite it on the way up.
         Theme.reload()
         let menu = makeMainMenu()
         NSApp.mainMenu = menu

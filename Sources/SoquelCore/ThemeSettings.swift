@@ -1,10 +1,9 @@
 import AppKit
 
-/// Picking, saving, importing and sharing themes.
+/// Picking a set of colours to start from.
 ///
 /// Rows are plain views in a stack, as in the other panels here: a row holds a
-/// name, a description, a swatch strip and two buttons, and a single-column
-/// table sizes its cells to the column rather than the panel.
+/// name, a description, a swatch strip and a button.
 final class ThemeSettingsView: NSView {
     private var rowStack: NSStackView!
     private var status: NSTextField!
@@ -23,8 +22,8 @@ final class ThemeSettingsView: NSView {
 
     private func build() {
         let title = NSTextField(labelWithString:
-            "A theme is one file. Keep several, switch between them, and send one to "
-            + "somebody — the background image travels inside it rather than being pointed at.")
+            "A starting point. Applying one writes its colours to theme.json, which you can "
+            + "then edit — by hand or with the colour wells. Your background image is kept.")
         title.font = Theme.rowSecondary
         title.textColor = .secondaryLabelColor
         title.lineBreakMode = .byWordWrapping
@@ -50,11 +49,8 @@ final class ThemeSettingsView: NSView {
         status.lineBreakMode = .byTruncatingTail
         status.translatesAutoresizingMaskIntoConstraints = false
 
-        let save = NSButton(title: "Save Current as Theme…", target: self, action: #selector(saveCurrent))
-        let install = NSButton(title: "Install from File…", target: self, action: #selector(installFile))
-        let reveal = NSButton(title: "Reveal Folder", target: self, action: #selector(revealFolder))
-
-        let buttons = NSStackView(views: [reveal, install, save])
+        let reveal = NSButton(title: "Reveal theme.json", target: self, action: #selector(revealFile))
+        let buttons = NSStackView(views: [reveal])
         buttons.orientation = .horizontal
         buttons.spacing = 8
         buttons.translatesAutoresizingMaskIntoConstraints = false
@@ -87,7 +83,7 @@ final class ThemeSettingsView: NSView {
         ])
 
         observer = NotificationCenter.default.addObserver(
-            forName: .soquelThemesChanged, object: nil, queue: .main
+            forName: .soquelThemeChanged, object: nil, queue: .main
         ) { [weak self] _ in self?.reload() }
         reload()
     }
@@ -99,27 +95,25 @@ final class ThemeSettingsView: NSView {
             rowStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
-        let themes = ThemeLibrary.all()
-        for theme in themes {
-            let row = makeRow(for: theme)
+        for preset in ThemePresets.all {
+            let row = makeRow(for: preset)
             rowStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: rowStack.widthAnchor).isActive = true
         }
-        status.stringValue = themes.isEmpty
-            ? "No themes yet — save the current colours as one"
-            : "\(themes.count) theme\(themes.count == 1 ? "" : "s")"
+        status.stringValue = ThemePresets.current.map { "Using “\($0.name)”" }
+            ?? "Your own colours"
     }
 
-    private func makeRow(for theme: Theme_File) -> NSView {
+    private func makeRow(for preset: ThemePreset) -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        let isCurrent = theme.name == ThemeLibrary.currentName
+        let isCurrent = ThemePresets.current == preset
 
-        let name = NSTextField(labelWithString: theme.name + (isCurrent ? "  ✓" : ""))
+        let name = NSTextField(labelWithString: preset.name + (isCurrent ? "  ✓" : ""))
         name.font = NSFont.systemFont(ofSize: 13, weight: isCurrent ? .semibold : .regular)
         name.translatesAutoresizingMaskIntoConstraints = false
 
-        let about = NSTextField(labelWithString: theme.about ?? theme.author ?? "")
+        let about = NSTextField(labelWithString: preset.about)
         about.font = Theme.rowSecondary
         about.textColor = .secondaryLabelColor
         about.lineBreakMode = .byTruncatingTail
@@ -136,9 +130,9 @@ final class ThemeSettingsView: NSView {
             dot.layer?.cornerRadius = 3
             dot.layer?.borderWidth = 0.5
             dot.layer?.borderColor = NSColor.separatorColor.cgColor
-            // A theme that leaves a slot alone shows the built-in colour, so
+            // A preset that leaves a slot alone shows the built-in colour, so
             // the strip always reads as what you would actually get.
-            let hex = theme.dark[slot.rawValue] ?? theme.light[slot.rawValue]
+            let hex = preset.dark[slot.rawValue] ?? preset.light[slot.rawValue]
             let swatch = hex.flatMap { NSColor(hexString: $0) } ?? Theme.builtIn(slot, dark: true)
             dot.layer?.backgroundColor = swatch.cgColor
             dot.translatesAutoresizingMaskIntoConstraints = false
@@ -147,19 +141,11 @@ final class ThemeSettingsView: NSView {
             swatches.addArrangedSubview(dot)
         }
 
-        let use = NSButton(title: isCurrent ? "In use" : "Use", target: self, action: #selector(useTheme(_:)))
-        use.identifier = NSUserInterfaceItemIdentifier(theme.name)
+        let use = NSButton(title: isCurrent ? "In use" : "Use", target: self, action: #selector(usePreset(_:)))
+        use.identifier = NSUserInterfaceItemIdentifier(preset.name)
         use.isEnabled = !isCurrent
 
-        let share = NSButton(title: "Export…", target: self, action: #selector(exportTheme(_:)))
-        share.identifier = NSUserInterfaceItemIdentifier(theme.name)
-
-        let remove = NSButton(title: "✕", target: self, action: #selector(deleteTheme(_:)))
-        remove.identifier = NSUserInterfaceItemIdentifier(theme.name)
-        remove.isBordered = false
-        remove.toolTip = "Remove this theme"
-
-        let actions = NSStackView(views: [share, use, remove])
+        let actions = NSStackView(views: [use])
         actions.orientation = .horizontal
         actions.spacing = 6
         actions.translatesAutoresizingMaskIntoConstraints = false
@@ -187,99 +173,25 @@ final class ThemeSettingsView: NSView {
 
     // MARK: - Actions
 
-    @objc private func useTheme(_ sender: NSButton) {
-        guard let name = sender.identifier?.rawValue, let theme = ThemeLibrary.named(name) else { return }
-        do {
-            try ThemeLibrary.apply(theme)
-            status.stringValue = "Using “\(theme.name)”"
-        } catch {
-            status.stringValue = error.localizedDescription
-            NSSound.beep()
-        }
+    @objc private func usePreset(_ sender: NSButton) {
+        guard let name = sender.identifier?.rawValue,
+              let preset = ThemePresets.all.first(where: { $0.name == name }) else { return }
+        ThemePresets.apply(preset)
+        status.stringValue = "Using “\(preset.name)”"
         reload()
     }
 
-    @objc private func deleteTheme(_ sender: NSButton) {
-        guard let name = sender.identifier?.rawValue, let theme = ThemeLibrary.named(name),
-              let window else { return }
-        let alert = NSAlert()
-        alert.messageText = "Remove “\(theme.name)”?"
-        alert.informativeText = "The file is deleted from the themes folder."
-        alert.addButton(withTitle: "Remove")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window) { response in
-            guard response == .alertFirstButtonReturn else { return }
-            ThemeLibrary.delete(theme)
-        }
-    }
-
-    @objc private func exportTheme(_ sender: NSButton) {
-        guard let name = sender.identifier?.rawValue, let theme = ThemeLibrary.named(name) else { return }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = theme.safeFileName
-        panel.prompt = "Export"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    @objc private func revealFile() {
+        // Written first, so there is something to reveal on a machine that has
+        // never had the file, and so it shows every slot rather than only the
+        // ones that happen to be set.
         do {
-            try encoder.encode(theme).write(to: url, options: .atomic)
-            status.stringValue = "Exported “\(theme.name)”"
+            let url = try Theme.writeTemplate()
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
+            // Revealing the path anyway would open a Finder window on nothing.
             status.stringValue = error.localizedDescription
             NSSound.beep()
         }
-    }
-
-    @objc private func installFile() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.prompt = "Install"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let theme = try ThemeLibrary.install(from: url)
-            status.stringValue = "Installed “\(theme.name)”"
-        } catch {
-            status.stringValue = error.localizedDescription
-            NSSound.beep()
-        }
-    }
-
-    @objc private func saveCurrent() {
-        guard let window else { return }
-        let field = NSTextField(string: "My theme")
-        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
-
-        let alert = NSAlert()
-        alert.messageText = "Save the current colours as a theme"
-        alert.informativeText = "It appears in the list and can be exported."
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            let name = field.stringValue.trimmingCharacters(in: .whitespaces)
-            guard !name.isEmpty else { return }
-            let theme = ThemeLibrary.capture(name: name, author: nil, about: "Saved from your own colours.")
-            do {
-                try ThemeLibrary.save(theme)
-                ThemeLibrary.currentName = name
-                self?.status.stringValue = "Saved “\(name)”"
-                self?.reload()
-            } catch {
-                self?.status.stringValue = error.localizedDescription
-            }
-        }
-    }
-
-    @objc private func revealFolder() {
-        try? FileManager.default.createDirectory(
-            at: ThemeLibrary.directoryURL, withIntermediateDirectories: true
-        )
-        NSWorkspace.shared.activateFileViewerSelecting([ThemeLibrary.directoryURL])
     }
 }

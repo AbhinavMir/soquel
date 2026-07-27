@@ -1091,10 +1091,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func menuRevealThemes(_ sender: Any?) {
-        try? FileManager.default.createDirectory(
-            at: ThemeLibrary.directoryURL, withIntermediateDirectories: true
-        )
-        NSWorkspace.shared.activateFileViewerSelecting([ThemeLibrary.directoryURL])
+        // One theme file, so this is the same thing as revealing theme.json.
+        guard let url = try? Theme.writeTemplate() else { NSSound.beep(); return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     /// Opens the settings file itself. Pending writes are flushed first, so the

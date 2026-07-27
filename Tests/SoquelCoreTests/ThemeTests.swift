@@ -9,13 +9,11 @@ final class ThemeTests: XCTestCase {
         super.setUp()
         try? ThemeConfig.removeFile()
         Theme.config = .empty
-        ThemeLibrary.currentName = ""
     }
 
     override func tearDown() {
         try? ThemeConfig.removeFile()
         Theme.config = .empty
-        ThemeLibrary.currentName = ""
         super.tearDown()
     }
 
@@ -132,27 +130,11 @@ final class ThemeTests: XCTestCase {
 
     // MARK: - One source of truth
 
-    /// theme.json holds the colours; the theme name only records which preset
-    /// they came from. Editing a colour means they are no longer that preset's.
-    func testEditingAColourClearsTheRecordedThemeName() {
-        ThemeLibrary.currentName = "Paper"
+    func testResettingClearsTheOverrides() throws {
         Theme.apply(ThemeConfig(light: ["accent": "#B3541E"], dark: [:]))
-        XCTAssertEqual(ThemeLibrary.currentName, "")
-    }
-
-    /// A reset that leaves the name behind is undone the next time anything
-    /// re-applies the named preset.
-    func testResettingClearsTheRecordedThemeName() throws {
-        ThemeLibrary.currentName = "Paper"
         try Theme.reset()
-        XCTAssertEqual(ThemeLibrary.currentName, "")
         XCTAssertTrue(Theme.config.light.isEmpty)
-    }
-
-    /// Applying a preset still records its name — that is what the picker ticks.
-    func testApplyingAPresetRecordsItsName() throws {
-        try ThemeLibrary.apply(Theme_File(name: "Test", light: ["accent": "#112233"]))
-        XCTAssertEqual(ThemeLibrary.currentName, "Test")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ThemeConfig.fileURL.path))
     }
 
     /// The suite applies and resets themes constantly. Doing that to the real

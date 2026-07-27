@@ -59,8 +59,10 @@ enum BatchRename {
             var stem = (original as NSString).deletingPathExtension
             var ext = url.pathExtension
 
+            var ruleProblem: String?
             for rule in rules {
-                (stem, ext) = apply(rule, stem: stem, ext: ext, index: index, url: url, now: now)
+                (stem, ext) = apply(rule, stem: stem, ext: ext, index: index, url: url,
+                                    now: now, problem: &ruleProblem)
             }
 
             var proposed = ext.isEmpty ? stem : "\(stem).\(ext)"
@@ -68,7 +70,9 @@ enum BatchRename {
 
             var preview = RenamePreview(url: url, original: original, proposed: proposed, problem: nil)
 
-            if proposed.isEmpty {
+            if let ruleProblem {
+                preview.problem = ruleProblem
+            } else if proposed.isEmpty {
                 preview.problem = "Name would be empty"
             } else if validateFileName(proposed) != nil {
                 preview.problem = "Not a valid name"
@@ -88,7 +92,8 @@ enum BatchRename {
     }
 
     private static func apply(
-        _ rule: RenameRule, stem: String, ext: String, index: Int, url: URL, now: Date
+        _ rule: RenameRule, stem: String, ext: String, index: Int, url: URL, now: Date,
+        problem: inout String?
     ) -> (String, String) {
         switch rule {
         case .findReplace(let find, let replace, let regex, let caseSensitive):
@@ -142,7 +147,13 @@ enum BatchRename {
             // what Finder gets wrong.
             let keys: Set<URLResourceKey> = [.contentModificationDateKey, .creationDateKey]
             let values = try? url.resourceValues(forKeys: keys)
-            let date = (useCreated ? values?.creationDate : values?.contentModificationDate) ?? now
+            guard let date = useCreated ? values?.creationDate : values?.contentModificationDate else {
+                // Falling back to the current time would stamp the moment the
+                // rename ran into the filename — the very mistake this rule
+                // exists to avoid, and undetectable once it is in the name.
+                problem = useCreated ? "No creation date to use" : "No modification date to use"
+                return (stem, ext)
+            }
             return (stem + " " + formatter.string(from: date), ext)
         }
     }

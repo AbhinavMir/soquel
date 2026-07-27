@@ -48,23 +48,16 @@ enum Theme {
     }
 
     /// Applies an edited config and writes it, for the settings colour wells.
-    ///
-    /// Editing a colour makes these no longer the preset's colours, so the
-    /// recorded theme name is cleared. `ThemeLibrary.apply` sets the name after
-    /// calling this, which is what keeps applying a preset showing its name.
     static func apply(_ newConfig: ThemeConfig) {
         config = newConfig
         try? ThemeConfig.write(newConfig)
-        ThemeLibrary.currentName = ""
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
     }
 
-    /// Back to the shipped colours. Clears the theme name too, so a reset is
-    /// not undone by a preset being re-applied.
+    /// Back to the shipped colours.
     static func reset() throws {
         try ThemeConfig.removeFile()
         config = .empty
-        ThemeLibrary.currentName = ""
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
     }
 
