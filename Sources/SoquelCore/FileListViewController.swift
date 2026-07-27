@@ -1319,9 +1319,16 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         if sourceExists {
             info += "\n\nIncoming: \(describe(source))\n\(source.deletingLastPathComponent().path)"
         }
+        // The warning belongs to the destination being a folder, not to both
+        // sides being folders. A file landing on a folder is the same loss —
+        // the whole tree goes — and Merge is not even offered to soften it.
         if bothFolders {
             info += "\n\nMerge keeps everything already in the folder and adds what is new."
                 + "\nReplace deletes the existing folder and everything inside it."
+        } else if existingIsDirectory.boolValue {
+            let count = (try? fm.contentsOfDirectory(atPath: existing.path).count) ?? 0
+            info += "\n\nReplace deletes the existing folder and the \(count) item"
+                + "\(count == 1 ? "" : "s") inside it, and puts a file in its place."
         }
         alert.informativeText = info
 

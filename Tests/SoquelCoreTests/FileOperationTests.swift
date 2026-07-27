@@ -213,3 +213,75 @@ final class SortAndFilterTests: XCTestCase {
         XCTAssertLessThan(tight, loose)
     }
 }
+
+/// The stage-then-swap dance claims a failure leaves the existing item
+/// untouched. It did not: the destination was deleted first, so a move that
+/// failed in the gap left nothing at all.
+final class SwapIntoPlaceTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("soquel-swap-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+        try super.tearDownWithError()
+    }
+
+    func testTheStagedItemTakesTheDestinationsPlace() throws {
+        let destination = root.appendingPathComponent("a.txt")
+        let staged = root.appendingPathComponent(".soquel-incoming-a.txt")
+        try "old".write(to: destination, atomically: true, encoding: .utf8)
+        try "new".write(to: staged, atomically: true, encoding: .utf8)
+
+        try OperationEngine.swapIntoPlace(staged: staged, destination: destination,
+                                         fileManager: FileManager())
+        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "new")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
+    }
+
+    /// The staged item is missing, so the move cannot succeed. The existing
+    /// file has to still be there afterwards.
+    func testAFailedSwapLeavesTheDestinationWhereItWas() throws {
+        let destination = root.appendingPathComponent("a.txt")
+        try "keep me".write(to: destination, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try OperationEngine.swapIntoPlace(
+            staged: root.appendingPathComponent("never-existed"),
+            destination: destination, fileManager: FileManager()))
+
+        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "keep me",
+                       "the destination was deleted before the swap was known to work")
+    }
+
+    /// Same guarantee when the thing being replaced is a whole folder.
+    func testAFailedSwapPutsAFolderBack() throws {
+        let destination = root.appendingPathComponent("docs")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try "important".write(to: destination.appendingPathComponent("keep.txt"),
+                              atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try OperationEngine.swapIntoPlace(
+            staged: root.appendingPathComponent("never-existed"),
+            destination: destination, fileManager: FileManager()))
+
+        XCTAssertEqual(
+            try String(contentsOf: destination.appendingPathComponent("keep.txt"), encoding: .utf8),
+            "important", "the folder was destroyed by a swap that never happened")
+    }
+
+    /// Nothing at the destination is the ordinary case, not an error.
+    func testSwappingOntoNothingJustPutsTheItemThere() throws {
+        let destination = root.appendingPathComponent("fresh.txt")
+        let staged = root.appendingPathComponent(".soquel-incoming-fresh.txt")
+        try "hello".write(to: staged, atomically: true, encoding: .utf8)
+
+        try OperationEngine.swapIntoPlace(staged: staged, destination: destination,
+                                         fileManager: FileManager())
+        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "hello")
+    }
+}
