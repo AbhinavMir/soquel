@@ -48,22 +48,37 @@ enum Theme {
     }
 
     /// Applies an edited config and writes it, for the settings colour wells.
+    ///
+    /// Editing a colour makes these no longer the preset's colours, so the
+    /// recorded theme name is cleared. `ThemeLibrary.apply` sets the name after
+    /// calling this, which is what keeps applying a preset showing its name.
     static func apply(_ newConfig: ThemeConfig) {
         config = newConfig
         try? ThemeConfig.write(newConfig)
+        ThemeLibrary.currentName = ""
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
     }
 
+    /// Back to the shipped colours. Clears the theme name too, so a reset is
+    /// not undone by a preset being re-applied.
     static func reset() throws {
         try ThemeConfig.removeFile()
         config = .empty
+        ThemeLibrary.currentName = ""
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
     }
 
-    /// Writes a template containing every slot at its built-in value.
+    /// Writes a template containing every slot at the value actually in force,
+    /// and keeps the configured background.
+    ///
+    /// This runs when the user asks to see the file. Writing built-in colours
+    /// here would silently discard whatever they had set — the file is meant to
+    /// show them their theme, not replace it.
     @discardableResult
     static func writeTemplate() throws -> URL {
-        try ThemeConfig.writeTemplate { slot, isDark in builtIn(slot, dark: isDark) }
+        try ThemeConfig.writeTemplate(background: config.background) { slot, isDark in
+            resolved(slot, dark: isDark)
+        }
     }
 
     // MARK: - Built-in palette

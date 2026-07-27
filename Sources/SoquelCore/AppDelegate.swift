@@ -32,11 +32,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         ThemeLibrary.installBuiltInsIfMissing()
 
         // Apply any user colour overrides before the first window is built.
+        //
+        // theme.json is the state; the theme name stored beside it only records
+        // which preset those colours came from. Re-applying the named theme
+        // here would undo every hand edit — to the file or through the colour
+        // wells — on the next launch.
         Theme.reload()
-        if !ThemeLibrary.currentName.isEmpty,
-           let theme = ThemeLibrary.named(ThemeLibrary.currentName) {
-            try? ThemeLibrary.apply(theme)
-        }
         let menu = makeMainMenu()
         NSApp.mainMenu = menu
         NSApp.windowsMenu = menu.items.compactMap(\.submenu).first { $0.title == "Window" }

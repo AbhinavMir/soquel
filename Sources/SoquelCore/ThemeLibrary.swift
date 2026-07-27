@@ -101,10 +101,37 @@ enum ThemeLibrary {
 
     // MARK: - Writing
 
+    /// Where a theme is written.
+    ///
+    /// `safeFileName` maps every awkward character to a dash, so "Paper!",
+    /// "Paper?" and "Paper" all collapse to Paper.soquel-theme. Saving one must
+    /// not destroy another, so a name that lands on a file belonging to a
+    /// *differently* named theme gets a numbered suffix instead. Re-saving a
+    /// theme under its own name still overwrites, which is what editing means.
+    static func fileURL(for theme: Theme_File) -> URL {
+        /// Free to take: nothing there, or what is there is this same theme.
+        func isOurs(_ url: URL) -> Bool {
+            guard let existing = read(url) else { return true }
+            return existing.name == theme.name
+        }
+
+        let plain = directoryURL.appendingPathComponent(theme.safeFileName)
+        if isOurs(plain) { return plain }
+
+        let stem = theme.safeFileName.replacingOccurrences(
+            of: "." + Theme_File.fileExtension, with: "")
+        for suffix in 2...999 {
+            let candidate = directoryURL
+                .appendingPathComponent("\(stem)-\(suffix).\(Theme_File.fileExtension)")
+            if isOurs(candidate) { return candidate }
+        }
+        return plain
+    }
+
     @discardableResult
     static func save(_ theme: Theme_File) throws -> URL {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        let url = directoryURL.appendingPathComponent(theme.safeFileName)
+        let url = fileURL(for: theme)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(theme).write(to: url, options: .atomic)
@@ -113,7 +140,8 @@ enum ThemeLibrary {
     }
 
     static func delete(_ theme: Theme_File) {
-        let url = directoryURL.appendingPathComponent(theme.safeFileName)
+        // Via fileURL(for:) so removing "Paper!" cannot delete "Paper".
+        let url = fileURL(for: theme)
         try? FileManager.default.removeItem(at: url)
         if currentName == theme.name { currentName = "" }
         NotificationCenter.default.post(name: .soquelThemesChanged, object: nil)
@@ -143,12 +171,21 @@ enum ThemeLibrary {
 
         if let encoded = theme.backgroundImage, let data = Data(base64Encoded: encoded) {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-            let imageURL = directoryURL
-                .appendingPathComponent(theme.safeFileName)
+            let imageURL = fileURL(for: theme)
                 .deletingPathExtension()
                 .appendingPathExtension("png")
             try data.write(to: imageURL, options: .atomic)
-            background?.imagePath = imageURL.path
+            // A theme may carry an image without carrying a background block —
+            // the two fields are independently optional. Assigning through a nil
+            // optional is a no-op, which would write the png out and then drop
+            // the path, so supply the defaults and set the path on those.
+            //
+            // Spelt out rather than `?? .none`: in an optional context Swift
+            // reads a bare `.none` as Optional.none, which is nil, which is the
+            // bug this line exists to fix.
+            var resolved = background ?? BackgroundConfig.none
+            resolved.imagePath = imageURL.path
+            background = resolved
         }
 
         Theme.apply(ThemeConfig(light: theme.light, dark: theme.dark, background: background))
@@ -170,9 +207,15 @@ enum ThemeLibrary {
             name: name, author: author, about: about,
             light: config.light, dark: config.dark, background: config.background
         )
-        // The image travels with the theme rather than being referred to.
-        if let path = config.background?.imagePath, let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-            theme.backgroundImage = data.base64EncodedString()
+        // The image travels with the theme rather than being referred to. The
+        // path is cleared either way: when the file cannot be read there is no
+        // image to carry, and leaving the path behind would ship the author's
+        // home directory layout to whoever they send the theme to, pointing at
+        // a file that machine does not have.
+        if config.background?.imagePath != nil {
+            if let url = config.background?.imageURL, let data = try? Data(contentsOf: url) {
+                theme.backgroundImage = data.base64EncodedString()
+            }
             theme.background?.imagePath = nil
         }
         return theme

@@ -131,6 +131,63 @@ final class ThemeLibraryTests: XCTestCase {
                        Data("pretend this is a png".utf8))
     }
 
+    /// "Paper!", "Paper?" and "Paper" all collapse to the same filename. Saving
+    /// one must not destroy another.
+    func testAThemeWhoseNameCollidesDoesNotOverwriteTheOther() throws {
+        try ThemeLibrary.save(Theme_File(name: "Paper", light: ["accent": "#111111"]))
+        try ThemeLibrary.save(Theme_File(name: "Paper!", light: ["accent": "#222222"]))
+
+        XCTAssertEqual(ThemeLibrary.all().count, 2, "one theme replaced the other")
+        XCTAssertEqual(ThemeLibrary.named("Paper")?.light["accent"], "#111111")
+        XCTAssertEqual(ThemeLibrary.named("Paper!")?.light["accent"], "#222222")
+    }
+
+    /// Saving the same theme again is editing it, not making a second copy.
+    func testResavingAThemeOverwritesItsOwnFile() throws {
+        try ThemeLibrary.save(Theme_File(name: "Paper", about: "first"))
+        try ThemeLibrary.save(Theme_File(name: "Paper", about: "second"))
+        XCTAssertEqual(ThemeLibrary.all().count, 1)
+        XCTAssertEqual(ThemeLibrary.named("Paper")?.about, "second")
+    }
+
+    /// Deleting "Paper!" must not delete "Paper".
+    func testDeletingACollidingThemeLeavesTheOtherAlone() throws {
+        try ThemeLibrary.save(Theme_File(name: "Paper", light: ["accent": "#111111"]))
+        let other = Theme_File(name: "Paper!", light: ["accent": "#222222"])
+        try ThemeLibrary.save(other)
+
+        ThemeLibrary.delete(other)
+        XCTAssertEqual(ThemeLibrary.all().map(\.name), ["Paper"])
+        XCTAssertEqual(ThemeLibrary.named("Paper")?.light["accent"], "#111111")
+    }
+
+    /// The two fields are independently optional, so a hand-authored theme can
+    /// carry an image and no background block. The image must still be used.
+    func testAThemeCarryingAnImageButNoBackgroundBlockStillShowsIt() throws {
+        var theme = sample("Imaged")
+        theme.background = nil
+        theme.backgroundImage = Data("pretend this is a png".utf8).base64EncodedString()
+
+        try ThemeLibrary.apply(theme)
+        let path = try XCTUnwrap(Theme.config.background?.imagePath,
+                                 "the image was written out and then the path dropped")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+    }
+
+    /// When the image cannot be read there is nothing to carry, and leaving the
+    /// path behind ships the author's home directory to the recipient.
+    func testAnUnreadableImageLeavesNoPathBehind() {
+        Theme.apply(ThemeConfig(
+            light: [:], dark: [:],
+            background: BackgroundConfig(imagePath: "/nowhere/gone.png", opacity: 0.3,
+                                         fit: .fill, includeSidebar: false)
+        ))
+        let captured = ThemeLibrary.capture(name: "Broken", author: nil, about: nil)
+        XCTAssertNil(captured.backgroundImage)
+        XCTAssertNil(captured.background?.imagePath, "the author's path was shipped")
+        XCTAssertEqual(captured.background?.opacity, 0.3, "the rest of the settings survive")
+    }
+
     func testInstallingAThemeFileSomebodySent() throws {
         let outside = FileManager.default.temporaryDirectory
             .appendingPathComponent("Sent.soquel-theme")
