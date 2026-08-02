@@ -1,6 +1,6 @@
 # Working state
 
-Branch: `main`, clean and pushed. 596 tests pass in 13.5s.
+Branch: `main`, clean and pushed. 617 tests pass in 13.5s.
 
 **1.0.1 is shipped.** Signed with a Developer ID, notarised, disk image on the GitHub
 release, landing page live at trysoquel.com.
@@ -8,8 +8,8 @@ release, landing page live at trysoquel.com.
 ## What this is
 
 Soquel, a file manager for macOS. The adversarial bug sweep that this file used to track
-is finished: all 38 issues it raised are closed. What remains are three feature issues,
-none of them started.
+is finished: all 38 issues it raised are closed. Two feature issues remain, neither
+started.
 
 ## Shipped
 
@@ -23,25 +23,34 @@ none of them started.
 - **Landing page.** Feature subtitles and the highlights block removed — a list of names
   rather than a paragraph each.
 
-## Open — three feature issues, nothing in progress
+## Open — two feature issues, nothing in progress
 
 - **#5 Disk map as a real DaisyDisk replacement.** The sunburst that shipped is the view,
   not the product. Whole-disk scanning and the collector are the gap.
 - **#4 SFTP without macFUSE,** as a File Provider extension. macFUSE is a kernel
   extension and cannot ship inside an app bundle, so this is the only route.
-- **#3 Frutiger Aero base theme and a bundled icon set.** **Blocked on a contradiction —
-  see below.**
 
-## Blocked
+**#3 is closed, won't do.** It asked for named theme files in a `themes/` folder, which
+is what the sweep deleted. The theming that shipped — seven slots light and dark, a
+background image, four ready-made palettes, all in `theme.json` — is enough.
 
-**#3 asks for what the sweep deleted.** The issue wants named theme files in
-`~/Library/Application Support/Soquel/themes/`, picked by name. The "One theme system"
-decision below deleted exactly that: `ThemeLibrary`, `Theme_File`, the `.soquel-theme`
-format, the Themes folder and the import/export around them. One of the two has to give
-before any work starts on #3 — either rewrite the issue against the single-`theme.json`
-model, or reverse the decision and say why.
+## Since 1.0.1, unreleased
 
-## Next, once #3 is resolved either way
+Six changes on `main`, none of them cut into a build yet:
+
+- Clicking a favourite no longer hands the highlight to the folder tree. The tree still
+  opens down to the folder; it just does not steal the selected row.
+- **Show Package Contents** opens a `.app` in a window over the pane instead of
+  navigating into it. `PackageContents.swift`.
+- The folder tree lists files, five per folder, then a row standing in for the rest.
+  Selecting a file opens its folder and selects it there rather than navigating to it.
+- File kinds in Settings are no longer the fixed twenty-three: **Add Kind…** takes any
+  extension macOS recognises. Open With is a toolbar button as well as a right-click.
+- The hidden-files button draws `eye.slash` when hidden files are off. The view pill
+  fills its selected segment with grey rather than the selection blue.
+- Tabs have a close button each and a plus at the end of the bar.
+
+## Next
 
 Smaller things, none blocking:
 - Shortcut import and export. Remapping works; sharing a keymap does not.
