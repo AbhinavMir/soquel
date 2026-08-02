@@ -5,11 +5,11 @@ Update this in the same commit as the change it describes.
 
 Status: `done` · `next` · `later` · `wont`
 
-## Shipped in 0.1
+## Shipped, 0.1 through 1.0.1
 
 | Feature | Notes |
 | --- | --- |
-| Panes (up to 4), tabs per pane | One orientation per window; nested splits are `next` |
+| Panes (up to 4), tabs per pane | `⌘1`–`⌘4` to focus, `⌘T` for a tab; nested splits shipped later and are their own row below |
 | List view with sortable columns | Name, size, kind, date; folders-first toggle |
 | Sort by name / size / kind / date | `⌃⌘1`–`⌃⌘4`, column header click, or palette |
 | Navigation | Breadcrumbs, editable path, history, Git root, sidebar |
@@ -53,7 +53,7 @@ Status: `done` · `next` · `later` · `wont`
 | Pane toolbar | Filter field on top, customisable button bar under it; right-click to choose buttons |
 | View-mode pill | List, icon and column draw as one segmented control with the selected segment filled |
 | Preview and details panel | `⌥⌘I` — Quick Look over kind, size, dates, permissions, owner, symlink target, extended attributes, media metadata, and SHA-256 on demand |
-| Themes | Settings → Themes, or **Themes…** in the palette. A theme is one `.soquel-theme` file: keep several, switch by name, export one, install one somebody sent. Four ship with it |
+| Ready-made palettes | Settings → Appearance. Four of them, constants in `ThemePresets.swift` that write into `theme.json`; which one is in force is derived by comparing colours, never stored. Applying one keeps the background image. There is no theme file to keep, name, export or install — see the note under Known gaps |
 | Settings as one JSON file | `settings.json` beside `theme.json`; hot-reloaded when edited outside the app |
 | Open With, and set the default | Every registered application for the file, plus changing the system-wide handler for its type |
 | Folder comparison and sync | `⇧⌘K` — left only / right only / differs / same, by size and date or by checksum, copied one direction over the ticked rows |
@@ -73,27 +73,24 @@ Status: `done` · `next` · `later` · `wont`
 ## Demand-ranked backlog
 
 [docs/RESEARCH-finder-wishlist.md](RESEARCH-finder-wishlist.md) ranks 47 wants by how often people
-ask and how badly Finder fails, with sources. The items that outrank most of the list below:
+ask and how badly Finder fails, with sources.
 
-The top five from the research are now **built**: cut/paste in the context menu, the folder tree,
-search that walks the filesystem and hides nothing, folder merge, and New File with templates.
+The strongly-evidenced set is now built in full: cut/paste in the context menu, the folder tree,
+search that walks the filesystem and hides nothing, folder merge, New File with templates, column
+view, archive browsing, metadata columns, named workspaces, batch rename, thumbnails and folder
+comparison. Nothing from that tier is outstanding. What is left in the research file is the long
+tail, and it is not ranked above the three issues below.
 
-Column view, archive browsing, metadata columns, named workspaces and batch rename are now built
-too. What remains from the strongly-evidenced set:
-
-Thumbnails and folder comparison are now built too. What remains from the strongly-evidenced set:
-
-
-## Next (0.2)
+## Next
 
 - [ ] **Shortcut import and export** — remapping works; sharing a keymap does not.
-
-## Later (0.3+)
-
+- [ ] **A universal binary** — `scripts/build-app.sh` runs `swift build -c release`, which builds
+      for the host only, so 1.0.1 is arm64. The landing page says Apple silicon accordingly.
 
 ## Known gaps
 
 - A theme sets the seven colour slots and the background. Fonts, metrics and icon sets are not themeable.
+- There is one theme and it lives in `theme.json`. Themes cannot be kept side by side, named, switched between, exported or installed — the `.soquel-theme` format that did that was deleted during the bug sweep, because two systems both claiming to own the colours is how the theme kept reverting. Issue #3 asks for named theme files again and contradicts this; the two have to be reconciled before it can start.
 - Git integration is display-only by design: no staging, diffing, or committing.
 - Content search reads UTF-8 text only and skips files over 8 MB; both are reported rather than silent.
 - `.gitignore` support covers ignore files inside the repository. `core.excludesFile`, `.git/info/exclude` and `$XDG_CONFIG_HOME/git/ignore` are not read.
@@ -103,22 +100,27 @@ Thumbnails and folder comparison are now built too. What remains from the strong
 - View settings are global, not per folder.
 - `sftp://` needs macFUSE and sshfs installed; macOS cannot mount it alone, and a kernel extension cannot ship inside an app bundle. The app uses sshfs when present and names the install when not. A File Provider extension is the route that removes the dependency — issue #4. S3 is not supported at all.
 - FTP mounts read-only, which is a macOS limitation rather than a choice here.
-- The app is ad-hoc signed, so a first launch on another Mac needs a right-click → Open. Notarising needs the Apple Developer Program — see [Distribution](DISTRIBUTION.md).
-- `scripts/build-app.sh` builds for the host architecture only; selling to both needs a universal binary.
+- `scripts/build-app.sh` builds for the host architecture only, so the 1.0.1 disk image is arm64 and will not launch on an Intel Mac. Reaching both needs a universal binary.
 - The Mac App Store is closed to this app as built: the sandbox forbids browsing outside user-granted folders, running `git`/`unzip`/`tar`, mounting servers, and whole-disk scanning. [Distribution](DISTRIBUTION.md) has the audit.
-- The landing page links to the GitHub releases page; the release itself has not been cut, so the download button currently lands on an empty list.
 
 ## Tracked as issues
 
+These three are the whole open list. Every issue from the adversarial bug sweep — 38 of them,
+data loss first, then wrong result, then UI — is closed.
+
 - [#3 Frutiger Aero base theme, and an icon set for ricing](https://github.com/AbhinavMir/soquel/issues/3)
+  — blocked: it asks for the named theme files the sweep deleted. See Known gaps.
 - [#4 SFTP without macFUSE: a File Provider extension](https://github.com/AbhinavMir/soquel/issues/4)
 - [#5 Disk map: become an actual DaisyDisk replacement](https://github.com/AbhinavMir/soquel/issues/5)
 
-## Ruled out for 1.0
+## Ruled out
 
-AI assistant · cloud sync or accounts · plugin marketplace · remote filesystems (SFTP, S3, WebDAV) ·
-built-in terminal emulator · photo library replacement · automatic file organisation · mobile app ·
-replacing Finder at the system level.
+AI assistant · cloud sync or accounts · plugin marketplace · built-in terminal emulator ·
+photo library replacement · automatic file organisation · mobile app · replacing Finder at the
+system level.
+
+Remote filesystems were on this list and came off it in part: SMB, AFP, NFS, WebDAV and read-only
+FTP all mount through Connect to Server. SFTP is issue #4. S3 stays ruled out.
 
 ## How to add an entry
 

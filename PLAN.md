@@ -1,91 +1,80 @@
 # Working state
 
-Branch: `bug-sweep` (off `main` at 48cdf79). No PR yet. 497 tests pass.
+Branch: `main`, clean and pushed. 596 tests pass in 13.5s.
 
-**23 of 38 fixed and closed.** 15 open: 8 Wrong Result, 7 UI.
+**1.0.1 is shipped.** Signed with a Developer ID, notarised, disk image on the GitHub
+release, landing page live at trysoquel.com.
 
 ## What this is
 
-Fixing the open issues on AbhinavMir/soquel, found by an adversarial bug sweep.
-Order is data loss first, then wrong result, then UI.
+Soquel, a file manager for macOS. The adversarial bug sweep that this file used to track
+is finished: all 38 issues it raised are closed. What remains are three feature issues,
+none of them started.
 
-Labels: `data loss`, `Wrong Result`, `UI`. Nothing else.
+## Shipped
 
-## Done — all 7 data-loss issues are closed
+- **1.0.0 → 1.0.1.** Developer ID signing, so a granted permission survives an update.
+  Notarised, so the first launch is an ordinary double-click with no right-click and no
+  warning. Disk image laid out rather than left to Finder. First-launch window says what
+  to grant and why.
+- **The bug sweep, all 38 issues.** 7 data loss, then wrong result, then UI. The detail
+  is in the commits `c6fa729`, `7c896de`, `3dface9`, `a260895`, `24ae20a` and
+  `b74bd2b` ("Fix the last fifteen bugs from the sweep").
+- **Landing page.** Feature subtitles and the highlights block removed — a list of names
+  rather than a paragraph each.
 
-- **#6 #7 #8 #22 — theme state** (`c6fa729`)
-  ThemeConfig now redirects to a temp directory under test, so `swift test` no
-  longer rewrites the real theme.json. "Reveal theme.json" writes the colours in
-  force and keeps the background instead of writing the shipped palette and
-  clearing the image.
-- **#10 #11 #12 — destructive file operations** (`7c896de`)
-  Stage-then-swap keeps the existing item until the swap has happened, so a
-  failed move no longer loses both copies. A replaced folder goes to the Trash
-  under its own name. Folder compare will not put a file where a folder is —
-  excluded from the plan, refused by apply(), unticked by default. The conflict
-  prompt warns whenever the destination is a folder, not only when both sides
-  are.
-- **#9 #21 #38 — closed by deletion** (`3dface9`)
-  The `.soquel-theme` format is gone. See the decision below.
-- Batch rename no longer stamps the current time into a filename when the
-  file's own date cannot be read; the entry is reported and skipped.
+## Open — three feature issues, nothing in progress
 
-- **#13 #14 #15 #17 #18 #33 #35 #36 — semantic index** (`a260895`)
-  Nested roots no longer duplicate and double passages per rebuild. The
-  incremental keep is linear rather than quadratic. Folder scoping compares
-  paths, not string prefixes, so ~/Notes-archive is not inside ~/Notes. The
-  query vector's width is checked before sgemv reads it. Every entry is
-  blended, so there are no longer two score scales in one array. Text with no
-  blank line and no ". " is cut on character count instead of becoming one
-  8 MB passage. No empty passages. The index loads off the main thread.
+- **#5 Disk map as a real DaisyDisk replacement.** The sunburst that shipped is the view,
+  not the product. Whole-disk scanning and the collector are the gap.
+- **#4 SFTP without macFUSE,** as a File Provider extension. macFUSE is a kernel
+  extension and cannot ship inside an app bundle, so this is the only route.
+- **#3 Frutiger Aero base theme and a bundled icon set.** **Blocked on a contradiction —
+  see below.**
 
-- **#16 #19 #26 — threading** (`24ae20a`)
-  Disk map and file search use a generation rather than a resettable Bool, so a
-  cancelled walk cannot be resurrected by the next run and a superseded one
-  reports nothing. Cancelling and being replaced stay distinct: a cancelled run
-  still calls back with `cancelled` set. SettingsStore's two dispatch sources
-  are swapped under their own lock.
+## Blocked
 
-## Next
+**#3 asks for what the sweep deleted.** The issue wants named theme files in
+`~/Library/Application Support/Soquel/themes/`, picked by name. The "One theme system"
+decision below deleted exactly that: `ThemeLibrary`, `Theme_File`, the `.soquel-theme`
+format, the Themes folder and the import/export around them. One of the two has to give
+before any work starts on #3 — either rewrite the issue against the single-`theme.json`
+model, or reverse the decision and say why.
 
-Clusters worth doing together:
-- **Disk map / scanning:** #20 unreadable counted as zero, #25 volumes walked
-  twice, #31 trashing restarts the scan, #37 "smaller items" sentinel,
-  #39 depth off by one
-- **Transfers:** #29 staging in the system temp dir breaks cross-volume
-  overwrites, #30 failed copies counted as copied
-- **Settings:** #23 lost write, #24 bytes recorded before the write
-- **Leftovers:** #27 reveal selection, #28 recycled object addresses as keys,
-  #32 hidden panes cannot resize, #34 literalScore matches substrings,
-  #40 silent matcher failure, #41 breadcrumb hidden too early
+## Next, once #3 is resolved either way
 
-Feature issues #3 #4 #5 are out of scope for this sweep.
+Smaller things, none blocking:
+- Shortcut import and export. Remapping works; sharing a keymap does not.
+- A universal binary. `scripts/build-app.sh` runs `swift build -c release`, so 1.0.1 is
+  arm64 only. The landing page now says Apple silicon rather than claiming Intel.
 
 ## Decisions taken
 
-- **One theme system.** theme.json is the only file that stores colours. The
-  ready-made palettes are constants in `ThemePresets.swift` that write into it;
-  which one is in use is derived by comparing colours, never stored. Applying
-  one keeps the background image. `ThemeLibrary`, `Theme_File`, the
-  `.soquel-theme` format, the Themes folder and the import/export around them
-  are deleted.
-- **No useless fallbacks.** Scanned all 108 `??` sites. Most are honest defaults
-  ("—" placeholders, enum defaults, UI metrics) and were left. The one real
-  offender was the rename date rule. `parentDirectoryURL(of:) ?? url` was left:
-  the root's parent being the root is a correct answer, not a substitution.
+- **One theme system.** theme.json is the only file that stores colours. The ready-made
+  palettes are constants in `ThemePresets.swift` that write into it; which one is in use
+  is derived by comparing colours, never stored. Applying one keeps the background image.
+  `ThemeLibrary`, `Theme_File`, the `.soquel-theme` format, the Themes folder and the
+  import/export around them are deleted.
+- **No useless fallbacks.** Scanned all 108 `??` sites. Most are honest defaults ("—"
+  placeholders, enum defaults, UI metrics) and were left. The one real offender was the
+  rename date rule. `parentDirectoryURL(of:) ?? url` was left: the root's parent being
+  the root is a correct answer, not a substitution.
 
 ## Traps hit
 
-- `?? .none` in an optional context is `Optional.none`, i.e. nil, so it silently
-  does nothing. That was the cause of #21, and I reintroduced it in the first
-  attempt at the fix. Write `BackgroundConfig.none`.
-- `String.map` shadows `Optional.map`, so `read(url)?.name.map { $0 == x }`
-  compiles as a character-by-character map.
+- `?? .none` in an optional context is `Optional.none`, i.e. nil, so it silently does
+  nothing. That was the cause of #21, and I reintroduced it in the first attempt at the
+  fix. Write `BackgroundConfig.none`.
+- `String.map` shadows `Optional.map`, so `read(url)?.name.map { $0 == x }` compiles as a
+  character-by-character map.
 
 ## Environment notes
 
-- The user's theme is pink with a sakura background, set by hand in
-  `~/Library/Application Support/Soquel/theme.json`, image at `sakura.png`
-  beside it. Do not let tests or fixtures write to that file — check its md5 is
-  unchanged after any test run (currently `30c16bfa25ddc2a4e6ce5b904a9ddada`).
 - Do not launch the app. Build and test only.
+- `~/Library/Application Support/Soquel/` currently holds only `settings.json`, last
+  written 29 July. The pink theme with the sakura background that this file used to
+  describe, and the `sakura.png` beside it, are not on disk. They were already gone
+  before the 2 August test run — the md5 check ran first and found nothing. Cause
+  unknown; not recreated.
+- ThemeConfig redirects to a temp directory under test, so `swift test` does not write to
+  the real theme.json. That is the mechanism the old md5 check was guarding.

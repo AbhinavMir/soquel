@@ -1,7 +1,7 @@
 {
-  "updated": "2026-07-26 00:52",
-  "status": "building",
-  "statusLabel": "v0.2 in progress",
+  "updated": "2026-08-02 13:47",
+  "status": "shipped",
+  "statusLabel": "v1.0.1 released",
   "stats": [
     {
       "label": "Build",
@@ -10,27 +10,27 @@
     },
     {
       "label": "Tests",
-      "value": "297 passing",
+      "value": "596 passing",
       "tone": "ok"
     },
     {
-      "label": "App",
-      "value": "installed",
+      "label": "Release",
+      "value": "1.0.1 notarised",
       "tone": "ok"
     },
     {
-      "label": "Views",
-      "value": "list, icon, column",
-      "tone": ""
+      "label": "Open bugs",
+      "value": "none",
+      "tone": "ok"
     },
     {
-      "label": "Settings",
-      "value": "settings.json",
-      "tone": "ok"
+      "label": "Architecture",
+      "value": "arm64 only",
+      "tone": "dim"
     },
     {
       "label": "Binary",
-      "value": "1.9 MB",
+      "value": "2.7 MB",
       "tone": "dim"
     }
   ],
@@ -76,51 +76,66 @@
       "state": "done"
     },
     {
+      "name": "Search by meaning",
+      "note": "Passages embedded with macOS's own sentence model, compared on this machine, ⌃⌘F",
+      "state": "done"
+    },
+    {
+      "name": "Disk map",
+      "note": "Sunburst of where the space went, hard links counted once, thin slivers summed, ⇧⌘U",
+      "state": "done"
+    },
+    {
+      "name": "Bug sweep",
+      "note": "38 issues from an adversarial sweep — data loss first, then wrong result, then UI. All closed",
+      "state": "done"
+    },
+    {
+      "name": "1.0.1",
+      "note": "Developer ID signing, notarised by Apple, disk image and landing page",
+      "state": "done"
+    },
+    {
       "name": "Next",
-      "note": "Nested pane splits, saved searches, selection shelf",
+      "note": "Three feature issues open: disk map as a DaisyDisk replacement, SFTP via File Provider, Frutiger Aero theme",
       "state": "todo"
     }
   ],
   "log": [
     {
-      "time": "00:52",
+      "time": "13:47",
       "tag": "ok",
-      "text": "Keyboard-first preset: j/k move, h/l leave and enter, gg and G jump, ⌃d/⌃u move by half of what is on screen. Handled in the file list, not as menu shortcuts — a menu item keyed to j would swallow the letter in every text field."
+      "text": "596 tests pass in 13.5 seconds, no failures."
     },
     {
-      "time": "00:48",
-      "tag": "ok",
-      "text": ".gitignore-aware search, off by default. Nested ignore files, negation, anchoring, ** across directories, and character classes. Verified against git check-ignore itself on a real repository."
-    },
-    {
-      "time": "00:44",
-      "tag": "ok",
-      "text": "Real thumbnails in icon view, generated off the main thread and cached by path, size and modification date. Requests are cancelled on cell reuse so scrolling never paints an image over the wrong file."
-    },
-    {
-      "time": "00:40",
-      "tag": "ok",
-      "text": "Folder compare and sync: pairs two trees by relative path, reports left only / right only / differs / same / type conflict, copies the ticked rows one direction. Quick match is size and date; checksum mode reads both sides in full. 18 new tests."
-    },
-    {
-      "time": "00:24",
-      "tag": "ok",
-      "text": "Column view was keeping its selection to itself, so rename, trash and copy all acted on the hidden table's stale rows. It now mirrors its selection and forwards key events. Rename works in icon and column view through a sheet."
-    },
-    {
-      "time": "00:12",
+      "time": "13:30",
       "tag": "fail",
-      "text": "The outer split view had no delegate, so its minimum and maximum widths were never consulted — the sidebar took 480pt and the inspector was squeezed to 26pt. Caught by measuring the real window, not by reading the code."
+      "text": "The landing page told Intel owners the app runs on their Mac. build-app.sh runs swift build -c release, which builds for the host only, so the 1.0.1 image is arm64 and would not launch. The page now says Apple silicon. A universal binary is the real fix and is not cut."
     },
     {
-      "time": "00:05",
+      "time": "13:10",
       "tag": "ok",
-      "text": "Every setting moved out of the defaults database into settings.json. Codable values are written as readable nested JSON rather than base64. The directory is watched, so editing the file in any editor takes effect without a restart."
+      "text": "Landing page cut down: 63 feature descriptions removed, leaving the names and their shortcuts, and the four highlight cards dropped because every one of them repeated an entry in the lists below."
     },
     {
-      "time": "23:58",
+      "time": "07-27",
       "tag": "ok",
-      "text": "Preview and details panel on the right: Quick Look over kind, size, dates, POSIX permissions, owner, symlink target, extended attributes, and SHA-256 on demand. Hashing on selection would make arrowing through a folder unusable."
+      "text": "1.0.1 notarised by Apple. The first launch is now an ordinary double-click — no right-click, no warning. Signed with a Developer ID, so a permission granted once survives an update instead of being asked for again."
+    },
+    {
+      "time": "07-26",
+      "tag": "ok",
+      "text": "Bug sweep finished: all 38 issues closed. Seven were data loss — a failed move losing both copies, a replaced folder vanishing rather than going to the Trash, swift test rewriting the real theme.json."
+    },
+    {
+      "time": "07-26",
+      "tag": "ok",
+      "text": "Semantic index rebuilt: nested roots no longer double their passages each pass, the incremental keep is linear rather than quadratic, and folder scoping compares paths instead of string prefixes so ~/Notes-archive is not inside ~/Notes."
+    },
+    {
+      "time": "07-26",
+      "tag": "ok",
+      "text": "One theme system. theme.json is the only file that stores colours; the ready-made palettes are constants that write into it, and which one is in force is derived by comparing colours rather than recorded. The .soquel-theme format and the import/export around it are gone."
     }
   ]
 }
