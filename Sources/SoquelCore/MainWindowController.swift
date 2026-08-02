@@ -540,6 +540,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     // MARK: - File commands
 
+    /// Pops the Open With list where the click happened, so changing which
+    /// application opens something is one button rather than a right-click into
+    /// a submenu. The list is the context menu's, built once.
+    @objc func menuOpenWith(_ sender: Any?) {
+        guard let list = focusedList, let menu = list.openWithMenu() else {
+            statusLeft.stringValue = "Select a file first"
+            return
+        }
+        let view = (sender as? NSView) ?? list.view
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: 0, y: view.bounds.height + 2),
+                   in: view)
+    }
+
     @objc func menuNewFolder(_ sender: Any?) { focusedList?.newFolder() }
     @objc func menuNewFile(_ sender: Any?) { focusedList?.newFile() }
     @objc func menuRename(_ sender: Any?) { focusedList?.beginRename() }
@@ -1480,6 +1494,11 @@ extension MainWindowController: SidebarDelegate {
     func sidebar(_ sidebar: SidebarViewController, didSelect url: URL) {
         debugLog("sidebar didSelect \(url.path)")
         focusedList?.navigate(to: url)
+    }
+
+    func sidebar(_ sidebar: SidebarViewController, revealFile url: URL) {
+        debugLog("sidebar revealFile \(url.path)")
+        reveal(url)
     }
 
     func sidebar(_ sidebar: SidebarViewController, run search: SavedSearch) {

@@ -246,16 +246,40 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
     /// whether that means closing the pane.
     @discardableResult
     func closeActiveTab() -> Bool {
-        guard tabs.count > 1 else { return false }
-        let closing = tabs.remove(at: activeIndex)
+        closeTab(at: activeIndex)
+    }
+
+    /// Closing a tab that is not the active one must not move the selection to
+    /// a different folder. Whatever was in front stays in front unless it is
+    /// the thing being closed.
+    @discardableResult
+    func closeTab(at index: Int) -> Bool {
+        guard tabs.count > 1, tabs.indices.contains(index) else { return false }
+        let closing = tabs.remove(at: index)
         closing.view.removeFromSuperview()
         closing.removeFromParent()
-        activeIndex = min(activeIndex, tabs.count - 1)
+        activeIndex = Self.activeIndexAfterClosing(index, wasActive: activeIndex, remaining: tabs.count)
         showActiveTab()
         rebuildTabBar()
         rebuildPathBar()
         delegate?.paneDidChangeTabs(self)
         return true
+    }
+
+    /// Where the selection lands once tab `closed` has gone.
+    ///
+    /// Closing a tab to the left of the active one shifts it down by one, or
+    /// the pane jumps to a folder nobody asked for. Closing the active one
+    /// falls to the tab that took its place, and to the last tab when the
+    /// closed one was at the end.
+    static func activeIndexAfterClosing(_ closed: Int, wasActive: Int, remaining: Int) -> Int {
+        guard remaining > 0 else { return 0 }
+        // Both branches clamp. The shift-down case looks like it cannot exceed
+        // the end, and for the indices a real pane produces it cannot, but a
+        // function that returns an out-of-range index for any input is one
+        // subscript away from a crash.
+        if closed < wasActive { return min(wasActive - 1, remaining - 1) }
+        return min(wasActive, remaining - 1)
     }
 
     func selectTab(at index: Int) {
@@ -306,11 +330,51 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
             button.setAccessibilityRole(.radioButton)
             button.setAccessibilityLabel("Tab \(i + 1) of \(tabs.count): \(list.url.lastPathComponent)")
             tabBar.addArrangedSubview(button)
+
+            // Its own button rather than a hover-only cross: a control you
+            // cannot see is a control you cannot tab to either.
+            let close = NSButton()
+            close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)
+            close.imageScaling = .scaleProportionallyDown
+            close.isBordered = false
+            close.tag = i
+            close.target = self
+            close.action = #selector(tabCloseClicked(_:))
+            close.toolTip = "Close “\(list.url.lastPathComponent)”"
+            close.setAccessibilityLabel("Close tab \(i + 1): \(list.url.lastPathComponent)")
+            close.translatesAutoresizingMaskIntoConstraints = false
+            close.widthAnchor.constraint(equalToConstant: 16).isActive = true
+            tabBar.addArrangedSubview(close)
         }
+
+        let add = NSButton()
+        add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
+        add.isBordered = false
+        add.target = self
+        add.action = #selector(tabAddClicked)
+        add.toolTip = "New tab"
+        add.setAccessibilityLabel("New tab")
+        add.translatesAutoresizingMaskIntoConstraints = false
+        add.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        tabBar.addArrangedSubview(add)
     }
 
     @objc private func tabButtonClicked(_ sender: NSButton) {
         selectTab(at: sender.tag)
+        activeList?.focusTable()
+    }
+
+    @objc private func tabCloseClicked(_ sender: NSButton) {
+        closeTab(at: sender.tag)
+        activeList?.focusTable()
+    }
+
+    /// Opens the folder the active tab is showing, which is what a new tab in
+    /// a file manager means — not home, and not the last place you happened
+    /// to be.
+    @objc private func tabAddClicked() {
+        guard let url = currentURL else { return }
+        addTab(url: url)
         activeList?.focusTable()
     }
 

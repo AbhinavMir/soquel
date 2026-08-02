@@ -114,10 +114,12 @@ final class SweepSidebarRevealTests: XCTestCase {
 final class SweepSidebarSelectionReportTests: XCTestCase {
     private final class DelegateSpy: SidebarDelegate {
         var selected: [URL] = []
+        var revealed: [URL] = []
         var searches: [SavedSearch] = []
         var newTabs: [URL] = []
 
         func sidebar(_ sidebar: SidebarViewController, didSelect url: URL) { selected.append(url) }
+        func sidebar(_ sidebar: SidebarViewController, revealFile url: URL) { revealed.append(url) }
         func sidebar(_ sidebar: SidebarViewController, openInNewTab url: URL) { newTabs.append(url) }
         func sidebar(_ sidebar: SidebarViewController, run search: SavedSearch) { searches.append(search) }
     }

@@ -251,4 +251,192 @@ final class RegressionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "data")
         XCTAssertFalse(FileManager.default.fileExists(atPath: to.appendingPathComponent("moved.txt").path))
     }
+
+    /// Clicking a pinned favourite navigated the pane, the pane reported its
+    /// new folder, and the tree followed it by selecting its own node for that
+    /// folder — taking the highlight straight off the favourite that had just
+    /// been clicked. The tree still opens down to the folder; it no longer
+    /// steals the selected row.
+    func testRevealDoesNotTakeSelectionOffAClickedFavourite() {
+        let item = SidebarItem(path: "/soquel-reveal/home/Work")
+        XCTAssertFalse(SidebarViewController.revealMovesSelection(navigatedFrom: .pinned(item)))
+
+        let volume = URL(fileURLWithPath: "/Volumes/Backup", isDirectory: true)
+        XCTAssertFalse(SidebarViewController.revealMovesSelection(navigatedFrom: .volume(volume, "Backup")))
+    }
+
+    /// The tree must still follow a pane the user moved some other way — a
+    /// double-click in the file list, Back, or the path bar — which arrives
+    /// with no sidebar row as its origin.
+    func testRevealStillFollowsAPaneMovedFromOutsideTheSidebar() {
+        XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: nil))
+
+        let folder = URL(fileURLWithPath: "/soquel-reveal/home", isDirectory: true)
+        XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: .treeFolder(folder)))
+    }
+
+    /// The hidden-files button drew an eye in both states, so it said "here is
+    /// something about visibility" without ever saying which way it was set.
+    func testTheHiddenFilesButtonDrawsBothStates() {
+        guard let action = ToolbarCatalogue.action(id: "hidden") else {
+            return XCTFail("no hidden action")
+        }
+        let wasShowing = Prefs.showHiddenFiles
+        defer { Prefs.showHiddenFiles = wasShowing }
+
+        Prefs.showHiddenFiles = true
+        XCTAssertEqual(action.currentSymbol, "eye")
+        XCTAssertEqual(action.currentTitle, "Hide Hidden Files")
+
+        Prefs.showHiddenFiles = false
+        XCTAssertEqual(action.currentSymbol, "eye.slash")
+        XCTAssertEqual(action.currentTitle, "Show Hidden Files")
+    }
+
+    /// An action with no off-symbol keeps its one symbol and title whichever
+    /// way it is set.
+    func testAnActionWithoutAnOppositeSymbolIsUnchanged() {
+        guard let action = ToolbarCatalogue.action(id: "newFolder") else {
+            return XCTFail("no newFolder action")
+        }
+        XCTAssertEqual(action.currentSymbol, "folder.badge.plus")
+        XCTAssertEqual(action.currentTitle, "New Folder")
+    }
+
+    /// A package is a directory macOS presents as one file. Looking inside is
+    /// offered for any of them, not only .app — an .rtfd and an .xcodeproj are
+    /// worth opening up too — and never for an ordinary folder or a plain file.
+    func testOnlyPackagesOfferToBeLookedInside() {
+        XCTAssertTrue(PackageContents.canInspect(stubItem(directory: true, package: true)))
+        XCTAssertFalse(PackageContents.canInspect(stubItem(directory: true, package: false)))
+        XCTAssertFalse(PackageContents.canInspect(stubItem(directory: false, package: false)))
+        // A bundle flag on something that is not a directory is nonsense, and
+        // must not open a browser over an empty listing.
+        XCTAssertFalse(PackageContents.canInspect(stubItem(directory: false, package: true)))
+    }
+
+    /// Folders come before files and each group sorts by name, so a bundle
+    /// opens the same way twice running.
+    func testPackageRowsSortFoldersFirstThenByName() {
+        let items = [
+            stubItem(directory: false, package: false, name: "Info.plist"),
+            stubItem(directory: true, package: false, name: "Resources"),
+            stubItem(directory: false, package: false, name: "CodeResources"),
+            stubItem(directory: true, package: false, name: "MacOS"),
+        ]
+        XCTAssertEqual(
+            PackageContents.sorted(items).map(\.name),
+            ["MacOS", "Resources", "CodeResources", "Info.plist"]
+        )
+    }
+
+    /// The footer counts everything underneath, not the top level, and reports
+    /// bytes rather than an item count alone.
+    func testPackageSummaryWalksTheWholeBundle() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("soquel-pkg-\(UUID().uuidString).app", isDirectory: true)
+        let inner = root.appendingPathComponent("Contents/MacOS", isDirectory: true)
+        try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try Data(repeating: 0x41, count: 2048).write(to: inner.appendingPathComponent("binary"))
+        try Data("plist".utf8).write(to: root.appendingPathComponent("Contents/Info.plist"))
+
+        let summary = PackageContents.summarise(root)
+        XCTAssertEqual(summary.files, 2)
+        XCTAssertEqual(summary.folders, 2, "Contents and Contents/MacOS")
+        XCTAssertGreaterThanOrEqual(summary.bytes, 2048)
+        XCTAssertTrue(summary.text.contains("2 files"), summary.text)
+    }
+
+    /// A bundle that links the same framework twice is not twice the size, and
+    /// a symlink out of the bundle must not drag the whole target in.
+    func testPackageSummaryCountsAHardLinkOnceAndIgnoresSymlinks() throws {
+        let fm = FileManager.default
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("soquel-pkg-\(UUID().uuidString).app", isDirectory: true)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let real = root.appendingPathComponent("real")
+        try Data(repeating: 0x42, count: 4096).write(to: real)
+        try fm.linkItem(at: real, to: root.appendingPathComponent("hardlink"))
+        try fm.createSymbolicLink(at: root.appendingPathComponent("symlink"), withDestinationURL: real)
+
+        let summary = PackageContents.summarise(root)
+        XCTAssertEqual(summary.files, 1, "the hard link is the same inode, the symlink is not followed")
+    }
+
+    private func stubItem(directory: Bool, package: Bool, name: String = "Thing") -> FileItem {
+        FileItem(
+            url: URL(fileURLWithPath: "/soquel-stub/\(name)"),
+            name: name,
+            isDirectory: directory,
+            isPackage: package,
+            isSymlink: false,
+            isHidden: false,
+            size: directory ? -1 : 10,
+            modified: .distantPast,
+            created: .distantPast,
+            kind: directory ? "Folder" : "Document"
+        )
+    }
+
+    /// The tree used to list folders only, so a folder holding nothing but
+    /// files looked empty. Files show now, capped so a Downloads folder cannot
+    /// bury every folder under it.
+    func testTreeShowsFilesUpToTheLimitThenOneMoreRow() {
+        let parent = URL(fileURLWithPath: "/soquel-tree", isDirectory: true)
+        let folders = (1...2).map { parent.appendingPathComponent("dir\($0)", isDirectory: true) }
+        let files = (1...30).map { parent.appendingPathComponent("file\($0).txt") }
+
+        let level = FolderTree.split(folders: folders, files: files)
+        XCTAssertEqual(level.folders.count, 2)
+        XCTAssertEqual(level.files.count, FolderTree.fileLimit)
+        XCTAssertEqual(level.overflow.count, 30 - FolderTree.fileLimit)
+
+        let nodes = SidebarViewController.nodes(for: level, in: parent)
+        XCTAssertEqual(nodes.count, 2 + FolderTree.fileLimit + 1, "folders, capped files, one more row")
+        XCTAssertEqual(nodes.last?.title, "25 more files")
+    }
+
+    /// A folder at or just over the cap shows everything. A "1 more files" row
+    /// occupying the space the file itself would have taken helps nobody.
+    func testTreeDoesNotAddAMoreRowForOneOrTwoExtraFiles() {
+        let parent = URL(fileURLWithPath: "/soquel-tree", isDirectory: true)
+        func files(_ n: Int) -> [URL] {
+            (0..<n).map { parent.appendingPathComponent("f\($0)") }
+        }
+
+        for count in [0, 1, FolderTree.fileLimit, FolderTree.fileLimit + 1] {
+            let level = FolderTree.split(folders: [], files: files(count))
+            XCTAssertFalse(level.hasOverflow, "\(count) files should all show")
+            XCTAssertEqual(level.files.count, count)
+        }
+
+        XCTAssertTrue(FolderTree.split(folders: [], files: files(FolderTree.fileLimit + 2)).hasOverflow)
+    }
+
+    /// The "more" row is not a file and has no URL, so nothing tries to
+    /// navigate to it.
+    func testTheMoreRowHasNoURL() {
+        let node = SidebarNode(.treeMore(
+            parent: URL(fileURLWithPath: "/soquel-tree", isDirectory: true),
+            hidden: [URL(fileURLWithPath: "/soquel-tree/a")]
+        ))
+        XCTAssertNil(node.url)
+        XCTAssertFalse(node.isExpandable, "it swaps itself out; it does not open")
+        XCTAssertEqual(node.title, "1 more file")
+    }
+
+    /// A file row is a leaf. Giving it a disclosure triangle would offer to
+    /// open something that cannot be opened.
+    func testAFileInTheTreeIsALeafThatStillCarriesItsURL() {
+        let url = URL(fileURLWithPath: "/soquel-tree/notes.txt")
+        let node = SidebarNode(.treeFile(url))
+        XCTAssertEqual(node.url, url)
+        XCTAssertFalse(node.isExpandable)
+        XCTAssertFalse(node.isGroup)
+        XCTAssertEqual(node.title, "notes.txt")
+    }
 }

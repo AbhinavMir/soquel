@@ -13,6 +13,12 @@ final class SidebarNode {
         case volume(URL, String)
         /// A folder in the browsable tree. Children load when it is expanded.
         case treeFolder(URL)
+        /// A file in the browsable tree. A leaf: selecting it shows it in the
+        /// pane rather than navigating into it.
+        case treeFile(URL)
+        /// Stands in for the files a folder is not showing. Selecting it swaps
+        /// itself for the rest of them.
+        case treeMore(parent: URL, hidden: [URL])
         /// A saved search. Selecting it re-runs the query rather than showing
         /// a remembered list of results.
         case savedSearch(SavedSearch)
@@ -31,7 +37,7 @@ final class SidebarNode {
     var isGroup: Bool {
         switch kind {
         case .userGroup, .systemGroup: return true
-        case .pinned, .volume, .treeFolder, .savedSearch: return false
+        case .pinned, .volume, .treeFolder, .treeFile, .treeMore, .savedSearch: return false
         }
     }
 
@@ -47,7 +53,8 @@ final class SidebarNode {
         case .pinned(let item): return item.url
         case .volume(let url, _): return url
         case .treeFolder(let url): return url
-        case .userGroup, .systemGroup, .savedSearch: return nil
+        case .treeFile(let url): return url
+        case .userGroup, .systemGroup, .savedSearch, .treeMore: return nil
         }
     }
 
@@ -58,9 +65,11 @@ final class SidebarNode {
         case .pinned(let item): return item.title
         case .volume(_, let name): return name
         case .savedSearch(let search): return search.name
-        case .treeFolder(let url):
+        case .treeFolder(let url), .treeFile(let url):
             let name = url.lastPathComponent
             return name.isEmpty ? url.path : name
+        case .treeMore(_, let hidden):
+            return hidden.count == 1 ? "1 more file" : "\(hidden.count) more files"
         }
     }
 
@@ -77,6 +86,9 @@ final class SidebarNode {
 
 protocol SidebarDelegate: AnyObject {
     func sidebar(_ sidebar: SidebarViewController, didSelect url: URL)
+    /// Opens the folder holding `url` and selects it there. A file in the tree
+    /// is somewhere to be shown, not somewhere to go.
+    func sidebar(_ sidebar: SidebarViewController, revealFile url: URL)
     func sidebar(_ sidebar: SidebarViewController, openInNewTab url: URL)
     func sidebar(_ sidebar: SidebarViewController, run search: SavedSearch)
 }
@@ -95,6 +107,10 @@ final class SidebarViewController: NSViewController {
     /// click, and reveal() runs because the pane has already moved, so the row
     /// it highlights must not be handed back to the delegate as a fresh choice.
     private var isRevealingSelection = false
+    /// Set while a row the user clicked is navigating the pane. The pane
+    /// reports back and the tree follows it, and that follow must not take the
+    /// highlight off the row that was clicked.
+    private var navigationOrigin: SidebarNode.Kind?
 
     /// Internal drag type for reordering pinned items.
     private static let itemDragType = NSPasteboard.PasteboardType("app.soquel.sidebarItem")
@@ -473,12 +489,19 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             // an unplugged drive comes back.
             cell.textField?.textColor = pinned.exists ? .labelColor : .tertiaryLabelColor
             cell.toolTip = pinned.url.path
-        case .treeFolder(let url):
+        case .treeFolder(let url), .treeFile(let url):
             let icon = NSWorkspace.shared.icon(forFile: url.path)
             icon.size = NSSize(width: 16, height: 16)
             cell.imageView?.image = icon
             cell.textField?.textColor = .labelColor
             cell.toolTip = url.path
+        case .treeMore:
+            cell.imageView?.image = NSImage(
+                systemSymbolName: "ellipsis.circle", accessibilityDescription: "More files"
+            )
+            // Not a file, so it does not read as one.
+            cell.textField?.textColor = .secondaryLabelColor
+            cell.toolTip = "Show the rest of the files in this folder"
         case .volume(let url, _):
             let icon = NSWorkspace.shared.icon(forFile: url.path)
             icon.size = NSSize(width: 16, height: 16)
@@ -516,8 +539,88 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             delegate?.sidebar(self, run: search)
             return
         }
+        if case .treeMore = node.kind {
+            expand(more: node)
+            return
+        }
+        if case .treeFile(let url) = node.kind {
+            // A file is not somewhere to navigate to. The pane opens the folder
+            // holding it and puts the selection on it, which is what clicking a
+            // file in a tree is asking for.
+            navigationOrigin = node.kind
+            delegate?.sidebar(self, revealFile: url)
+            DispatchQueue.main.async { [weak self] in self?.navigationOrigin = nil }
+            return
+        }
         guard let url = node.url else { return }
+
+        // Navigating the pane makes it report its new folder, which brings the
+        // tree down to it. Recording what was clicked lets that reveal leave
+        // the highlight alone. Cleared a turn later rather than straight after
+        // the call, because the pane may report asynchronously.
+        navigationOrigin = node.kind
         delegate?.sidebar(self, didSelect: url)
+        DispatchQueue.main.async { [weak self] in self?.navigationOrigin = nil }
+    }
+
+    /// Whether a reveal should move the selected row.
+    ///
+    /// It should when the tree is catching up with a pane the user moved some
+    /// other way — a double-click in the file list, Back, the path bar. It
+    /// should not when the pane moved because a pinned folder or a volume was
+    /// clicked in this very sidebar: that row is the selection, and replacing
+    /// it with the tree's node for the same folder takes the highlight off
+    /// what was chosen and drops it somewhere the user was not looking.
+    static func revealMovesSelection(navigatedFrom origin: SidebarNode.Kind?) -> Bool {
+        guard let origin else { return true }
+        switch origin {
+        case .treeFolder, .treeFile, .treeMore: return true
+        case .pinned, .volume, .savedSearch, .userGroup, .systemGroup: return false
+        }
+    }
+
+    /// Swaps a "more files" row for the files it stands for.
+    ///
+    /// The row is replaced rather than added to, so opening it twice cannot
+    /// list the same files twice, and it leaves nothing to click a second time.
+    private func expand(more node: SidebarNode) {
+        guard case .treeMore(let parent, let hidden) = node.kind,
+              let owner = self.owner(of: node),
+              let index = owner.children.firstIndex(where: { $0 === node })
+        else { return }
+
+        owner.children.replaceSubrange(
+            index...index, with: hidden.map { SidebarNode(.treeFile($0)) }
+        )
+        suppressingSelectionReports {
+            outline.reloadItem(owner, reloadChildren: true)
+            outline.expandItem(owner)
+            // The clicked row is gone; leaving the highlight on whatever slid
+            // into its index would look like a file had been chosen.
+            outline.deselectAll(nil)
+        }
+        Log.debug(.ui, "Tree: showed \(hidden.count) more files under \(parent.lastPathComponent)")
+    }
+
+    /// The node holding `node`, or nil if it is a root.
+    private func owner(of node: SidebarNode) -> SidebarNode? {
+        var stack = roots
+        while let candidate = stack.popLast() {
+            if candidate.children.contains(where: { $0 === node }) { return candidate }
+            stack.append(contentsOf: candidate.children)
+        }
+        return nil
+    }
+
+    /// Builds the rows for one loaded level: folders, then the files that fit,
+    /// then a row standing in for the rest.
+    static func nodes(for level: FolderTree.Level, in parent: URL) -> [SidebarNode] {
+        var nodes = level.folders.map { SidebarNode(.treeFolder($0)) }
+        nodes += level.files.map { SidebarNode(.treeFile($0)) }
+        if level.hasOverflow {
+            nodes.append(SidebarNode(.treeMore(parent: parent, hidden: level.overflow)))
+        }
+        return nodes
     }
 
     /// Runs `body` with selection changes kept from the delegate.
@@ -537,9 +640,9 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         else { return true }
 
         node.childrenLoaded = true
-        FolderTree.loadChildren(of: url, showHidden: Prefs.showHiddenFiles) { [weak self, weak node] children in
+        FolderTree.loadChildren(of: url, showHidden: Prefs.showHiddenFiles) { [weak self, weak node] level in
             guard let self, let node else { return }
-            node.children = children.map { SidebarNode(.treeFolder($0)) }
+            node.children = Self.nodes(for: level, in: url)
             self.outline.reloadItem(node, reloadChildren: true)
             // Carry on down to whatever was being revealed. Without this the
             // tree opens one level per call and stops, so following the pane
@@ -622,6 +725,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         guard let target = walk.target else { return }
         let row = outline.row(forItem: target)
         guard row >= 0 else { return }
+
+        // The tree still opens down to the folder either way; only the
+        // highlight is withheld, so a clicked favourite stays the selected row.
+        guard Self.revealMovesSelection(navigatedFrom: navigationOrigin) else { return }
+
         suppressingSelectionReports {
             outline.selectRowIndexes([row], byExtendingSelection: false)
         }

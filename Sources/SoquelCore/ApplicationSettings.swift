@@ -13,6 +13,9 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
     struct Kind {
         let title: String
         let extensions: [String]
+        /// Added by the user rather than shipped in the list below, and so
+        /// removable.
+        var isCustom = false
 
         var primary: String { extensions[0] }
     }
@@ -43,12 +46,81 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
         Kind(title: "Zip archive", extensions: ["zip"]),
     ]
 
+    /// Extensions the user added, because twenty-three curated kinds is a
+    /// starting point and not an answer. `duti` will remap anything; so does
+    /// this, once you name the extension.
+    static var customExtensions: [String] {
+        get { Settings.stringArray(forKey: "applicationKinds") ?? [] }
+        set { Settings.set(newValue, forKey: "applicationKinds") }
+    }
+
+    /// The built-in kinds followed by the added ones. An extension already
+    /// covered above is not added twice: two rows for `.md` would disagree
+    /// with each other the moment one of them was changed.
+    static var rows: [Kind] {
+        kinds + customExtensions.compactMap { ext in
+            guard !isBuiltIn(ext) else { return nil }
+            return Kind(title: describe(ext), extensions: [ext], isCustom: true)
+        }
+    }
+
+    static func isBuiltIn(_ ext: String) -> Bool {
+        let wanted = normalise(ext)
+        return kinds.contains { $0.extensions.contains(wanted) }
+    }
+
+    /// Accepts what people actually type: `.PNG`, `png`, `  png  `.
+    static func normalise(_ ext: String) -> String {
+        ext.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    }
+
+    /// "PNG image" when the system knows the type, otherwise the extension on
+    /// its own. Never a guess dressed up as a description.
+    static func describe(_ ext: String) -> String {
+        contentType(forExtension: ext)?.localizedDescription ?? ".\(ext) files"
+    }
+
+    /// Whether an extension can be added: it has to be a real extension, one
+    /// the system recognises, and not already listed.
+    enum AddResult: Equatable {
+        case ok(String)
+        case empty
+        case alreadyListed(String)
+        case unknownType(String)
+
+        var problem: String? {
+            switch self {
+            case .ok: return nil
+            case .empty: return "Type a file extension, such as rs or toml."
+            case .alreadyListed(let ext): return ".\(ext) is already in the list."
+            case .unknownType(let ext):
+                return "macOS does not recognise .\(ext), so there is no type to set a handler for."
+            }
+        }
+    }
+
+    static func validateAddition(_ raw: String) -> AddResult {
+        let ext = normalise(raw)
+        guard !ext.isEmpty else { return .empty }
+        guard !isBuiltIn(ext), !customExtensions.map(normalise).contains(ext) else {
+            return .alreadyListed(ext)
+        }
+        guard contentType(forExtension: ext) != nil else { return .unknownType(ext) }
+        return .ok(ext)
+    }
+
     private var table: NSTableView!
     private var status: NSTextField!
     /// Cached so the table does not ask Launch Services once per redraw.
     private var defaults: [String: URL?] = [:]
     private var confirmBox: NSButton!
     private var confirmRow: NSStackView!
+    private var addKindButton: NSButton!
+    /// Snapshotted per reload so the table and its actions agree on the rows
+    /// even if the stored list changes underneath them.
+    private var rows: [Kind] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -143,6 +215,11 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
         let refresh = NSButton(title: "Refresh", target: self, action: #selector(reload))
         refresh.translatesAutoresizingMaskIntoConstraints = false
 
+        let addKind = NSButton(title: "Add Kind…", target: self, action: #selector(addKind))
+        addKind.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(addKind)
+        self.addKindButton = addKind
+
         confirmBox = NSButton(
             checkboxWithTitle: "Ask before opening applications that are slow to start",
             target: self, action: #selector(toggleConfirm)
@@ -183,7 +260,10 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
 
             status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             status.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
-            status.trailingAnchor.constraint(equalTo: refresh.leadingAnchor, constant: -10),
+            status.trailingAnchor.constraint(equalTo: addKind.leadingAnchor, constant: -10),
+
+            addKind.trailingAnchor.constraint(equalTo: refresh.leadingAnchor, constant: -8),
+            addKind.centerYAnchor.constraint(equalTo: status.centerYAnchor),
 
             refresh.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             refresh.centerYAnchor.constraint(equalTo: status.centerYAnchor),
@@ -204,21 +284,68 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
     }
 
     @objc private func reload() {
+        rows = Self.rows
         defaults.removeAll()
-        for kind in Self.kinds {
+        for kind in rows {
             defaults[kind.primary] = Self.defaultApplication(forExtension: kind.primary)
         }
         table.reloadData()
-        status.stringValue = "\(Self.kinds.count) kinds"
+        let added = rows.filter(\.isCustom).count
+        status.stringValue = added == 0
+            ? "\(rows.count) kinds"
+            : "\(rows.count) kinds, \(added) added"
+    }
+
+    /// Adds any extension the system recognises. Anything it does not is
+    /// refused with the reason, rather than being stored as a row that can
+    /// never be set.
+    @objc private func addKind() {
+        let alert = NSAlert()
+        alert.messageText = "Add a file kind"
+        alert.informativeText = "Type a file extension. Its handler can then be changed like any other."
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        field.placeholderString = "rs"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        switch Self.validateAddition(field.stringValue) {
+        case .ok(let ext):
+            Self.customExtensions.append(ext)
+            reload()
+            if let index = rows.firstIndex(where: { $0.isCustom && $0.primary == ext }) {
+                table.scrollRowToVisible(index)
+                table.selectRowIndexes([index], byExtendingSelection: false)
+            }
+            status.stringValue = "Added .\(ext)"
+        case let result:
+            status.stringValue = result.problem ?? ""
+        }
+    }
+
+    @objc private func removeKind(_ sender: NSButton) {
+        guard rows.indices.contains(sender.tag) else { return }
+        let kind = rows[sender.tag]
+        guard kind.isCustom else { return }
+        // Only the row goes. The handler it set stays set — removing a row
+        // here is tidying this list, not reverting a system-wide change the
+        // user asked for and may still want.
+        Self.customExtensions.removeAll { Self.normalise($0) == kind.primary }
+        reload()
+        status.stringValue = "Removed .\(kind.primary) from the list; its handler is unchanged"
     }
 
     // MARK: - Table
 
-    func numberOfRows(in tableView: NSTableView) -> Int { Self.kinds.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard Self.kinds.indices.contains(row) else { return nil }
-        let kind = Self.kinds[row]
+        guard rows.indices.contains(row) else { return nil }
+        let kind = rows[row]
 
         if tableColumn?.identifier.rawValue == "kind" {
             let cell = NSTableCellView()
@@ -229,11 +356,36 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
             field.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(field)
             cell.textField = field
+
             NSLayoutConstraint.activate([
                 field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
                 field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             ])
+
+            // Only an added row can be taken away. The built-in list is the
+            // same in every copy of the application and stays that way.
+            if kind.isCustom {
+                let remove = NSButton()
+                remove.image = NSImage(systemSymbolName: "minus.circle",
+                                       accessibilityDescription: "Remove")
+                remove.isBordered = false
+                remove.tag = row
+                remove.target = self
+                remove.action = #selector(removeKind(_:))
+                remove.toolTip = "Remove .\(kind.primary) from this list"
+                remove.translatesAutoresizingMaskIntoConstraints = false
+                cell.addSubview(remove)
+                NSLayoutConstraint.activate([
+                    remove.leadingAnchor.constraint(greaterThanOrEqualTo: field.trailingAnchor, constant: 6),
+                    remove.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                    remove.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                    remove.widthAnchor.constraint(equalToConstant: 18),
+                ])
+            } else {
+                field.trailingAnchor.constraint(
+                    equalTo: cell.trailingAnchor, constant: -2
+                ).isActive = true
+            }
             return cell
         }
 
@@ -277,8 +429,11 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
     }
 
     @objc private func chooseApplication(_ sender: NSPopUpButton) {
-        guard Self.kinds.indices.contains(sender.tag) else { return }
-        let kind = Self.kinds[sender.tag]
+        // Indexes the displayed rows, not the built-in list: an added kind
+        // sits past the end of `kinds` and would otherwise set the handler for
+        // whichever built-in row happened to share its index, or for nothing.
+        guard rows.indices.contains(sender.tag) else { return }
+        let kind = rows[sender.tag]
 
         var chosen = sender.selectedItem?.representedObject as? URL
         if sender.titleOfSelectedItem == "Other…" {

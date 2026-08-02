@@ -79,3 +79,67 @@ final class ToolbarGroupingTests: XCTestCase {
         XCTAssertNil(ToolbarCatalogue.action(id: "inspector")?.group)
     }
 }
+
+
+/// Adding an arbitrary file kind, the way duti remaps one from the shell.
+final class CustomFileKindTests: XCTestCase {
+    private var saved: [String] = []
+
+    override func setUp() {
+        super.setUp()
+        saved = ApplicationSettingsView.customExtensions
+        ApplicationSettingsView.customExtensions = []
+    }
+
+    override func tearDown() {
+        ApplicationSettingsView.customExtensions = saved
+        super.tearDown()
+    }
+
+    /// What people type is not what the API wants. A leading dot, capitals and
+    /// stray whitespace all mean the same extension.
+    func testExtensionsAreNormalisedBeforeAnythingElse() {
+        XCTAssertEqual(ApplicationSettingsView.normalise("  .PNG "), "png")
+        XCTAssertEqual(ApplicationSettingsView.normalise("rs"), "rs")
+        XCTAssertEqual(ApplicationSettingsView.normalise(".TOML"), "toml")
+    }
+
+    /// An extension already in the shipped list is refused. Two rows for the
+    /// same type would disagree the moment one was changed.
+    func testABuiltInKindCannotBeAddedAgain() {
+        XCTAssertEqual(ApplicationSettingsView.validateAddition("png"), .alreadyListed("png"))
+        XCTAssertEqual(ApplicationSettingsView.validateAddition(".MD"), .alreadyListed("md"))
+        // markdown is the second extension of the Markdown kind, not the first.
+        XCTAssertEqual(ApplicationSettingsView.validateAddition("markdown"), .alreadyListed("markdown"))
+    }
+
+    func testEmptyInputIsRefusedWithAReason() {
+        XCTAssertEqual(ApplicationSettingsView.validateAddition("   "), .empty)
+        XCTAssertNotNil(ApplicationSettingsView.validateAddition("").problem)
+    }
+
+    /// A recognised extension is accepted, appears in the rows, and is marked
+    /// removable. A built-in one never is.
+    func testAnAddedKindShowsUpAsARemovableRow() throws {
+        guard case .ok(let ext) = ApplicationSettingsView.validateAddition("rs") else {
+            throw XCTSkip("this machine does not recognise .rs")
+        }
+        ApplicationSettingsView.customExtensions = [ext]
+
+        let rows = ApplicationSettingsView.rows
+        XCTAssertEqual(rows.count, ApplicationSettingsView.kinds.count + 1)
+
+        let added = try XCTUnwrap(rows.last)
+        XCTAssertEqual(added.primary, "rs")
+        XCTAssertTrue(added.isCustom)
+        XCTAssertFalse(rows[0].isCustom, "a shipped kind is not removable")
+    }
+
+    /// A stored extension that duplicates a built-in one is dropped rather than
+    /// drawn twice — an older build could have written one.
+    func testAStoredDuplicateIsNotDrawnTwice() {
+        ApplicationSettingsView.customExtensions = ["png", "PNG"]
+        let png = ApplicationSettingsView.rows.filter { $0.primary == "png" }
+        XCTAssertEqual(png.count, 1)
+    }
+}

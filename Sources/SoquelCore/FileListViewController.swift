@@ -827,6 +827,17 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
     }
 
+    /// Opens the bundle in a window over this one. A double-click still
+    /// launches the application — looking inside is the deliberate act, and
+    /// making it the default would mean nothing in the folder starts any more.
+    @objc func showPackageContents() {
+        guard let item = selectedItems.first, PackageContents.canInspect(item) else { return }
+        PackageContentsController.show(item.url, over: view.window) { [weak self] folder in
+            guard let self else { return }
+            self.delegate?.fileList(self, openInNewTab: folder)
+        }
+    }
+
     @objc func openInNewTabAction() {
         for item in selectedItems where item.opensAsFolder {
             delegate?.fileList(self, openInNewTab: item.url.resolvingSymlinksInPath())
@@ -995,6 +1006,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     }
 
     // MARK: - Open With
+
+    /// The Open With list on its own, for the toolbar button to pop up. Same
+    /// menu the context menu nests, so the two cannot drift apart.
+    func openWithMenu() -> NSMenu? { openWithMenuItem()?.submenu }
 
     /// The Open With submenu, or nil when the selection has no single type to
     /// offer applications for.
@@ -1490,6 +1505,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             menu.addItem(withTitle: "Open in New Tab", action: #selector(openInNewTabAction), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Open in Opposite Pane", action: #selector(openInOppositePaneAction), keyEquivalent: "").target = self
             if let openWith = openWithMenuItem() { menu.addItem(openWith) }
+            if selectedItems.count == 1, PackageContents.canInspect(selectedItems[0]) {
+                menu.addItem(withTitle: "Show Package Contents",
+                             action: #selector(showPackageContents), keyEquivalent: "").target = self
+            }
             menu.addItem(.separator())
         }
 

@@ -8,17 +8,41 @@ struct ToolbarAction {
     let selector: Selector
     /// Reads back the on/off state for toggles, so the button shows what is true.
     let isOn: (() -> Bool)?
+    /// Drawn instead of `symbol` while the toggle is off. A tint change alone
+    /// says "this button is dimmer than that one", which is not the same as
+    /// saying what the button would do — an eye reads as "showing" whether or
+    /// not anything is being shown. Where a symbol has an honest opposite, the
+    /// two are drawn and the state is legible without hovering for a tooltip.
+    let symbolWhenOff: String?
+    /// Shown instead of `title` while the toggle is on. A button labelled
+    /// "Show Hidden Files" that would in fact hide them is a lie in a tooltip.
+    let titleWhenOn: String?
     /// Actions sharing a group are mutually exclusive and draw as one pill.
     let group: String?
 
     init(_ id: String, _ title: String, _ symbol: String, _ selector: Selector,
-         isOn: (() -> Bool)? = nil, group: String? = nil) {
+         isOn: (() -> Bool)? = nil, symbolWhenOff: String? = nil,
+         titleWhenOn: String? = nil, group: String? = nil) {
         self.id = id
         self.title = title
         self.symbol = symbol
         self.selector = selector
         self.isOn = isOn
+        self.symbolWhenOff = symbolWhenOff
+        self.titleWhenOn = titleWhenOn
         self.group = group
+    }
+
+    /// The symbol to draw right now.
+    var currentSymbol: String {
+        guard let symbolWhenOff, isOn?() == false else { return symbol }
+        return symbolWhenOff
+    }
+
+    /// The title to show right now.
+    var currentTitle: String {
+        guard let titleWhenOn, isOn?() == true else { return title }
+        return titleWhenOn
     }
 }
 
@@ -37,7 +61,8 @@ enum ToolbarCatalogue {
         ToolbarAction("columnView", "Column View", "rectangle.split.3x1", #selector(M.menuUseColumnView(_:)),
                       isOn: { Prefs.viewMode == .column }, group: "viewMode"),
         ToolbarAction("hidden", "Show Hidden Files", "eye", #selector(M.menuToggleHidden(_:)),
-                      isOn: { Prefs.showHiddenFiles }),
+                      isOn: { Prefs.showHiddenFiles }, symbolWhenOff: "eye.slash",
+                      titleWhenOn: "Hide Hidden Files"),
         ToolbarAction("folderSizes", "Calculate Folder Sizes", "sum", #selector(M.menuToggleFolderSizes(_:)),
                       isOn: { Prefs.calculateFolderSizes }),
         ToolbarAction("gitStatus", "Show Git Status", "arrow.triangle.branch", #selector(M.menuToggleGitStatus(_:)),
@@ -54,6 +79,7 @@ enum ToolbarCatalogue {
         // button reads as both "add" and "remove".
         ToolbarAction("favourite", "Add to Sidebar", "star", #selector(M.menuAddFavourite(_:)),
                       isOn: { M.favouriteIsOn() }),
+        ToolbarAction("openWith", "Open With", "arrow.up.forward.square", #selector(M.menuOpenWith(_:))),
         ToolbarAction("newFolder", "New Folder", "folder.badge.plus", #selector(M.menuNewFolder(_:))),
         ToolbarAction("split", "Split Pane", "rectangle.split.2x1", #selector(M.menuSplitVertically(_:))),
         ToolbarAction("terminal", "Open in Terminal", "terminal", #selector(M.menuOpenInTerminal(_:))),
@@ -171,11 +197,12 @@ final class PaneToolbarView: NSView {
             index += 1
 
             let button = NSButton()
-            button.image = NSImage(systemSymbolName: action.symbol, accessibilityDescription: action.title)
+            button.image = NSImage(systemSymbolName: action.currentSymbol,
+                                   accessibilityDescription: action.currentTitle)
             button.bezelStyle = .texturedRounded
             button.isBordered = false
-            button.toolTip = action.title
-            button.setAccessibilityLabel(action.title)
+            button.toolTip = action.currentTitle
+            button.setAccessibilityLabel(action.currentTitle)
             button.target = nil          // travels the responder chain to the window
             button.action = action.selector
             button.translatesAutoresizingMaskIntoConstraints = false
@@ -263,10 +290,11 @@ final class ToolbarPillView: NSView {
 
         for action in actions {
             let button = NSButton()
-            button.image = NSImage(systemSymbolName: action.symbol, accessibilityDescription: action.title)
+            button.image = NSImage(systemSymbolName: action.currentSymbol,
+                                   accessibilityDescription: action.currentTitle)
             button.isBordered = false
-            button.toolTip = action.title
-            button.setAccessibilityLabel(action.title)
+            button.toolTip = action.currentTitle
+            button.setAccessibilityLabel(action.currentTitle)
             button.target = nil          // travels the responder chain to the window
             button.action = action.selector
             addSubview(button)
@@ -312,13 +340,18 @@ final class ToolbarPillView: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = Theme.chrome.withAlphaComponent(0.6).cgColor
             layer?.borderColor = Theme.hairline.cgColor
-            selection.layer?.backgroundColor = Theme.selectionFill.cgColor
+            // Grey, not the selection blue. Which of three views you are in is
+            // not worth the loudest colour on screen, and the accent has to
+            // stay reserved for the row you actually have selected.
+            selection.layer?.backgroundColor = Theme.selectionFillInactive.cgColor
         }
 
         let onIndex = Self.selectedIndex(in: actions)
         for (offset, button) in buttons.enumerated() {
             let on = offset == onIndex
-            button.contentTintColor = on ? .white : .secondaryLabelColor
+            // labelColor rather than white: the fill is now a light grey in
+            // light mode, and a white glyph on it cannot be read.
+            button.contentTintColor = on ? .labelColor : .secondaryLabelColor
             button.setAccessibilityValue(on ? "on" : "off")
         }
         needsLayout = true

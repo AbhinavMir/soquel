@@ -203,32 +203,86 @@ enum FolderTree {
         return roots
     }
 
-    /// Subdirectories of `url`, sorted by name. Packages are treated as leaves:
-    /// an .app in the tree would otherwise expand into its own innards.
-    static func children(of url: URL, showHidden: Bool) -> [URL] {
+    /// How many files a folder shows in the tree before the rest go behind one
+    /// "more" row.
+    ///
+    /// The tree is a navigator, and a Downloads folder holding nine hundred
+    /// files would bury every folder under it. Five is enough to see what kind
+    /// of things live there; the row underneath opens the rest when that is
+    /// actually what you want.
+    static let fileLimit = 5
+
+    /// One level of the tree: subdirectories, then files.
+    struct Level {
+        var folders: [URL] = []
+        /// The files shown straight away — at most `fileLimit` of them.
+        var files: [URL] = []
+        /// The files behind the "more" row. Empty when everything fits.
+        var overflow: [URL] = []
+
+        var hasOverflow: Bool { !overflow.isEmpty }
+    }
+
+    /// Packages are treated as leaves: an .app in the tree would otherwise
+    /// expand into its own innards. Look inside one with Show Package Contents.
+    static func level(of url: URL, showHidden: Bool) -> Level {
         var options: FileManager.DirectoryEnumerationOptions = [.skipsSubdirectoryDescendants]
         if !showHidden { options.insert(.skipsHiddenFiles) }
 
         let keys: [URLResourceKey] = [.isDirectoryKey, .isPackageKey, .isSymbolicLinkKey]
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: url, includingPropertiesForKeys: keys, options: options
-        ) else { return [] }
+        ) else { return Level() }
 
-        return contents.filter { child in
+        var folders: [URL] = []
+        var files: [URL] = []
+        for child in contents {
             let values = try? child.resourceValues(forKeys: Set(keys))
-            // A symlink to a directory is not followed: a link back up the tree
-            // would expand forever.
-            guard values?.isSymbolicLink != true else { return false }
-            return values?.isDirectory == true && values?.isPackage != true
+            // A symlink is not followed: a link back up the tree would expand
+            // forever. It is still listed, as a leaf.
+            if values?.isSymbolicLink == true {
+                files.append(child)
+            } else if values?.isDirectory == true && values?.isPackage != true {
+                folders.append(child)
+            } else {
+                files.append(child)
+            }
         }
-        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        return split(folders: byName(folders), files: byName(files))
     }
 
-    /// Loads children on a background queue and hands them back on the main one.
-    static func loadChildren(of url: URL, showHidden: Bool, completion: @escaping ([URL]) -> Void) {
+    /// Where the "more" row falls. Kept separate from the disk read so the rule
+    /// can be checked without a directory to point it at.
+    static func split(folders: [URL], files: [URL], limit: Int = fileLimit) -> Level {
+        // One file over the limit would put a "1 more" row where the file
+        // itself would have fitted, which is worse than just showing it.
+        guard files.count > limit + 1 else {
+            return Level(folders: folders, files: files, overflow: [])
+        }
+        return Level(
+            folders: folders,
+            files: Array(files.prefix(limit)),
+            overflow: Array(files.dropFirst(limit))
+        )
+    }
+
+    private static func byName(_ urls: [URL]) -> [URL] {
+        urls.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+    }
+
+    /// Subdirectories only. Kept for the reveal walk, which follows folders
+    /// down to the pane's location and never needs the files.
+    static func children(of url: URL, showHidden: Bool) -> [URL] {
+        level(of: url, showHidden: showHidden).folders
+    }
+
+    /// Loads one level on a background queue and hands it back on the main one.
+    static func loadChildren(of url: URL, showHidden: Bool, completion: @escaping (Level) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let children = children(of: url, showHidden: showHidden)
-            DispatchQueue.main.async { completion(children) }
+            let level = level(of: url, showHidden: showHidden)
+            DispatchQueue.main.async { completion(level) }
         }
     }
 
