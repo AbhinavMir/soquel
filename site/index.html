@@ -102,11 +102,36 @@ h2 {
 .tip:hover .tip-body, .tip:focus .tip-body { opacity: 1; visibility: visible; }
 dl { margin: 0; }
 dt {
-  margin-top: 20px; font-weight: 580; font-size: 15.5px;
+  font-weight: 580; font-size: 15.5px;
   display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
 }
-dd { margin: 3px 0 0; color: var(--dim); font-size: 14.5px; }
-.specs dt { margin-top: 9px; }
+dd { margin: 2px 0 0; color: var(--dim); font-size: 14.5px; }
+.row { margin-top: 17px; }
+#faq-list dt { margin-top: 22px; }
+
+/* Feature search */
+.finder { margin: 52px 0 0; }
+.finder input {
+  width: 100%; padding: 12px 14px; font: inherit; font-size: 15px;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 9px;
+  -webkit-appearance: none; appearance: none;
+}
+.finder input:focus { outline: none; border-color: var(--sea); }
+.finder input::placeholder { color: var(--faint); }
+.count { margin: 9px 2px 0; font-size: 13px; color: var(--faint); min-height: 1.3em; }
+.group h2:first-child { margin-top: 34px; }
+[hidden], .is-out { display: none; }
+mark { background: transparent; color: var(--ink); font-weight: 640; }
+.empty { color: var(--dim); font-size: 14.5px; margin-top: 26px; }
+.linkish {
+  font: inherit; color: var(--sea); background: none; border: 0; padding: 0;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
 kbd {
   font: 12.5px ui-monospace, "SF Mono", Menlo, monospace;
   background: var(--card); border: 1px solid var(--rule); border-bottom-width: 2px;
@@ -155,107 +180,323 @@ footer a { color: var(--faint); }
   </p>
 </section>
 
+<div class="finder">
+  <label class="sr-only" for="q">Search features</label>
+  <input type="search" id="q" autocomplete="off" spellcheck="false"
+         placeholder="Search the features — try &quot;compare two folders&quot; or &quot;vim keys&quot;">
+  <p class="count" id="count" role="status" aria-live="polite"></p>
+</div>
+
+<section class="group" id="g-views">
 <h2>Views</h2>
-<dl class="specs">
-  <dt>List view <kbd>⌥⌘1</kbd></dt>
-  <dt>Icon view <kbd>⌥⌘2</kbd></dt>
-  <dt>Column view <kbd>⌥⌘3</kbd></dt>
-  <dt>View-mode pill</dt>
-  <dt>Thumbnails in icon view</dt>
-  <dt>Sort by name, size, kind or date <kbd>⌃⌘1</kbd>–<kbd>⌃⌘4</kbd></dt>
-  <dt>Multi-column sorting</dt>
-  <dt>Auto-sized columns <kbd>⌥⌘=</kbd></dt>
-  <dt>Metadata columns</dt>
-  <dt>Preview and details panel <kbd>⌥⌘I</kbd></dt>
-  <dt>Quick Look <kbd>Space</kbd></dt>
+<dl>
+  <div class="row" data-alt="table detail rows columns sortable finder list">
+    <dt>List view <kbd>⌥⌘1</kbd></dt>
+    <dd>Rows and columns. Click a header to sort.</dd>
+  </div>
+  <div class="row" data-alt="grid tiles gallery large icons">
+    <dt>Icon view <kbd>⌥⌘2</kbd></dt>
+    <dd>Files as icons, with a slider for how big.</dd>
+  </div>
+  <div class="row" data-alt="miller browser cascade columns">
+    <dt>Column view <kbd>⌥⌘3</kbd></dt>
+    <dd>One column per folder level, left to right.</dd>
+  </div>
+  <div class="row" data-alt="toggle switcher segmented">
+    <dt>View-mode pill</dt>
+    <dd>One control to switch between the three views.</dd>
+  </div>
+  <div class="row" data-alt="preview image photo poster artwork">
+    <dt>Thumbnails in icon view</dt>
+    <dd>Icons show the actual picture, page or video frame.</dd>
+  </div>
+  <div class="row" data-alt="order arrange sorting">
+    <dt>Sort by name, size, kind or date <kbd>⌃⌘1</kbd>–<kbd>⌃⌘4</kbd></dt>
+    <dd>Or click a column header.</dd>
+  </div>
+  <div class="row" data-alt="secondary sort tiebreaker two columns">
+    <dt>Multi-column sorting</dt>
+    <dd>Shift-click a second header to break ties.</dd>
+  </div>
+  <div class="row" data-alt="resize fit width autofit">
+    <dt>Auto-sized columns <kbd>⌥⌘=</kbd></dt>
+    <dd>Widths snap to fit the longest name in the folder.</dd>
+  </div>
+  <div class="row" data-alt="exif resolution bitrate video photo info megapixels">
+    <dt>Metadata columns</dt>
+    <dd>Show dimensions, duration, codec, camera and more as columns.</dd>
+  </div>
+  <div class="row" data-alt="inspector get info sha256 hash attributes sidebar">
+    <dt>Preview and details panel <kbd>⌥⌘I</kbd></dt>
+    <dd>A side panel with the preview, dates, permissions, owner and a checksum.</dd>
+  </div>
+  <div class="row" data-alt="peek spacebar preview">
+    <dt>Quick Look <kbd>Space</kbd></dt>
+    <dd>The same spacebar preview as Finder.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-panes-and-tabs">
 <h2>Panes and tabs</h2>
-<dl class="specs">
-  <dt>Nested pane splits <kbd>⌘D</kbd> <kbd>⇧⌘D</kbd></dt>
-  <dt>Up to four panes, tabs in each</dt>
-  <dt>Session restore</dt>
-  <dt>Named workspaces</dt>
-  <dt>Pane toolbar</dt>
+<dl>
+  <div class="row" data-alt="dual pane side by side multi pane two windows">
+    <dt>Nested pane splits <kbd>⌘D</kbd> <kbd>⇧⌘D</kbd></dt>
+    <dd>Split a pane in two, and split those again.</dd>
+  </div>
+  <div class="row" data-alt="tabs windows four">
+    <dt>Up to four panes, tabs in each</dt>
+    <dd>⌘1–⌘4 to focus a pane, ⌘T for a new tab.</dd>
+  </div>
+  <div class="row" data-alt="reopen resume remember">
+    <dt>Session restore</dt>
+    <dd>Reopens the panes and tabs you had last time.</dd>
+  </div>
+  <div class="row" data-alt="layout preset saved arrangement project">
+    <dt>Named workspaces</dt>
+    <dd>Save a pane layout under a name and reopen it later.</dd>
+  </div>
+  <div class="row" data-alt="customise toolbar buttons">
+    <dt>Pane toolbar</dt>
+    <dd>A filter box and buttons you choose, above each pane.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-moving-files">
 <h2>Moving files</h2>
-<dl class="specs">
-  <dt>Create, rename, duplicate, copy, move, trash, delete</dt>
-  <dt>Rename in every view</dt>
-  <dt>Conflict handling</dt>
-  <dt>Folder merge on conflict</dt>
-  <dt>Undo <kbd>⌘Z</kbd></dt>
-  <dt>Transfer queue <kbd>⌥⌘J</kbd></dt>
-  <dt>Selection shelf <kbd>⌃⌘A</kbd> <kbd>⌃⌘B</kbd></dt>
-  <dt>Batch rename</dt>
-  <dt>Cut and paste in the context menu</dt>
-  <dt>Drag and drop</dt>
-  <dt>New File templates</dt>
-  <dt>Folder comparison and sync <kbd>⇧⌘K</kbd></dt>
+<dl>
+  <div class="row" data-alt="basics file operations remove">
+    <dt>Create, rename, duplicate, copy, move, trash, delete</dt>
+    <dd>If one file fails the rest still go, and it names the one that failed.</dd>
+  </div>
+  <div class="row" data-alt="rename">
+    <dt>Rename in every view</dt>
+    <dd>Rename from list, icon or column view.</dd>
+  </div>
+  <div class="row" data-alt="overwrite same name collision already exists">
+    <dt>Conflict handling</dt>
+    <dd>Keep both, replace or skip, with both sizes and dates shown.</dd>
+  </div>
+  <div class="row" data-alt="combine folders join">
+    <dt>Folder merge on conflict</dt>
+    <dd>Merge two folders instead of replacing one with the other.</dd>
+  </div>
+  <div class="row" data-alt="revert mistake oops">
+    <dt>Undo <kbd>⌘Z</kbd></dt>
+    <dd>Undoes rename, create, duplicate, trash and move.</dd>
+  </div>
+  <div class="row" data-alt="progress speed pause background copying">
+    <dt>Transfer queue <kbd>⌥⌘J</kbd></dt>
+    <dd>See copies in progress, and pause, resume or cancel each one.</dd>
+  </div>
+  <div class="row" data-alt="cart basket staging gather clipboard collect">
+    <dt>Selection shelf <kbd>⌃⌘A</kbd> <kbd>⌃⌘B</kbd></dt>
+    <dd>Collect files from several folders, then move them all at once.</dd>
+  </div>
+  <div class="row" data-alt="bulk mass regex numbering sequential rename">
+    <dt>Batch rename</dt>
+    <dd>Rename many files at once, with a preview before it happens.</dd>
+  </div>
+  <div class="row" data-alt="move right click">
+    <dt>Cut and paste in the context menu</dt>
+    <dd>Right-click cut, then paste where you want it.</dd>
+  </div>
+  <div class="row" data-alt="dnd drag">
+    <dt>Drag and drop</dt>
+    <dd>Between panes, and to and from other apps.</dd>
+  </div>
+  <div class="row" data-alt="create new document blank">
+    <dt>New File templates</dt>
+    <dd>Make an empty text, Markdown, JSON, Swift, Python, shell, HTML or CSV file.</dd>
+  </div>
+  <div class="row" data-alt="diff duplicate mirror backup rsync find duplicates identical">
+    <dt>Folder comparison and sync <kbd>⇧⌘K</kbd></dt>
+    <dd>Compare two folders and copy the differences one way.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-finding-things">
 <h2>Finding things</h2>
-<dl class="specs">
-  <dt>Search panel <kbd>⌘F</kbd></dt>
-  <dt>Search by meaning <kbd>⌃⌘F</kbd></dt>
-  <dt>Search says what it skipped</dt>
-  <dt>Search ranking</dt>
-  <dt><code>.gitignore</code>-aware search</dt>
-  <dt>Saved searches</dt>
-  <dt>In-folder filter <kbd>/</kbd></dt>
-  <dt>Command palette <kbd>⌘K</kbd></dt>
+<dl>
+  <div class="row" data-alt="find grep locate contents">
+    <dt>Search panel <kbd>⌘F</kbd></dt>
+    <dd>Search names or contents, by plain text, regex or glob.</dd>
+  </div>
+  <div class="row" data-alt="semantic ai natural language embedding offline local private">
+    <dt>Search by meaning <kbd>⌃⌘F</kbd></dt>
+    <dd>Finds a file by what it is about, not the exact words. Runs on your Mac.</dd>
+  </div>
+  <div class="row" data-alt="skipped errors unreadable">
+    <dt>Search says what it skipped</dt>
+    <dd>Tells you how many files it could not read, so nothing looks like a clean zero.</dd>
+  </div>
+  <div class="row" data-alt="relevance order best">
+    <dt>Search ranking</dt>
+    <dd>Name matches come before content matches.</dd>
+  </div>
+  <div class="row" data-alt="git node_modules exclude ignore">
+    <dt><code>.gitignore</code>-aware search</dt>
+    <dd>Optionally skip whatever the repository ignores.</dd>
+  </div>
+  <div class="row" data-alt="smart folder saved query">
+    <dt>Saved searches</dt>
+    <dd>Keep a search in the sidebar and run it again.</dd>
+  </div>
+  <div class="row" data-alt="filter quick find type ahead">
+    <dt>In-folder filter <kbd>/</kbd></dt>
+    <dd>Type to narrow the folder you are in.</dd>
+  </div>
+  <div class="row" data-alt="fuzzy launcher actions spotlight">
+    <dt>Command palette <kbd>⌘K</kbd></dt>
+    <dd>Type the name of any command instead of hunting the menus.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-getting-around">
 <h2>Getting around</h2>
-<dl class="specs">
-  <dt>Breadcrumbs and an editable path bar</dt>
-  <dt>History, enclosing folder, Git root</dt>
-  <dt>Folder tree <kbd>⇧⌘T</kbd></dt>
-  <dt>Sidebar groups</dt>
-  <dt>Pin to the sidebar</dt>
-  <dt>Custom sidebar icons</dt>
-  <dt>Keyboard-first preset</dt>
-  <dt>Remappable shortcuts</dt>
+<dl>
+  <div class="row" data-alt="address bar go to folder path">
+    <dt>Breadcrumbs and an editable path bar</dt>
+    <dd>Click the path to type or paste one.</dd>
+  </div>
+  <div class="row" data-alt="navigate up back forward parent">
+    <dt>History, enclosing folder, Git root</dt>
+    <dd>Back, forward, ⌘↑ for the parent, and a jump to the repository root.</dd>
+  </div>
+  <div class="row" data-alt="tree hierarchy nested sidebar">
+    <dt>Folder tree <kbd>⇧⌘T</kbd></dt>
+    <dd>The folder hierarchy in the sidebar.</dd>
+  </div>
+  <div class="row" data-alt="organise sidebar sections">
+    <dt>Sidebar groups</dt>
+    <dd>Sort your pinned folders into named sections.</dd>
+  </div>
+  <div class="row" data-alt="favourites bookmarks shortcuts pin">
+    <dt>Pin to the sidebar</dt>
+    <dd>Drag a folder in to keep it there.</dd>
+  </div>
+  <div class="row" data-alt="emoji icon label colour">
+    <dt>Custom sidebar icons</dt>
+    <dd>Give a pinned folder any emoji or symbol, and a different display name.</dd>
+  </div>
+  <div class="row" data-alt="vim vi hjkl keyboard modal no mouse">
+    <dt>Keyboard-first preset</dt>
+    <dd>vi-style keys: j and k to move, h and l to leave and enter.</dd>
+  </div>
+  <div class="row" data-alt="keybinding hotkey rebind custom keys">
+    <dt>Remappable shortcuts</dt>
+    <dd>Change any shortcut by pressing the keys you want.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-knowing-what-is-there">
 <h2>Knowing what is there</h2>
-<dl class="specs">
-  <dt>Disk map <kbd>⇧⌘U</kbd></dt>
-  <dt>Folder sizes</dt>
-  <dt>Git status</dt>
-  <dt>Archive browsing</dt>
-  <dt>Copy path, six formats</dt>
-  <dt>Hidden files <kbd>⇧⌘.</kbd></dt>
+<dl>
+  <div class="row" data-alt="daisydisk disk usage space full storage what is taking up room sunburst treemap">
+    <dt>Disk map <kbd>⇧⌘U</kbd></dt>
+    <dd>A ring chart of what is using the space, biggest first.</dd>
+  </div>
+  <div class="row" data-alt="size column du calculate">
+    <dt>Folder sizes</dt>
+    <dd>An optional column showing how big each folder is.</dd>
+  </div>
+  <div class="row" data-alt="repository version control modified">
+    <dt>Git status</dt>
+    <dd>Marks changed files, and folders with changes inside.</dd>
+  </div>
+  <div class="row" data-alt="unzip compressed extract open archive">
+    <dt>Archive browsing</dt>
+    <dd>Look inside a zip, tar, 7z or rar without unpacking it.</dd>
+  </div>
+  <div class="row" data-alt="copy path terminal paste location">
+    <dt>Copy path, six formats</dt>
+    <dd>Absolute, file URL, filename, no extension, parent, shell-escaped.</dd>
+  </div>
+  <div class="row" data-alt="dotfiles invisible show hidden">
+    <dt>Hidden files <kbd>⇧⌘.</kbd></dt>
+    <dd>Show or hide dotfiles, per window.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-reaching-other-places">
 <h2>Reaching other places</h2>
-<dl class="specs">
-  <dt>Connect to Server <kbd>⌃⌘K</kbd></dt>
-  <dt>Terminal and editor <kbd>⌃⌘T</kbd> <kbd>⌃⌘E</kbd></dt>
-  <dt>Open With, and set the default</dt>
-  <dt>Choose what opens each kind of file</dt>
-  <dt>A prompt before slow applications</dt>
+<dl>
+  <div class="row" data-alt="network nas share remote samba windows mount server">
+    <dt>Connect to Server <kbd>⌃⌘K</kbd></dt>
+    <dd>Mount SMB, AFP, NFS, WebDAV or read-only FTP. No password goes through Soquel.</dd>
+  </div>
+  <div class="row" data-alt="iterm vscode shell command line here">
+    <dt>Terminal and editor <kbd>⌃⌘T</kbd> <kbd>⌃⌘E</kbd></dt>
+    <dd>Open the current folder in your terminal or editor.</dd>
+  </div>
+  <div class="row" data-alt="default app association always open">
+    <dt>Open With, and set the default</dt>
+    <dd>Open a file in any app, or change what opens that type everywhere.</dd>
+  </div>
+  <div class="row" data-alt="default apps file types extensions">
+    <dt>Choose what opens each kind of file</dt>
+    <dd>Twenty-three file kinds in one Settings table.</dd>
+  </div>
+  <div class="row" data-alt="accidental heavy slow launch warning">
+    <dt>A prompt before slow applications</dt>
+    <dd>Asks first before launching Xcode, Android Studio and the like.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-making-it-yours">
 <h2>Making it yours</h2>
-<dl class="specs">
-  <dt>Settings as one JSON file</dt>
-  <dt>Themes</dt>
-  <dt>Customisable colours</dt>
-  <dt>Background image</dt>
-  <dt>Designed light and dark palettes</dt>
-  <dt>Settings window <kbd>⌘,</kbd></dt>
+<dl>
+  <div class="row" data-alt="config dotfile plain text hot reload">
+    <dt>Settings as one JSON file</dt>
+    <dd><code>settings.json</code>. Edit it in any editor and the app picks it up without restarting.</dd>
+  </div>
+  <div class="row" data-alt="theme colours accent recolour">
+    <dt>Customisable colours</dt>
+    <dd>Seven colour slots, set separately for light and dark.</dd>
+  </div>
+  <div class="row" data-alt="theme preset colour scheme">
+    <dt>Ready-made palettes</dt>
+    <dd>Four to pick from, or edit <code>theme.json</code> yourself.</dd>
+  </div>
+  <div class="row" data-alt="wallpaper picture backdrop ricing">
+    <dt>Background image</dt>
+    <dd>Any image behind the file list, with opacity and five fit modes.</dd>
+  </div>
+  <div class="row" data-alt="dark mode light mode appearance">
+    <dt>Designed light and dark palettes</dt>
+    <dd>Numbers are monospaced, so columns of them line up.</dd>
+  </div>
+  <div class="row" data-alt="preferences options config">
+    <dt>Settings window <kbd>⌘,</kbd></dt>
+    <dd>Appearance, Keyboard and Applications.</dd>
+  </div>
 </dl>
+</section>
 
+<section class="group" id="g-when-something-goes-wrong">
 <h2>When something goes wrong</h2>
-<dl class="specs">
-  <dt>Logging</dt>
-  <dt>Copy Recent Logs</dt>
+<dl>
+  <div class="row" data-alt="log debug troubleshoot diagnose">
+    <dt>Logging</dt>
+    <dd>Every notable action goes to a dated file in <code>~/Library/Logs/Soquel/</code>.</dd>
+  </div>
+  <div class="row" data-alt="bug report support crash">
+    <dt>Copy Recent Logs</dt>
+    <dd>Puts the last three minutes on the clipboard, ready to paste into a bug report.</dd>
+  </div>
 </dl>
+</section>
+
+<p class="empty" id="empty" hidden>Nothing matches that. <button type="button" class="linkish" id="clear">Show everything</button></p>
 
 <h2 id="faq">Questions</h2>
-<dl>
+<dl id="faq-list">
   <dt>Is it safe to open? It is not from the App Store.</dt>
   <dd>It is signed with an Apple Developer ID and notarised by Apple, so it
       opens with a normal double-click and no warning. Notarising means Apple
@@ -286,8 +527,7 @@ footer a { color: var(--faint); }
       resets everything.</dd>
 
   <dt>Is it really free?</dt>
-  <dd>Yes, MIT licensed, and nothing in it checks a licence. If it saved you
-      something, the address is above.</dd>
+  <dd>Yes.</dd>
 </dl>
 
 <footer>
@@ -299,6 +539,80 @@ footer a { color: var(--faint); }
 </main>
 
 <script>
+// Filter the feature list. Every row carries a data-alt list of the words
+// somebody would plausibly type for it — "daisydisk" for the disk map,
+// "duplicates" for folder compare — because people search for the job they
+// want done, not the name this page happens to give it.
+(function () {
+  var box = document.getElementById('q');
+  if (!box) return;
+
+  var count = document.getElementById('count');
+  var empty = document.getElementById('empty');
+  var clear = document.getElementById('clear');
+  var groups = [].slice.call(document.querySelectorAll('.group'));
+  var rows = [].slice.call(document.querySelectorAll('.row')).map(function (el) {
+    return { el: el, hay: (el.textContent + ' ' + el.dataset.alt).toLowerCase() };
+  });
+
+  // Words that carry no signal in a query of five words or fewer.
+  var SKIP = ('a an and are as at be by can do does for from how i if in is it its me my '
+            + 'of on or that the this to want what when where which will with you your')
+            .split(' ');
+
+  function terms(query) {
+    return query.toLowerCase().split(/[^a-z0-9.]+/).filter(function (w) {
+      return w.length > 1 && SKIP.indexOf(w) === -1;
+    });
+  }
+
+  function apply() {
+    var words = terms(box.value);
+
+    if (!words.length) {
+      rows.forEach(function (r) { r.el.classList.remove('is-out'); });
+      groups.forEach(function (g) { g.hidden = false; });
+      empty.hidden = true;
+      count.textContent = '';
+      return;
+    }
+
+    // Every word has to appear. If that finds nothing, fall back to any word
+    // and say so — a silent widening would look like the strict search worked.
+    var hits = rows.filter(function (r) {
+      return words.every(function (w) { return r.hay.indexOf(w) !== -1; });
+    });
+    var loose = false;
+    if (!hits.length) {
+      hits = rows.filter(function (r) {
+        return words.some(function (w) { return r.hay.indexOf(w) !== -1; });
+      });
+      loose = hits.length > 0;
+    }
+
+    var keep = new Set(hits.map(function (r) { return r.el; }));
+    rows.forEach(function (r) { r.el.classList.toggle('is-out', !keep.has(r.el)); });
+    groups.forEach(function (g) {
+      g.hidden = !g.querySelector('.row:not(.is-out)');
+    });
+
+    empty.hidden = hits.length > 0;
+    count.textContent = !hits.length ? ''
+      : hits.length + (hits.length === 1 ? ' feature' : ' features')
+        + (loose ? ' — nothing matched all of that, so these match part of it' : '');
+  }
+
+  box.addEventListener('input', apply);
+  box.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { box.value = ''; apply(); }
+  });
+  clear.addEventListener('click', function () { box.value = ''; apply(); box.focus(); });
+
+  // The page ships unfiltered, so a reload that restores a typed value has to
+  // be reconciled with the markup rather than left disagreeing with it.
+  if (box.value) apply();
+})();
+
 // Copy the address. An address someone has to retype by hand is an address
 // they mistype, and a mistyped one loses the money for good.
 (function () {
