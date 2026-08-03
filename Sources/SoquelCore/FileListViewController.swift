@@ -1243,6 +1243,22 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     @objc func trashSelection() {
         let urls = selectedURLs()
         guard !urls.isEmpty else { return }
+
+        // On a share there is no Trash, so ⌘⌫ deletes outright. Say so before
+        // it happens rather than after.
+        if let warning = TrashPolicy.warning(for: urls) {
+            let alert = NSAlert()
+            alert.messageText = warning.title
+            alert.informativeText = warning.body
+            if case .readOnly = TrashPolicy.outcome(for: urls[0]) {
+                alert.runModal()
+                return
+            }
+            alert.addButton(withTitle: "Delete")
+            alert.addButton(withTitle: "Cancel")
+            alert.buttons.first?.hasDestructiveAction = true
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         // Where the cursor should land once the rows are gone. Selecting has to
         // wait for the reload; doing it immediately after landed on the old
         // contents and left nothing selected, so a second ⌘⌫ went up a folder.
