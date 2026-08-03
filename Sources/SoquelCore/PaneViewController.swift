@@ -27,6 +27,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
     private var tabBar: NSStackView!
     private var tabBarScroll: NSScrollView!
+    /// Outside the scrolling stack. Pinned to the end of the tabs it scrolls
+    /// away with them, and the point of it is to be there when there are
+    /// already too many tabs to see.
+    private var addTabButton: NSButton!
     private var pathBar: NSStackView!
     private var pathBarScroll: NSScrollView!
     private var pathField: NSTextField!
@@ -78,6 +82,15 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         tabBarScroll.hasVerticalScroller = false
         tabBarScroll.drawsBackground = false
         tabBarScroll.translatesAutoresizingMaskIntoConstraints = false
+
+        addTabButton = NSButton()
+        addTabButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
+        addTabButton.isBordered = false
+        addTabButton.target = self
+        addTabButton.action = #selector(tabAddClicked)
+        addTabButton.toolTip = "New tab"
+        addTabButton.setAccessibilityLabel("New tab")
+        addTabButton.translatesAutoresizingMaskIntoConstraints = false
 
         // A deep path must scroll inside the pane, never widen the window.
         pathBar = NSStackView()
@@ -151,6 +164,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
         container.addSubview(focusIndicator)
         container.addSubview(tabBarScroll)
+        container.addSubview(addTabButton)
         container.addSubview(filterField)
         container.addSubview(toolbar)
         container.addSubview(pathBarScroll)
@@ -167,8 +181,12 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
             tabBarScroll.topAnchor.constraint(equalTo: focusIndicator.bottomAnchor),
             tabBarScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            tabBarScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tabBarScroll.trailingAnchor.constraint(equalTo: addTabButton.leadingAnchor, constant: -2),
             tabBarScroll.heightAnchor.constraint(equalToConstant: 28),
+
+            addTabButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
+            addTabButton.centerYAnchor.constraint(equalTo: tabBarScroll.centerYAnchor),
+            addTabButton.widthAnchor.constraint(equalToConstant: 22),
             tabBar.heightAnchor.constraint(equalTo: tabBarScroll.heightAnchor),
 
             filterField.topAnchor.constraint(equalTo: tabBarScroll.bottomAnchor, constant: 4),
@@ -316,6 +334,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
     private func rebuildTabBar() {
         for sub in tabBar.arrangedSubviews { tabBar.removeArrangedSubview(sub); sub.removeFromSuperview() }
         tabBarScroll.isHidden = tabs.count < 2
+        addTabButton.isHidden = tabBarScroll.isHidden
         guard tabs.count > 1 else { return }
 
         for (i, list) in tabs.enumerated() {
@@ -347,16 +366,6 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
             tabBar.addArrangedSubview(close)
         }
 
-        let add = NSButton()
-        add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
-        add.isBordered = false
-        add.target = self
-        add.action = #selector(tabAddClicked)
-        add.toolTip = "New tab"
-        add.setAccessibilityLabel("New tab")
-        add.translatesAutoresizingMaskIntoConstraints = false
-        add.widthAnchor.constraint(equalToConstant: 20).isActive = true
-        tabBar.addArrangedSubview(add)
     }
 
     @objc private func tabButtonClicked(_ sender: NSButton) {

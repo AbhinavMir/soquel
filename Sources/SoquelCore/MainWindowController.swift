@@ -43,7 +43,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     convenience init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1080, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            // No .fullSizeContentView. The title bar is opaque, so extending the
+            // content behind it does not buy a look — it just hides the top 28
+            // points of the pane, which is exactly where the tab bar sits.
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
