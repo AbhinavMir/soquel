@@ -192,6 +192,45 @@ final class TransferQueue {
 
     func job(id: UUID) -> TransferJob? { jobs.first { $0.id == id } }
 
+    /// Moves a waiting job. Only waiting jobs can be reordered: a running one
+    /// is already moving bytes, and putting it later in a list does not
+    /// un-start it.
+    @discardableResult
+    func move(id: UUID, to index: Int) -> Bool {
+        guard let from = jobs.firstIndex(where: { $0.id == id }), jobs[from].state == .waiting else {
+            return false
+        }
+        let target = TransferQueue.clampedDestination(from: from, to: index, count: jobs.count)
+        guard target != from else { return false }
+        let job = jobs.remove(at: from)
+        jobs.insert(job, at: target)
+        notify()
+        return true
+    }
+
+    /// Where a drag from `from` to `to` actually lands, accounting for the row
+    /// being lifted out before it is put back.
+    static func clampedDestination(from: Int, to: Int, count: Int) -> Int {
+        let adjusted = to > from ? to - 1 : to
+        return max(0, min(adjusted, count - 1))
+    }
+
+    /// Puts a job's failed files back on the queue as a fresh job.
+    ///
+    /// A new job rather than resurrecting the old one: the old one is a record
+    /// of what happened, and rewriting it to say it succeeded loses that.
+    @discardableResult
+    func retryFailures(of job: TransferJob) -> [URL] {
+        let urls = job.failures.map(\.url).filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !urls.isEmpty else { return [] }
+        OperationEngine.shared.transfer(
+            urls, to: job.destination, move: job.isMove,
+            resolveConflict: { _, _ in ConflictResolution(choice: .keepBoth) },
+            completion: { _ in }
+        )
+        return urls
+    }
+
     func notify() {
         NotificationCenter.default.post(name: Self.changed, object: nil)
     }

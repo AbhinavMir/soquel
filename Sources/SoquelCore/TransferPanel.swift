@@ -145,6 +145,27 @@ final class TransferPanelController: NSWindowController {
         TransferQueue.shared.cancelAll()
     }
 
+    @objc private func retryJob(_ sender: NSButton) {
+        guard let raw = sender.identifier?.rawValue, let id = UUID(uuidString: raw),
+              let job = TransferQueue.shared.job(id: id)
+        else { return }
+        let retried = TransferQueue.shared.retryFailures(of: job)
+        if retried.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Nothing left to retry"
+            alert.informativeText = "The files that failed are no longer where they were."
+            alert.runModal()
+        }
+    }
+
+    @objc private func reorderJob(_ sender: NSSegmentedControl) {
+        guard let raw = sender.identifier?.rawValue, let id = UUID(uuidString: raw),
+              let index = TransferQueue.shared.jobs.firstIndex(where: { $0.id == id })
+        else { return }
+        let target = sender.selectedSegment == 0 ? index - 1 : index + 2
+        TransferQueue.shared.move(id: id, to: max(0, target))
+    }
+
     @objc private func togglePause(_ sender: NSButton) {
         guard let job = TransferQueue.shared.jobs.first(where: { $0.id.uuidString == sender.identifier?.rawValue })
         else { return }
@@ -204,10 +225,45 @@ final class TransferPanelController: NSWindowController {
         stop.isEnabled = job.isActive
         stop.translatesAutoresizingMaskIntoConstraints = false
 
-        for view in [title, bar, status, pause, stop] as [NSView] { container.addSubview(view) }
+        // A job that failed some of its files can put just those back on the
+        // queue, rather than the whole copy being redone by hand.
+        let retry = NSButton(
+            image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Retry failed") ?? NSImage(),
+            target: self, action: #selector(retryJob(_:))
+        )
+        retry.identifier = NSUserInterfaceItemIdentifier(job.id.uuidString)
+        retry.isBordered = false
+        retry.isHidden = job.failures.isEmpty || job.isActive
+        retry.toolTip = job.failures.count == 1
+            ? "Try the 1 file that failed again"
+            : "Try the \(job.failures.count) files that failed again"
+        retry.translatesAutoresizingMaskIntoConstraints = false
+
+        let move = NSSegmentedControl(
+            images: [
+                NSImage(systemSymbolName: "chevron.up", accessibilityDescription: "Move up") ?? NSImage(),
+                NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "Move down") ?? NSImage(),
+            ],
+            trackingMode: .momentary, target: self, action: #selector(reorderJob(_:))
+        )
+        move.identifier = NSUserInterfaceItemIdentifier(job.id.uuidString)
+        move.segmentStyle = .smallSquare
+        // Only a waiting job can be reordered; one already moving bytes cannot
+        // be un-started by putting it lower in a list.
+        move.isHidden = job.state != .waiting
+        move.translatesAutoresizingMaskIntoConstraints = false
+
+        for view in [title, bar, status, pause, stop, retry, move] as [NSView] { container.addSubview(view) }
 
         NSLayoutConstraint.activate([
             container.heightAnchor.constraint(equalToConstant: 62),
+
+            retry.trailingAnchor.constraint(equalTo: pause.leadingAnchor, constant: -2),
+            retry.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            retry.widthAnchor.constraint(equalToConstant: 24),
+
+            move.trailingAnchor.constraint(equalTo: retry.leadingAnchor, constant: -2),
+            move.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
             stop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
             stop.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -218,7 +274,7 @@ final class TransferPanelController: NSWindowController {
             pause.widthAnchor.constraint(equalToConstant: 24),
 
             title.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            title.trailingAnchor.constraint(equalTo: pause.leadingAnchor, constant: -10),
+            title.trailingAnchor.constraint(equalTo: move.leadingAnchor, constant: -10),
             title.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
 
             bar.leadingAnchor.constraint(equalTo: title.leadingAnchor),
