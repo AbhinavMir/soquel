@@ -44,6 +44,18 @@ struct ToolbarAction {
         guard let titleWhenOn, isOn?() == true else { return title }
         return titleWhenOn
     }
+
+    /// What the tooltip says: the title, then the key that does the same thing.
+    ///
+    /// A toolbar that never mentions the shortcut is a toolbar people keep
+    /// reaching for. Matched on the selector, so a remapped key shows the new
+    /// one rather than the shipped default.
+    var tooltip: String {
+        guard let shortcut = ToolbarCatalogue.shortcutDisplay(for: selector) else {
+            return currentTitle
+        }
+        return "\(currentTitle)  \(shortcut)"
+    }
 }
 
 /// Everything the toolbar can show, and which of them the user has chosen.
@@ -95,6 +107,15 @@ enum ToolbarCatalogue {
 
     static func action(id: String) -> ToolbarAction? { all.first { $0.id == id } }
 
+    /// The key bound to whatever command shares this selector, written the way
+    /// a menu writes it.
+    static func shortcutDisplay(for selector: Selector) -> String? {
+        guard let command = CommandRegistry.all.first(where: { $0.selector == selector }) else {
+            return nil
+        }
+        return CommandRegistry.shortcut(for: command)?.display
+    }
+
     static let defaultIDs = ["up", "listView", "iconView", "columnView", "hidden",
                              "find", "favourite", "newFolder", "terminal"]
 
@@ -145,8 +166,8 @@ final class PaneToolbarView: NSView {
     private func build() {
         stack = NSStackView()
         stack.orientation = .horizontal
-        stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(top: 2, left: 6, bottom: 2, right: 6)
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
@@ -201,7 +222,7 @@ final class PaneToolbarView: NSView {
                                    accessibilityDescription: action.currentTitle)
             button.bezelStyle = .texturedRounded
             button.isBordered = false
-            button.toolTip = action.currentTitle
+            button.toolTip = action.tooltip
             button.setAccessibilityLabel(action.currentTitle)
             button.target = nil          // travels the responder chain to the window
             button.action = action.selector
@@ -293,7 +314,7 @@ final class ToolbarPillView: NSView {
             button.image = NSImage(systemSymbolName: action.currentSymbol,
                                    accessibilityDescription: action.currentTitle)
             button.isBordered = false
-            button.toolTip = action.currentTitle
+            button.toolTip = action.tooltip
             button.setAccessibilityLabel(action.currentTitle)
             button.target = nil          // travels the responder chain to the window
             button.action = action.selector

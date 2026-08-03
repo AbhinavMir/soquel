@@ -30,6 +30,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Apply user colour overrides before the first window is built.
         // theme.json is the only thing consulted: nothing else stores colours,
         // so nothing can disagree with it or overwrite it on the way up.
+        // The system waits about a second and a half before showing a tooltip,
+        // which for an icon-only toolbar is long enough that people click to
+        // find out instead of hovering. AppKit reads this key at first use.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 350])
+
         Theme.reload()
         let menu = makeMainMenu()
         NSApp.mainMenu = menu

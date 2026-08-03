@@ -72,8 +72,8 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
         tabBar = NSStackView()
         tabBar.orientation = .horizontal
-        tabBar.spacing = 2
-        tabBar.edgeInsets = NSEdgeInsets(top: 3, left: 5, bottom: 3, right: 5)
+        tabBar.spacing = 3
+        tabBar.edgeInsets = NSEdgeInsets(top: 3, left: 6, bottom: 3, right: 6)
         tabBar.translatesAutoresizingMaskIntoConstraints = false
 
         tabBarScroll = NSScrollView()
@@ -337,45 +337,20 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         addTabButton.isHidden = tabBarScroll.isHidden
         guard tabs.count > 1 else { return }
 
-        for (i, list) in tabs.enumerated() {
-            let button = NSButton(title: list.url.lastPathComponent.isEmpty ? "/" : list.url.lastPathComponent,
-                                  target: self, action: #selector(tabButtonClicked(_:)))
-            button.tag = i
-            button.bezelStyle = .recessed
-            button.setButtonType(.pushOnPushOff)
-            button.state = (i == activeIndex) ? .on : .off
-            button.font = .systemFont(ofSize: 11, weight: i == activeIndex ? .semibold : .regular)
-            button.toolTip = list.url.path
-            button.setAccessibilityRole(.radioButton)
-            button.setAccessibilityLabel("Tab \(i + 1) of \(tabs.count): \(list.url.lastPathComponent)")
-            tabBar.addArrangedSubview(button)
-
-            // Its own button rather than a hover-only cross: a control you
-            // cannot see is a control you cannot tab to either.
-            let close = NSButton()
-            close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)
-            close.imageScaling = .scaleProportionallyDown
-            close.isBordered = false
-            close.tag = i
-            close.target = self
-            close.action = #selector(tabCloseClicked(_:))
-            close.toolTip = "Close “\(list.url.lastPathComponent)”"
-            close.setAccessibilityLabel("Close tab \(i + 1): \(list.url.lastPathComponent)")
-            close.translatesAutoresizingMaskIntoConstraints = false
-            close.widthAnchor.constraint(equalToConstant: 16).isActive = true
-            tabBar.addArrangedSubview(close)
+        for (index, list) in tabs.enumerated() {
+            let name = list.url.lastPathComponent.isEmpty ? "/" : list.url.lastPathComponent
+            let tab = TabItemView(title: name, active: index == activeIndex, closable: tabs.count > 1)
+            tab.toolTip = list.url.path
+            tab.onSelect = { [weak self] in
+                self?.selectTab(at: index)
+                self?.activeList?.focusTable()
+            }
+            tab.onClose = { [weak self] in
+                self?.closeTab(at: index)
+                self?.activeList?.focusTable()
+            }
+            tabBar.addArrangedSubview(tab)
         }
-
-    }
-
-    @objc private func tabButtonClicked(_ sender: NSButton) {
-        selectTab(at: sender.tag)
-        activeList?.focusTable()
-    }
-
-    @objc private func tabCloseClicked(_ sender: NSButton) {
-        closeTab(at: sender.tag)
-        activeList?.focusTable()
     }
 
     /// Opens the folder the active tab is showing, which is what a new tab in
