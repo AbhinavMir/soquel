@@ -844,6 +844,15 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
     }
 
+    /// Finds what the application left around the system and shows it for
+    /// review. Nothing is deleted without ticking it first.
+    @objc func uninstallApp() {
+        guard let item = selectedItems.first, item.url.pathExtension == "app" else { return }
+        UninstallPanelController.show(item.url, over: view.window) { [weak self] in
+            self?.reload()
+        }
+    }
+
     /// The Tags submenu. A tick means every selected file already has it.
     private func tagsMenuItem() -> NSMenuItem {
         let urls = selectedURLs()
@@ -1655,6 +1664,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             if selectedItems.count == 1, PackageContents.canInspect(selectedItems[0]) {
                 menu.addItem(withTitle: "Show Package Contents",
                              action: #selector(showPackageContents), keyEquivalent: "").target = self
+            }
+            if selectedItems.count == 1, selectedItems[0].url.pathExtension == "app" {
+                menu.addItem(withTitle: "Uninstall…",
+                             action: #selector(uninstallApp), keyEquivalent: "").target = self
             }
             menu.addItem(.separator())
         }
