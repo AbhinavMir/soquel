@@ -13,7 +13,14 @@ sleep 1
 
 rm -rf /Applications/Soquel.app
 cp -R build/Soquel.app /Applications/Soquel.app
-codesign --force -s - /Applications/Soquel.app
+
+# Do NOT re-sign here. build-app.sh signs with the Developer ID, and signing
+# ad-hoc over the top changes the code identity, which makes macOS treat this
+# as a different application and drop the Full Disk Access grant. That is the
+# exact thing Developer ID signing was adopted to avoid. cp -R keeps the
+# signature; verify it rather than replacing it.
+codesign --verify --strict /Applications/Soquel.app
+codesign -dv /Applications/Soquel.app 2>&1 | grep -E 'TeamIdentifier|Authority=Developer' || true
 
 echo "Installed /Applications/Soquel.app"
 echo

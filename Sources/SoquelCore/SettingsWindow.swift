@@ -52,10 +52,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         applications.label = "Applications"
         applications.view = ApplicationSettingsView()
 
+        let updates = NSTabViewItem(identifier: "updates")
+        updates.label = "Updates"
+        updates.view = UpdateSettingsView()
+
         tabs.addTabViewItem(appearance)
         tabs.addTabViewItem(themes)
         tabs.addTabViewItem(keyboard)
         tabs.addTabViewItem(applications)
+        tabs.addTabViewItem(updates)
 
         let root = NSView()
         root.addSubview(tabs)

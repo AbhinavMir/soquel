@@ -156,10 +156,10 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.1/Soquel-1.0.1.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.2/Soquel-1.0.2.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note">Version 1.0.1 · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note">Version 1.0.2 · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
 
 </header>
 
@@ -499,9 +499,13 @@ footer a { color: var(--faint); }
       through Open With.</dd>
 
   <dt>Does it send anything anywhere?</dt>
-  <dd>No. Search by meaning runs on the language model macOS already ships,
-      on your own machine. There is no account, no telemetry and no update
-      check.</dd>
+  <dd>Not unless you switch one thing on. Search by meaning runs on the language
+      model macOS already ships, on your own machine. There is no account and no
+      telemetry, ever. The one exception is opt-in and off by default: Settings →
+      Updates will ask github.com once a day for the latest release tag and
+      compare it with your build. It sends nothing about you or your machine, and
+      it never downloads or installs anything — it tells you, and the button opens
+      the release page.</dd>
 
   <dt>Where does it keep my settings?</dt>
   <dd>Four readable JSON files in <code>~/Library/Application Support/Soquel/</code>:

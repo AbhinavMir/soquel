@@ -46,6 +46,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         newWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        // Does nothing at all unless Settings → Updates is on.
+        UpdateCheck.checkInBackgroundIfDue()
+
         // First launch only. A file manager that cannot read Desktop or
         // Documents looks broken rather than unpermitted, so it is worth one
         // window saying what to grant and why.

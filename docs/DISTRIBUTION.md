@@ -11,21 +11,29 @@ and why the Mac App Store is not the channel.
 
 ## Making the download open cleanly
 
-The application is ad-hoc signed today, so a first launch on anyone else's Mac needs
-right-click → Open. macOS puts up a dialog with no Open button and most people stop there.
+Done as of 1.0.1. The application is signed with a Developer ID Application certificate under
+the hardened runtime, the disk image is notarised by Apple, and the ticket is stapled to it. A
+first launch is an ordinary double-click: no right-click, no warning, and no network needed for
+the Gatekeeper check.
 
-Fixing it needs the Apple Developer Program — $99/year — even for something given away free.
-That is Apple's toll on distributing macOS software at all, not a consequence of charging for it.
+- `scripts/build-app.sh` signs the bundle. It picks the identity up from the keychain, or from
+  `SOQUEL_IDENTITY`.
+- `scripts/notarise.sh` builds the image if it is missing, submits it, waits, staples the ticket
+  and validates the result. Credentials live in a keychain profile — `xcrun notarytool
+  store-credentials soquel` — so no password is ever in a file or in shell history.
 
-1. **Developer ID Application certificate**, then sign with the hardened runtime:
-   `codesign --force --options runtime --timestamp -s "Developer ID Application: …"`.
-   The ad-hoc `codesign -s -` in `scripts/build-app.sh` is a placeholder for exactly this.
-2. **Notarise and staple** — `xcrun notarytool submit … --wait`, then `xcrun stapler staple`.
-   Automatable; belongs in `scripts/`.
-3. **Universal binary** — `scripts/build-app.sh` builds for the machine it runs on. Covering both
-   architectures needs `swift build --arch arm64 --arch x86_64` and `lipo`.
+**Never re-sign after copying.** `scripts/install.sh` used to run `codesign --force -s -` on the
+copy in `/Applications`, which replaced the Developer ID signature with an ad-hoc one. Signing
+ad-hoc over the top changes the code identity, and macOS keys the Full Disk Access grant to that
+identity — so every install silently revoked the permission that Developer ID signing was adopted
+to preserve. `cp -R` keeps the signature intact. Verify it, never replace it.
 
-Until then the disk image works, and the Read Me inside it explains the right-click.
+Still outstanding:
+
+- **Universal binary.** `scripts/build-app.sh` runs `swift build -c release`, which builds for the
+  machine it runs on, so the shipped image is arm64. Covering Intel too would need
+  `swift build --arch arm64 --arch x86_64` and `lipo`. Deliberately not done — the landing page
+  says Apple silicon.
 
 ## Taking money without asking for it
 

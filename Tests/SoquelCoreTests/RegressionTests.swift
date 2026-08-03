@@ -439,4 +439,53 @@ final class RegressionTests: XCTestCase {
         XCTAssertFalse(node.isGroup)
         XCTAssertEqual(node.title, "notes.txt")
     }
+
+    /// The first fix only worked when the tree already had the folder loaded.
+    ///
+    /// Walking down to a folder the tree has not opened yet reads one level per
+    /// background call, so reveal() re-enters itself several runloop turns after
+    /// the click. The origin recorded at click time was cleared by then, so every
+    /// step after the first moved the selection anyway — which is every real case,
+    /// because a favourite usually points somewhere the tree has not been.
+    func testTheClickedOriginSurvivesAnAsynchronousRevealWalk() {
+        let item = SidebarItem(path: "/soquel-reveal/home/Work")
+        let clicked = SidebarNode.Kind.pinned(item)
+
+        // Step one: fresh walk, takes what was clicked.
+        let first = SidebarViewController.carriedOrigin(
+            fresh: true, clicked: clicked, carried: nil
+        )
+        XCTAssertFalse(SidebarViewController.revealMovesSelection(navigatedFrom: first))
+
+        // Later steps: the click is over and navigationOrigin is nil, but the
+        // carried value is what counts.
+        let second = SidebarViewController.carriedOrigin(
+            fresh: false, clicked: nil, carried: first
+        )
+        let third = SidebarViewController.carriedOrigin(
+            fresh: false, clicked: nil, carried: second
+        )
+        XCTAssertFalse(SidebarViewController.revealMovesSelection(navigatedFrom: third),
+                       "the highlight must still stay on the favourite three levels down")
+    }
+
+    /// A walk that did not start from a sidebar click still moves the selection,
+    /// however many levels it takes.
+    func testAWalkFromElsewhereStillMovesTheSelectionAtEveryDepth() {
+        var origin = SidebarViewController.carriedOrigin(fresh: true, clicked: nil, carried: nil)
+        for _ in 0..<3 {
+            origin = SidebarViewController.carriedOrigin(fresh: false, clicked: nil, carried: origin)
+        }
+        XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: origin))
+    }
+
+    /// A new click part-way through an old walk wins: it is a fresh walk.
+    func testAFreshClickReplacesWhateverTheLastWalkCarried() {
+        let folder = URL(fileURLWithPath: "/soquel-reveal/home", isDirectory: true)
+        let carried = SidebarNode.Kind.pinned(SidebarItem(path: "/soquel-reveal/home/Work"))
+        let origin = SidebarViewController.carriedOrigin(
+            fresh: true, clicked: .treeFolder(folder), carried: carried
+        )
+        XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: origin))
+    }
 }

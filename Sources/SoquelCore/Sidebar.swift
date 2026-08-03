@@ -111,6 +111,12 @@ final class SidebarViewController: NSViewController {
     /// reports back and the tree follows it, and that follow must not take the
     /// highlight off the row that was clicked.
     private var navigationOrigin: SidebarNode.Kind?
+    /// The same thing, carried for the length of a reveal walk.
+    ///
+    /// A walk down to a folder the tree has not opened yet loads one level per
+    /// background read, so reveal() re-enters itself several runloop turns
+    /// later. navigationOrigin is gone by then; this is not.
+    private var revealOrigin: SidebarNode.Kind?
 
     /// Internal drag type for reordering pinned items.
     private static let itemDragType = NSPasteboard.PasteboardType("app.soquel.sidebarItem")
@@ -555,12 +561,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         guard let url = node.url else { return }
 
         // Navigating the pane makes it report its new folder, which brings the
-        // tree down to it. Recording what was clicked lets that reveal leave
-        // the highlight alone. Cleared a turn later rather than straight after
-        // the call, because the pane may report asynchronously.
+        // tree down to it, synchronously and inside this call. reveal() takes a
+        // copy that outlives this line, so clearing here is safe.
         navigationOrigin = node.kind
         delegate?.sidebar(self, didSelect: url)
-        DispatchQueue.main.async { [weak self] in self?.navigationOrigin = nil }
+        navigationOrigin = nil
     }
 
     /// Whether a reveal should move the selected row.
@@ -610,6 +615,17 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             stack.append(contentsOf: candidate.children)
         }
         return nil
+    }
+
+    /// Which origin applies to this step of a reveal walk.
+    ///
+    /// Only the first step knows what was clicked. Every step after it is a
+    /// callback from a background directory read, by which time the click is
+    /// long over, so the answer has to be carried rather than re-read.
+    static func carriedOrigin(
+        fresh: Bool, clicked: SidebarNode.Kind?, carried: SidebarNode.Kind?
+    ) -> SidebarNode.Kind? {
+        fresh ? clicked : carried
     }
 
     /// Builds the rows for one loaded level: folders, then the files that fit,
@@ -708,6 +724,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             return false
         }) else { return }
 
+        // A fresh walk starts from what was just clicked; a continuation keeps
+        // whatever the first step recorded.
+        revealOrigin = Self.carriedOrigin(
+            fresh: pendingReveal == nil, clicked: navigationOrigin, carried: revealOrigin
+        )
         pendingReveal = url
         outline.expandItem(treeGroup)
 
@@ -721,6 +742,8 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         // Either the folder was reached or the tree cannot show it. Nothing
         // further is going to arrive for this one.
         pendingReveal = nil
+        let origin = revealOrigin
+        revealOrigin = nil
 
         guard let target = walk.target else { return }
         let row = outline.row(forItem: target)
@@ -728,7 +751,7 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
         // The tree still opens down to the folder either way; only the
         // highlight is withheld, so a clicked favourite stays the selected row.
-        guard Self.revealMovesSelection(navigatedFrom: navigationOrigin) else { return }
+        guard Self.revealMovesSelection(navigatedFrom: origin) else { return }
 
         suppressingSelectionReports {
             outline.selectRowIndexes([row], byExtendingSelection: false)
