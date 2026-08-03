@@ -590,6 +590,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         propagateViewSettings()
     }
 
+    @objc func menuRunCommand(_ sender: Any?) {
+        CommandPanelController.shared.show(in: focusedList?.url, over: window)
+    }
+
     @objc func menuMakeSymlink(_ sender: Any?) { focusedList?.makeSymlink() }
     @objc func menuNewFolder(_ sender: Any?) { focusedList?.newFolder() }
     @objc func menuNewFile(_ sender: Any?) { focusedList?.newFile() }
@@ -1515,10 +1519,17 @@ extension MainWindowController: PaneDelegate {
         guard pane === focusedPane else { return }
         statusLeft.stringValue = text
         updateShelfDestination()
+        updateCommandDirectory()
     }
 
     /// The shelf delivers to whatever the focused pane is showing, so it
     /// follows navigation rather than remembering where it was opened.
+    private func updateCommandDirectory() {
+        guard CommandPanelController.shared.isWindowLoaded,
+              CommandPanelController.shared.window?.isVisible == true else { return }
+        CommandPanelController.shared.directory = focusedList?.url
+    }
+
     private func updateShelfDestination() {
         guard ShelfPanelController.shared.isWindowLoaded,
               ShelfPanelController.shared.window?.isVisible == true else { return }

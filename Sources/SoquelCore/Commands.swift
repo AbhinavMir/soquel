@@ -262,6 +262,7 @@ enum CommandRegistry {
         .command(Command("tools.verifyCopies", "Verify Copies with a Checksum", #selector(M.menuToggleVerifyCopies(_:)))),
         .command(Command("file.symlink", "Make Symlink", #selector(M.menuMakeSymlink(_:)))),
         .command(Command("view.perFolder", "Remember View Per Folder", #selector(M.menuTogglePerFolderViews(_:)))),
+        .command(Command("tools.runCommand", "Run a Command Here", #selector(M.menuRunCommand(_:)), Shortcut("r", [.command, .control]))),
         .command(Command("view.sidebar", "Toggle Sidebar", #selector(M.menuToggleSidebar(_:)), Shortcut("s", [.command, .control]))),
         .command(Command("view.refresh", "Refresh", #selector(M.menuRefresh(_:)), Shortcut("r"))),
         .separator,
