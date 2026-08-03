@@ -68,9 +68,9 @@ final class ThemeSharingTests: XCTestCase {
 
     // MARK: - What a shared theme may carry
 
-    /// A background is a path on the sender's disk. It either does not exist
-    /// here or points at a different picture of yours.
-    func testADownloadedThemeCannotBringABackgroundImage() throws {
+    /// An absolute path is the sender's disk. It either does not exist here or
+    /// points at a different picture of yours.
+    func testAnAbsolutePathIsRefused() throws {
         let withImage = ##"""
         {"light":{"accent":"#FF0000"},"dark":{},
          "background":{"imagePath":"/Users/someone/secret.png","opacity":1,
@@ -78,6 +78,53 @@ final class ThemeSharingTests: XCTestCase {
         """##
         let config = try ThemeSharing.theme(fromGist: gist(["theme.json": withImage])).get()
         XCTAssertNil(config.background, "someone else's path must not come across")
+    }
+
+    /// A relative path names a file inside the theme's own repository, which is
+    /// the reason to put a theme in a repository rather than a gist.
+    func testARelativePathIsKept() throws {
+        let withImage = ##"""
+        {"light":{"accent":"#FF0000"},"dark":{},
+         "background":{"imagePath":"wallpaper.png","opacity":0.3,
+                       "fit":"fill","includeSidebar":false}}
+        """##
+        let config = try ThemeSharing.theme(fromGist: gist(["theme.json": withImage])).get()
+        XCTAssertEqual(config.background?.imagePath, "wallpaper.png")
+    }
+
+    /// A theme may bring its own picture. It may not read yours, and it may not
+    /// pull one from somewhere else.
+    func testOnlyPathsInsideTheRepositoryAreAllowed() {
+        for good in ["wallpaper.png", "images/bg.jpg", "a/b/c.png"] {
+            XCTAssertTrue(ThemeSharing.isRelative(good), good)
+        }
+        for bad in ["/Users/someone/x.png", "~/Pictures/x.png", "../../etc/passwd",
+                    "https://example.com/x.png", "images/../../x.png", ""] {
+            XCTAssertFalse(ThemeSharing.isRelative(bad), bad)
+        }
+    }
+
+    /// The picture comes from the same repository, branch and all.
+    func testTheImageURLSitsBesideTheThemeFile() {
+        let source = ThemeSharing.Source.repository(owner: "a", name: "b", ref: "v2")
+        XCTAssertEqual(source.url(forRelative: "images/bg.png")?.absoluteString,
+                       "https://raw.githubusercontent.com/a/b/v2/images/bg.png")
+        XCTAssertEqual(source.url(forRelative: "./bg.png")?.absoluteString,
+                       "https://raw.githubusercontent.com/a/b/v2/bg.png")
+    }
+
+    /// A gist is a flat list of text files and has nowhere to keep a picture.
+    func testAGistHasNoPlaceToPutAnImage() {
+        XCTAssertNil(ThemeSharing.Source.gist("abc").url(forRelative: "bg.png"))
+    }
+
+    /// Two themes cannot overwrite each other's background.
+    func testEachRepositoryKeepsItsPictureSeparately() {
+        let one = ThemeSharing.mediaDirectory(for: .repository(owner: "a", name: "b", ref: "HEAD"))
+        let two = ThemeSharing.mediaDirectory(for: .repository(owner: "c", name: "d", ref: "HEAD"))
+        XCTAssertNotNil(one)
+        XCTAssertNotEqual(one, two)
+        XCTAssertNil(ThemeSharing.mediaDirectory(for: .gist("abc")))
     }
 
     // MARK: - Sharing yours

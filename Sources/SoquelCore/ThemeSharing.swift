@@ -18,6 +18,19 @@ enum ThemeSharing {
         /// owner and repository, and the branch or tag to read from.
         case repository(owner: String, name: String, ref: String)
 
+        /// A file beside theme.json in the same repository. Gists hold one
+        /// flat list of text files and cannot carry a picture, so only a
+        /// repository has anything to point at.
+        func url(forRelative path: String) -> URL? {
+            guard case .repository(let owner, let name, let ref) = self else { return nil }
+            let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "./"))
+            guard !trimmed.isEmpty, let escaped = trimmed.addingPercentEncoding(
+                withAllowedCharacters: .urlPathAllowed
+            ) else { return nil }
+            return URL(string:
+                "https://raw.githubusercontent.com/\(owner)/\(name)/\(ref)/\(escaped)")
+        }
+
         /// Where the JSON actually lives.
         var url: URL? {
             switch self {
@@ -166,20 +179,106 @@ enum ThemeSharing {
 
     /// Strips what cannot mean anything on another machine.
     ///
-    /// A background image is stored as a path. Someone else's path either does
-    /// not exist here or, worse, points at a different picture of yours, so a
-    /// downloaded theme keeps the colours and leaves the background alone.
+    /// An absolute path is the sender's disk. It either does not exist here or,
+    /// worse, points at a different picture of yours, so it goes. A relative
+    /// one names a file inside the repository the theme came from, which is the
+    /// whole reason to put a theme in a repository rather than a gist — that
+    /// one is kept and fetched.
     static func sanitised(_ config: ThemeConfig) -> ThemeConfig {
         var copy = config
-        copy.background = nil
+        guard let background = copy.background else { return copy }
+        guard let path = background.imagePath, isRelative(path) else {
+            copy.background = nil
+            return copy
+        }
         return copy
+    }
+
+    /// Whether a stored path names a file inside the theme's own repository.
+    ///
+    /// Anything absolute, anything reaching upwards, and anything with a scheme
+    /// is refused: a theme may bring its own picture and may not read yours or
+    /// pull one from somewhere else.
+    static func isRelative(_ path: String) -> Bool {
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.hasPrefix("~") else { return false }
+        guard !path.contains("://"), !path.contains("..") else { return false }
+        return true
+    }
+
+    /// Where a downloaded picture is kept: beside the theme, under the
+    /// repository it came from, so installing a second theme cannot overwrite
+    /// the first one's background.
+    static func mediaDirectory(for source: Source) -> URL? {
+        guard case .repository(let owner, let name, _) = source else { return nil }
+        let safe = "\(owner)-\(name)".replacingOccurrences(
+            of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression
+        )
+        return ThemeConfig.directoryURL
+            .appendingPathComponent("theme-images", isDirectory: true)
+            .appendingPathComponent(safe, isDirectory: true)
+    }
+
+    /// A picture that will not fit on screen is a picture nobody chose, and an
+    /// unbounded download from a stranger is not something to start.
+    static let maximumImageBytes = 20 * 1024 * 1024
+
+    /// Downloads the picture a repository theme points at and rewrites the
+    /// path to the local copy.
+    ///
+    /// The config is handed back unchanged when there is nothing to fetch or
+    /// the fetch fails: a theme whose background did not arrive is still a
+    /// usable theme, and is better than refusing the colours over a picture.
+    static func fetchImage(
+        for config: ThemeConfig,
+        from source: Source,
+        session: URLSession = .shared,
+        completion: @escaping (ThemeConfig) -> Void
+    ) {
+        guard let path = config.background?.imagePath, isRelative(path),
+              let url = source.url(forRelative: path),
+              let directory = mediaDirectory(for: source)
+        else {
+            completion(config)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Soquel", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 30
+
+        session.dataTask(with: request) { data, response, _ in
+            var updated = config
+            defer { DispatchQueue.main.async { completion(updated) } }
+
+            guard let data, !data.isEmpty, data.count <= maximumImageBytes,
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  NSImage(data: data) != nil
+            else {
+                // Not an image, too big, or not there. Keep the colours and
+                // drop the background rather than leaving a path to nothing.
+                updated.background = nil
+                return
+            }
+
+            let name = (path as NSString).lastPathComponent
+            let destination = directory.appendingPathComponent(name)
+            do {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: true
+                )
+                try data.write(to: destination)
+                updated.background?.imagePath = destination.path
+            } catch {
+                updated.background = nil
+            }
+        }.resume()
     }
 
     /// Fetches and parses. The completion runs on the main queue.
     static func fetch(
         _ input: String,
         session: URLSession = .shared,
-        completion: @escaping (Result<ThemeConfig, Failure>) -> Void
+        completion: @escaping (Result<(ThemeConfig, Source), Failure>) -> Void
     ) {
         guard let source = source(from: input), let url = source.url else {
             completion(.failure(.notAGist(input)))
@@ -192,7 +291,7 @@ enum ThemeSharing {
         request.timeoutInterval = 20
 
         session.dataTask(with: request) { data, response, error in
-            let outcome: Result<ThemeConfig, Failure>
+            let outcome: Result<(ThemeConfig, Source), Failure>
             if let error {
                 outcome = .failure(.network(error.localizedDescription))
             } else if let http = response as? HTTPURLResponse, http.statusCode != 200 {
@@ -202,11 +301,11 @@ enum ThemeSharing {
                 // comes back as the file itself.
                 switch source {
                 case .gist:
-                    outcome = theme(fromGist: data)
+                    outcome = theme(fromGist: data).map { ($0, source) }
                 case .repository:
                     outcome = String(data: data, encoding: .utf8)
                         .flatMap(decode)
-                        .map { .success($0) } ?? .failure(.unreadable)
+                        .map { .success(($0, source)) } ?? .failure(.unreadable)
                 }
             } else {
                 outcome = .failure(.unreadable)

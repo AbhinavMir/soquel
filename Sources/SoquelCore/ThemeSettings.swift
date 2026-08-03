@@ -161,8 +161,17 @@ final class ThemeSettingsView: NSView {
             switch result {
             case .failure(let error):
                 self.status.stringValue = error.localizedDescription
-            case .success(let config):
-                self.confirm(config)
+            case .success(let (config, source)):
+                // A repository theme may carry its own picture. Fetch it before
+                // asking, so what is described is what would be applied.
+                guard config.background?.imagePath != nil else {
+                    self.confirm(config)
+                    return
+                }
+                self.status.stringValue = "Fetching its background…"
+                ThemeSharing.fetchImage(for: config, from: source) { withImage in
+                    self.confirm(withImage)
+                }
             }
         }
     }
@@ -170,9 +179,11 @@ final class ThemeSettingsView: NSView {
     private func confirm(_ config: ThemeConfig) {
         let alert = NSAlert()
         alert.messageText = "Use this theme?"
-        alert.informativeText = "It sets \(ThemeSharing.summary(config)). Your background image "
-            + "is kept — a theme from someone else cannot point at a picture on your disk. "
-            + "Reset to Defaults puts everything back."
+        alert.informativeText = "It sets \(ThemeSharing.summary(config)). "
+            + (config.background?.imagePath == nil
+                ? "Your background image is kept."
+                : "It brings its own background image, downloaded from the repository.")
+            + " Reset to Defaults puts everything back."
         alert.addButton(withTitle: "Use It")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else {
@@ -181,7 +192,9 @@ final class ThemeSettingsView: NSView {
         }
 
         var updated = config
-        updated.background = Theme.config.background
+        // A theme that brought a picture keeps it; one that did not leaves
+        // yours alone rather than clearing it.
+        if updated.background == nil { updated.background = Theme.config.background }
         updated.windowOpacity = Theme.config.windowOpacity
         Theme.apply(updated)
         gistField.stringValue = ""

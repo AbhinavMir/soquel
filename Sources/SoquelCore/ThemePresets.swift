@@ -49,6 +49,23 @@ enum ThemePresets {
 
     static let all: [ThemePreset] = [
         ThemePreset(
+            name: "Air",
+            about: "Almost no contrast and a lot of white. Rules barely there, one soft blue.",
+            light: [
+                // The lines are 6% black rather than a grey: a hairline you can
+                // name the colour of is a hairline you can see, and the point of
+                // this one is that you cannot.
+                "accent": "#5B6CFF", "selectionFill": "#5B6CFF", "selectionFillInactive": "#EDEFF5",
+                "rowAlternate": "#FBFBFD", "chrome": "#FFFFFF", "hairline": "#0000000F",
+                "danger": "#E0554B",
+            ],
+            dark: [
+                "accent": "#8B97FF", "selectionFill": "#4453D6", "selectionFillInactive": "#22242C",
+                "rowAlternate": "#141519", "chrome": "#0E0F13", "hairline": "#FFFFFF14",
+                "danger": "#FF7A6E",
+            ]
+        ),
+        ThemePreset(
             name: "Windows 95",
             about: "Grey everywhere and a high-contrast blue on top of it.",
             light: [
