@@ -56,6 +56,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.minSize = NSSize(width: 640, height: 380)
         self.init(window: window)
         window.delegate = self
+        window.alphaValue = Theme.windowOpacity
         build()
         restoreSession()
         window.center()
@@ -156,6 +157,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     private func applyTheme() {
         statusRight.textColor = Theme.accent
+        // The whole window, the way a Linux terminal goes see-through. AppKit
+        // draws the shadow from the window's own shape, so it fades with it and
+        // there is nothing separate to control.
+        window?.alphaValue = Theme.windowOpacity
         for pane in panes { pane.applyTheme() }
         window?.contentView?.needsDisplay = true
     }

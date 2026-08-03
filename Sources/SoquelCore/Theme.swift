@@ -40,6 +40,14 @@ enum Theme {
     /// The background in force, or `.none`.
     static var background: BackgroundConfig { config.background ?? .none }
 
+    static var windowOpacity: CGFloat { config.effectiveWindowOpacity }
+
+    static func setWindowOpacity(_ value: Double) {
+        var updated = config
+        updated.windowOpacity = value
+        apply(updated)
+    }
+
     static func setBackground(_ background: BackgroundConfig) {
         var updated = config
         updated.background = background

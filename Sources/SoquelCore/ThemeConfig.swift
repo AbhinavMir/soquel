@@ -19,14 +19,27 @@ struct ThemeConfig: Codable, Equatable {
     var dark: [String: String]
     /// Optional background image behind the file list.
     var background: BackgroundConfig?
+    /// How see-through the whole window is, the way a Linux terminal can be.
+    /// 1 is solid. Nil means never set, which is also solid.
+    var windowOpacity: Double?
 
     static let empty = ThemeConfig(light: [:], dark: [:], background: nil)
 
-    /// Decoding tolerates a file written before backgrounds existed.
-    init(light: [String: String], dark: [String: String], background: BackgroundConfig? = nil) {
+    /// Clamped, and never low enough to lose the window altogether.
+    var effectiveWindowOpacity: CGFloat {
+        CGFloat(min(max(windowOpacity ?? 1, ThemeConfig.minimumWindowOpacity), 1))
+    }
+
+    /// A window you cannot see is a window you cannot click back to.
+    static let minimumWindowOpacity: Double = 0.3
+
+    /// Decoding tolerates a file written before backgrounds or opacity existed.
+    init(light: [String: String], dark: [String: String],
+         background: BackgroundConfig? = nil, windowOpacity: Double? = nil) {
         self.light = light
         self.dark = dark
         self.background = background
+        self.windowOpacity = windowOpacity
     }
 
     /// The colour for a slot, or nil when the user has not set one (or set one

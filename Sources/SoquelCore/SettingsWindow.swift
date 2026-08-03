@@ -130,6 +130,36 @@ final class AppearanceSettingsView: NSView {
             grid.addRow(with: [text, lightWell, darkWell])
         }
 
+        let windowHeading = label("Window", weight: .semibold)
+        windowSlider = NSSlider(value: Double(Theme.windowOpacity),
+                                minValue: ThemeConfig.minimumWindowOpacity, maxValue: 1,
+                                target: self, action: #selector(windowOpacityChanged))
+        windowSlider.isContinuous = true
+        windowSlider.widthAnchor.constraint(equalToConstant: 160).isActive = true
+
+        windowReadout = label(Self.percent(Double(Theme.windowOpacity)))
+        windowReadout.font = Theme.rowNumeric
+        windowReadout.textColor = .secondaryLabelColor
+        windowReadout.widthAnchor.constraint(equalToConstant: 44).isActive = true
+
+        let windowNote = label("How see-through the whole window is. macOS draws the shadow "
+            + "from the window itself, so it fades along with it.")
+        windowNote.font = .systemFont(ofSize: 11)
+        windowNote.textColor = .secondaryLabelColor
+        windowNote.lineBreakMode = .byWordWrapping
+        windowNote.maximumNumberOfLines = 2
+        windowNote.preferredMaxLayoutWidth = 560
+
+        let windowRow = NSStackView(views: [label("Opacity"), windowSlider, windowReadout])
+        windowRow.orientation = .horizontal
+        windowRow.spacing = 8
+
+        let windowBox = NSStackView(views: [windowHeading, windowRow, windowNote])
+        windowBox.orientation = .vertical
+        windowBox.alignment = .leading
+        windowBox.spacing = 6
+        windowBox.translatesAutoresizingMaskIntoConstraints = false
+
         let preview = ThemePreviewView()
         preview.translatesAutoresizingMaskIntoConstraints = false
         let previewCaption = label("A pane, drawn with these colours.")
@@ -155,6 +185,7 @@ final class AppearanceSettingsView: NSView {
         addSubview(grid)
         addSubview(previewCaption)
         addSubview(preview)
+        addSubview(windowBox)
         addSubview(backgroundBox)
         addSubview(buttons)
         addSubview(note)
@@ -171,7 +202,11 @@ final class AppearanceSettingsView: NSView {
             preview.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             preview.heightAnchor.constraint(equalToConstant: 108),
 
-            backgroundBox.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 18),
+            windowBox.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 18),
+            windowBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            windowBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+
+            backgroundBox.topAnchor.constraint(equalTo: windowBox.bottomAnchor, constant: 18),
             backgroundBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             backgroundBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
@@ -190,6 +225,9 @@ final class AppearanceSettingsView: NSView {
     private var opacitySlider: NSSlider!
     private var opacityReadout: NSTextField!
     private var fitControl: NSPopUpButton!
+    private var windowSlider: NSSlider!
+    private var windowReadout: NSTextField!
+    private var imageRow: NSStackView?
 
     private func buildBackgroundControls() -> NSView {
         let config = Theme.background
@@ -223,10 +261,11 @@ final class AppearanceSettingsView: NSView {
         row1.orientation = .horizontal
         row1.spacing = 8
 
-        let row2 = NSStackView(views: [label("Opacity"), opacitySlider, opacityReadout,
+        let row2 = NSStackView(views: [label("Image opacity"), opacitySlider, opacityReadout,
                                        label("Fit"), fitControl])
         row2.orientation = .horizontal
         row2.spacing = 8
+        imageRow = row2
 
         let stack = NSStackView(views: [heading, row1, row2])
         stack.orientation = .vertical
@@ -241,12 +280,12 @@ final class AppearanceSettingsView: NSView {
     /// them to describe, and a live slider that changes nothing on screen reads
     /// as broken rather than as inapplicable.
     private func updateBackgroundControls() {
+        // No image means nothing for a fit mode or an image opacity to describe,
+        // so the row goes rather than sitting there greyed out next to a window
+        // opacity that does work.
         let hasImage = Theme.background.imageURL != nil
-        opacitySlider.isEnabled = hasImage
-        fitControl.isEnabled = hasImage
-        opacityReadout.textColor = hasImage ? .secondaryLabelColor : .tertiaryLabelColor
-        pathLabel.stringValue = Theme.background.imageURL?.lastPathComponent
-            ?? "None — choose one and the opacity below will do something"
+        imageRow?.isHidden = !hasImage
+        pathLabel.stringValue = Theme.background.imageURL?.lastPathComponent ?? "None"
     }
 
     private static func percent(_ value: Double) -> String {
@@ -278,6 +317,11 @@ final class AppearanceSettingsView: NSView {
         background.imagePath = nil
         Theme.setBackground(background)
         updateBackgroundControls()
+    }
+
+    @objc private func windowOpacityChanged() {
+        Theme.setWindowOpacity(windowSlider.doubleValue)
+        windowReadout.stringValue = Self.percent(windowSlider.doubleValue)
     }
 
     @objc private func opacityChanged() {

@@ -38,6 +38,36 @@ enum ThemePresets {
 
     static let all: [ThemePreset] = [
         ThemePreset(
+            name: "Windows 95",
+            about: "Grey panels, a navy title bar, and the selection blue everyone remembers.",
+            light: [
+                // The system grey is #C0C0C0 and the selected-row navy #000080.
+                // Both are the real values, not an impression of them.
+                "accent": "#000080", "selectionFill": "#000080", "selectionFillInactive": "#C0C0C0",
+                "rowAlternate": "#EFEFEF", "chrome": "#C0C0C0", "hairline": "#808080",
+                "danger": "#800000",
+            ],
+            dark: [
+                "accent": "#5A5AC8", "selectionFill": "#000080", "selectionFillInactive": "#3A3A3A",
+                "rowAlternate": "#242424", "chrome": "#2B2B2B", "hairline": "#5A5A5A",
+                "danger": "#C05050",
+            ]
+        ),
+        ThemePreset(
+            name: "Platinum",
+            about: "Mac OS 8 and 9: grey chrome, a blue-grey selection, and thin black rules.",
+            light: [
+                "accent": "#33339C", "selectionFill": "#9EA8C8", "selectionFillInactive": "#D8D8D8",
+                "rowAlternate": "#EDEDED", "chrome": "#DDDDDD", "hairline": "#808080",
+                "danger": "#993333",
+            ],
+            dark: [
+                "accent": "#8A94C4", "selectionFill": "#4A5478", "selectionFillInactive": "#3C3C3C",
+                "rowAlternate": "#262626", "chrome": "#303030", "hairline": "#666666",
+                "danger": "#C07070",
+            ]
+        ),
+        ThemePreset(
             name: "Soquel",
             about: "The colours the application ships with.",
             light: [:], dark: [:]
