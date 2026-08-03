@@ -882,6 +882,17 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     }
 
     @objc func toggleQuickLook() {
+        // Quick Look shows nothing for a directory, so space on a folder used
+        // to do nothing. Show what is inside it instead.
+        if let item = selectedItems.first, selectedItems.count == 1, item.opensAsFolder {
+            if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
+                QLPreviewPanel.shared().orderOut(nil)
+            }
+            FolderPeekController.shared.toggle(item.url, over: view.window)
+            return
+        }
+        if FolderPeekController.shared.isOpen { FolderPeekController.shared.close() }
+
         guard let panel = QLPreviewPanel.shared() else { return }
         if QLPreviewPanel.sharedPreviewPanelExists() && panel.isVisible {
             panel.orderOut(nil)
