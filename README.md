@@ -90,21 +90,30 @@ rebound. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 ```
 Sources/SoquelCore/    application code
 Sources/Soquel/        executable entry point
-Tests/SoquelCoreTests/ 497 tests
+Tests/SoquelCoreTests/ 683 tests
 scripts/               build-app.sh, make-dmg.sh, install.sh
 docs/                  architecture, keybindings, settings, security
 ```
 
 The code is in the `SoquelCore` library rather than in the executable so that it can be tested.
 
+## Asking things
+
+[soquel.hamlet.so](https://soquel.hamlet.so/) is the forum: plain questions, "how do I",
+"this is behaving oddly", ideas. No GitHub account needed.
+
+[GitHub issues](https://github.com/AbhinavMir/soquel/issues) is for bug reports with steps to
+reproduce, and feature requests to track against the code.
+
 ## Known gaps
 
-Bugs and missing pieces are tracked as
-[issues](https://github.com/AbhinavMir/soquel/issues). There is no accessibility pass yet, and SFTP
-would need a File Provider extension that has not been written.
+There is no accessibility pass yet, and SFTP would need a File Provider extension that has not been
+written.
 
-Soquel does not replace Finder at the system level, and cannot — macOS reserves that. It can be made
-the handler for folders, which covers most of it.
+Soquel does not replace Finder at the system level, and cannot. macOS refuses to reassign
+`public.folder` to anything else — the call returns `paramErr`, and that applies to every
+application, not just this one. Volumes can be reassigned, so double-clicking a disk opens it here,
+and anything can be opened through Open With.
 
 ## License
 
