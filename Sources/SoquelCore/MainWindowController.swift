@@ -554,6 +554,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                    in: view)
     }
 
+    @objc func menuFindDuplicates(_ sender: Any?) {
+        guard let url = focusedList?.url else { return }
+        DuplicatesPanelController.shared.onChanged = { [weak self] in self?.focusedList?.reload() }
+        DuplicatesPanelController.shared.show(roots: [url], over: window)
+    }
+
     @objc func menuToggleSyncBrowsing(_ sender: Any?) {
         Prefs.syncBrowsing.toggle()
         statusLeft.stringValue = Prefs.syncBrowsing
