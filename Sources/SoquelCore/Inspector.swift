@@ -168,7 +168,7 @@ final class InspectorView: NSView {
         }
     }
 
-    private func row(_ label: String, _ value: String) -> NSView {
+    private func row(_ label: String, _ value: String, tooltip: String? = nil) -> NSView {
         let name = NSTextField(labelWithString: label)
         name.font = .systemFont(ofSize: 10.5, weight: .semibold)
         name.textColor = .tertiaryLabelColor
@@ -186,6 +186,11 @@ final class InspectorView: NSView {
         stack.orientation = .horizontal
         stack.alignment = .firstBaseline
         stack.spacing = 6
+        if let tooltip {
+            name.toolTip = tooltip
+            content.toolTip = tooltip
+            stack.toolTip = tooltip
+        }
         return stack
     }
 
@@ -229,7 +234,10 @@ final class InspectorView: NSView {
         // "read & write" popup.
         if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) {
             if let mode = attributes[.posixPermissions] as? NSNumber {
-                detailStack.addArrangedSubview(row("Permissions", Self.describe(mode: mode.uint16Value)))
+                detailStack.addArrangedSubview(row(
+                    "Permissions", Self.describe(mode: mode.uint16Value),
+                    tooltip: Self.explain(mode: mode.uint16Value)
+                ))
             }
             let owner = attributes[.ownerAccountName] as? String
             let group = attributes[.groupOwnerAccountName] as? String
@@ -284,6 +292,37 @@ final class InspectorView: NSView {
         let other = Int(mode & 0o7)
         let octal = String(format: "%03o", mode & 0o777)
         return "\(bits[owner])\(bits[group])\(bits[other]) (\(octal))"
+    }
+
+    /// What rwxr-xr-x actually means, in words.
+    ///
+    /// The notation is only obvious to people who already know it, and it is
+    /// the one line in the panel that decides whether a file will open.
+    static func explain(mode: UInt16) -> String {
+        let who = ["The owner", "The group", "Everyone else"]
+        let values = [Int((mode >> 6) & 0o7), Int((mode >> 3) & 0o7), Int(mode & 0o7)]
+        let isDirectory = mode & UInt16(S_IFDIR) != 0
+
+        var lines: [String] = []
+        for (index, value) in values.enumerated() {
+            lines.append("\(who[index]) \(Self.phrase(for: value, isDirectory: isDirectory)).")
+        }
+        lines.append("")
+        lines.append("r read · w change · x " + (isDirectory ? "open the folder" : "run it"))
+        return lines.joined(separator: "\n")
+    }
+
+    /// One permission triple as a sentence. "x" means something different on a
+    /// folder — it is permission to go into it, not to run it.
+    static func phrase(for value: Int, isDirectory: Bool) -> String {
+        var can: [String] = []
+        if value & 0o4 != 0 { can.append(isDirectory ? "list it" : "read it") }
+        if value & 0o2 != 0 { can.append(isDirectory ? "add and remove things" : "change it") }
+        if value & 0o1 != 0 { can.append(isDirectory ? "open it" : "run it") }
+
+        guard !can.isEmpty else { return "cannot do anything with it" }
+        if can.count == 1 { return "can \(can[0])" }
+        return "can " + can.dropLast().joined(separator: ", ") + " and " + can[can.count - 1]
     }
 
     /// Checksums are on demand: hashing a large file on selection would make

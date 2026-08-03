@@ -367,6 +367,14 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
     // MARK: - Path bar
 
+    /// Whether a slash goes after this crumb.
+    ///
+    /// The root's own label is "/", so following it with a separator wrote
+    /// "//Applications". Nothing follows the last crumb either.
+    static func breadcrumbNeedsSeparator(after name: String, isLast: Bool) -> Bool {
+        !isLast && name != "/"
+    }
+
     private func rebuildPathBar() {
         for sub in pathBar.arrangedSubviews { pathBar.removeArrangedSubview(sub); sub.removeFromSuperview() }
         guard let url = currentURL else { return }
@@ -389,7 +397,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
             button.contentTintColor = isCurrent ? Theme.accent : .secondaryLabelColor
             button.identifier = NSUserInterfaceItemIdentifier(component.path)
             pathBar.addArrangedSubview(button)
-            if i < components.count - 1 {
+            if Self.breadcrumbNeedsSeparator(after: name, isLast: i == components.count - 1) {
                 let sep = NSTextField(labelWithString: "/")
                 sep.textColor = .tertiaryLabelColor
                 sep.font = Theme.path
