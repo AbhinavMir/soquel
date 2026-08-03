@@ -276,7 +276,11 @@ final class AppearanceSettingsView: NSView {
     }
 
     @objc private func wellChanged(_ sender: NSColorWell) {
-        guard let entry = wells.first(where: { $0.well === sender }) else { return }
+        guard let entry = wells.first(where: { $0.well === sender }) else {
+            Log.info(.ui, "wellChanged: fired for a well that is not in the table")
+            return
+        }
+        Log.info(.ui, "wellChanged: \(entry.slot.rawValue) dark=\(entry.dark) → \(sender.color.hexString)")
         var config = Theme.config
         if entry.dark {
             config.dark[entry.slot.rawValue] = sender.color.hexString

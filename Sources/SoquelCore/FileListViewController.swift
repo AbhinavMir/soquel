@@ -78,7 +78,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     private var backgroundView: BackgroundImageView!
     private var collectionView: FileCollectionView!
     private var collectionScroll: NSScrollView!
-    private var mode: ViewMode = Prefs.viewMode
+    /// What this list is actually showing. The one source of truth: the global
+    /// Prefs.viewMode is a default, and a list can be showing something else
+    /// while a change propagates or a folder remembers its own.
+    private(set) var mode: ViewMode = Prefs.viewMode
     private var isIconMode: Bool { mode == .icon }
 
     private static let byteFormatter: ByteCountFormatter = {
@@ -527,7 +530,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     func selectedURLs() -> [URL] {
         // In column view the browser owns the selection and the table is not on
         // screen, so its rows say nothing about what the user picked.
-        if Prefs.viewMode == .column { return columnSelection }
+        if mode == .column { return columnSelection }
         if isIconMode {
             return collectionView.selectionIndexPaths
                 .compactMap { items.indices.contains($0.item) ? items[$0.item].url : nil }
@@ -813,7 +816,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     @objc func openSelection() {
         let selected = selectedItems
-        guard !selected.isEmpty else { return }
+        Log.debug(.ui, "openSelection: mode=\(mode.rawValue) selected=\(selected.count) "
+            + "rows=\(tableView.selectedRowIndexes.count) column=\(columnSelection.count)")
+        guard !selected.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "Nothing selected to open")
+            return
+        }
         if selected.count == 1, selected[0].opensAsFolder {
             navigate(to: selected[0].url.resolvingSymlinksInPath())
             return
@@ -1030,7 +1038,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     func beginRename() {
         // Only the list view has an editable cell to put an editor in; the other
         // two views rename through a sheet rather than not at all.
-        guard Prefs.viewMode == .list else {
+        guard mode == .list else {
             renameThroughSheet()
             return
         }

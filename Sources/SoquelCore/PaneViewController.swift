@@ -422,7 +422,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
     /// Shows either the list/icon view or the column browser.
     func applyViewMode() {
         guard isViewLoaded else { return }
-        let columns = Prefs.viewMode == .column
+        let columns = (activeList?.mode ?? Prefs.viewMode) == .column
         columnBrowser.isHidden = !columns
         contentView.isHidden = columns
         if columns, let url = currentURL, columnBrowser.deepestURL?.standardizedFileURL != url.standardizedFileURL {
@@ -527,7 +527,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
     func fileList(_ list: FileListViewController, didNavigateTo url: URL) {
         guard list === activeList else { return }
-        if Prefs.viewMode == .column { columnBrowser.show(url) }
+        if (activeList?.mode ?? Prefs.viewMode) == .column { columnBrowser.show(url) }
         rebuildPathBar()
         rebuildTabBar()
         delegate?.paneDidChangeTabs(self)
