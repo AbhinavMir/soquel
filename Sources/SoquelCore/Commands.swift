@@ -166,7 +166,7 @@ enum CommandRegistry {
     static func command(id: String) -> Command? { all.first { $0.id == id } }
 
     static var sections: [MenuSection] {
-        [fileSection, editSection, pathSection, viewSection, paneSection, goSection]
+        [fileSection, editSection, pathSection, viewSection, toolsSection, paneSection, goSection]
     }
 
     private typealias M = MainWindowController
@@ -186,6 +186,7 @@ enum CommandRegistry {
         .command(Command("file.rename", "Rename", #selector(M.menuRename(_:)))),
         .command(Command("file.batchRename", "Rename Many…", #selector(M.menuBatchRename(_:)), Shortcut("r", [.command, .control]))),
         .command(Command("file.duplicate", "Duplicate", #selector(M.menuDuplicate(_:)), Shortcut("d", [.command, .control]))),
+        .command(Command("file.symlink", "Make Symlink", #selector(M.menuMakeSymlink(_:)))),
         .command(Command("file.trash", "Move to Trash", #selector(M.menuTrash(_:)), Shortcut("\u{8}"))),
         .command(Command("file.delete", "Delete Permanently…", #selector(M.menuDeletePermanently(_:)), Shortcut("\u{8}", [.command, .option]))),
         .separator,
@@ -258,11 +259,7 @@ enum CommandRegistry {
         .command(Command("view.inspector", "Show Preview", #selector(M.menuToggleInspector(_:)), Shortcut("i", [.command, .option]))),
         .command(Command("view.folderTree", "Show Folder Tree", #selector(M.menuToggleFolderTree(_:)), Shortcut("t", [.command, .shift]))),
         .command(Command("view.syncBrowsing", "Sync Browsing", #selector(M.menuToggleSyncBrowsing(_:)))),
-        .command(Command("tools.duplicates", "Find Duplicates", #selector(M.menuFindDuplicates(_:)))),
-        .command(Command("tools.verifyCopies", "Verify Copies with a Checksum", #selector(M.menuToggleVerifyCopies(_:)))),
-        .command(Command("file.symlink", "Make Symlink", #selector(M.menuMakeSymlink(_:)))),
         .command(Command("view.perFolder", "Remember View Per Folder", #selector(M.menuTogglePerFolderViews(_:)))),
-        .command(Command("tools.runCommand", "Run a Command Here", #selector(M.menuRunCommand(_:)))),
         .command(Command("view.sidebar", "Toggle Sidebar", #selector(M.menuToggleSidebar(_:)), Shortcut("s", [.command, .control]))),
         .command(Command("view.refresh", "Refresh", #selector(M.menuRefresh(_:)), Shortcut("r"))),
         .separator,
@@ -276,6 +273,13 @@ enum CommandRegistry {
         .command(Command("view.clearSecondarySort", "Clear Secondary Sorts", #selector(M.menuClearSecondarySorts(_:)))),
         .separator,
         .command(Command("view.quickLook", "Quick Look", #selector(M.menuQuickLook(_:)), Shortcut("y"))),
+    ])
+
+    static let toolsSection = MenuSection(title: "Tools", entries: [
+        .command(Command("tools.duplicates", "Find Duplicates…", #selector(M.menuFindDuplicates(_:)))),
+        .command(Command("tools.runCommand", "Run a Command Here…", #selector(M.menuRunCommand(_:)))),
+        .separator,
+        .command(Command("tools.verifyCopies", "Verify Copies with a Checksum", #selector(M.menuToggleVerifyCopies(_:)))),
     ])
 
     static let paneSection = MenuSection(title: "Panes", entries: [
