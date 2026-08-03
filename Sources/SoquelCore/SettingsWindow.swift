@@ -233,7 +233,20 @@ final class AppearanceSettingsView: NSView {
         stack.alignment = .leading
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
+        updateBackgroundControls()
         return stack
+    }
+
+    /// Opacity and fit describe an image. With no image there is nothing for
+    /// them to describe, and a live slider that changes nothing on screen reads
+    /// as broken rather than as inapplicable.
+    private func updateBackgroundControls() {
+        let hasImage = Theme.background.imageURL != nil
+        opacitySlider.isEnabled = hasImage
+        fitControl.isEnabled = hasImage
+        opacityReadout.textColor = hasImage ? .secondaryLabelColor : .tertiaryLabelColor
+        pathLabel.stringValue = Theme.background.imageURL?.lastPathComponent
+            ?? "None — choose one and the opacity below will do something"
     }
 
     private static func percent(_ value: Double) -> String {
@@ -250,18 +263,25 @@ final class AppearanceSettingsView: NSView {
 
         var background = Theme.background
         background.imagePath = url.path
-        pathLabel.stringValue = url.lastPathComponent
+        // An image at 0% is an image nobody can see, and the slider it lands on
+        // was disabled a moment ago, so it is the one setting that cannot have
+        // been chosen deliberately.
+        if background.opacity <= 0.001 { background.opacity = BackgroundConfig.none.opacity }
         Theme.setBackground(background)
+        opacitySlider.doubleValue = background.opacity
+        opacityReadout.stringValue = Self.percent(background.opacity)
+        updateBackgroundControls()
     }
 
     @objc private func clearImage() {
         var background = Theme.background
         background.imagePath = nil
-        pathLabel.stringValue = "None"
         Theme.setBackground(background)
+        updateBackgroundControls()
     }
 
     @objc private func opacityChanged() {
+        guard Theme.background.imageURL != nil else { return }
         var background = Theme.background
         background.opacity = opacitySlider.doubleValue
         opacityReadout.stringValue = Self.percent(background.opacity)
@@ -347,10 +367,10 @@ final class AppearanceSettingsView: NSView {
         for entry in wells {
             entry.well.color = Theme.resolved(entry.slot, dark: entry.dark)
         }
-        pathLabel.stringValue = "None"
         opacitySlider.doubleValue = BackgroundConfig.none.opacity
         opacityReadout.stringValue = Self.percent(BackgroundConfig.none.opacity)
         fitControl.selectItem(at: 0)
+        updateBackgroundControls()
     }
 
     @objc private func revealFile() {
