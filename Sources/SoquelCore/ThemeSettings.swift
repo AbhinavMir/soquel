@@ -49,6 +49,23 @@ final class ThemeSettingsView: NSView {
         status.lineBreakMode = .byTruncatingTail
         status.translatesAutoresizingMaskIntoConstraints = false
 
+        gistField = NSTextField()
+        gistField.placeholderString = "Paste a gist address to install a theme"
+        gistField.font = .systemFont(ofSize: 12)
+        gistField.target = self
+        gistField.action = #selector(installFromGist)
+        gistField.translatesAutoresizingMaskIntoConstraints = false
+
+        installButton = NSButton(title: "Install", target: self, action: #selector(installFromGist))
+        let copyButton = NSButton(title: "Copy Mine", target: self, action: #selector(copyForSharing))
+        copyButton.toolTip = "Puts your theme.json on the clipboard, ready to paste into a gist"
+
+        let shareRow = NSStackView(views: [gistField, installButton, copyButton])
+        shareRow.orientation = .horizontal
+        shareRow.spacing = 8
+        shareRow.translatesAutoresizingMaskIntoConstraints = false
+        gistField.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+
         let reveal = NSButton(title: "Reveal theme.json", target: self, action: #selector(revealFile))
         let buttons = NSStackView(views: [reveal])
         buttons.orientation = .horizontal
@@ -57,6 +74,7 @@ final class ThemeSettingsView: NSView {
 
         addSubview(title)
         addSubview(scroll)
+        addSubview(shareRow)
         addSubview(status)
         addSubview(buttons)
 
@@ -68,7 +86,11 @@ final class ThemeSettingsView: NSView {
             scroll.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            scroll.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -10),
+            scroll.bottomAnchor.constraint(equalTo: shareRow.topAnchor, constant: -10),
+
+            shareRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            shareRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            shareRow.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -10),
 
             rowStack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
             rowStack.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
@@ -86,6 +108,63 @@ final class ThemeSettingsView: NSView {
             forName: .soquelThemeChanged, object: nil, queue: .main
         ) { [weak self] _ in self?.reload() }
         reload()
+    }
+
+    // MARK: - Sharing
+
+    private var gistField: NSTextField!
+    private var installButton: NSButton!
+
+    /// Fetches a theme from a gist and asks before applying it.
+    ///
+    /// It is only colours — there is nothing in a theme that can run — but it
+    /// still repaints the application, so it is shown and confirmed rather than
+    /// applied the moment it arrives.
+    @objc private func installFromGist() {
+        let text = gistField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        installButton.isEnabled = false
+        status.stringValue = "Fetching…"
+
+        ThemeSharing.fetch(text) { [weak self] result in
+            guard let self else { return }
+            self.installButton.isEnabled = true
+            switch result {
+            case .failure(let error):
+                self.status.stringValue = error.localizedDescription
+            case .success(let config):
+                self.confirm(config)
+            }
+        }
+    }
+
+    private func confirm(_ config: ThemeConfig) {
+        let alert = NSAlert()
+        alert.messageText = "Use this theme?"
+        alert.informativeText = "It sets \(ThemeSharing.summary(config)). Your background image "
+            + "is kept — a theme from someone else cannot point at a picture on your disk. "
+            + "Reset to Defaults puts everything back."
+        alert.addButton(withTitle: "Use It")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            status.stringValue = "Left alone"
+            return
+        }
+
+        var updated = config
+        updated.background = Theme.config.background
+        updated.windowOpacity = Theme.config.windowOpacity
+        Theme.apply(updated)
+        gistField.stringValue = ""
+        status.stringValue = "Installed"
+    }
+
+    @objc private func copyForSharing() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(ThemeSharing.exportText(), forType: .string)
+        status.stringValue = "Copied — paste it into a gist as theme.json"
     }
 
     // MARK: - Rows
