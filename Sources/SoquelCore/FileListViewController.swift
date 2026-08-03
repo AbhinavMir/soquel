@@ -244,7 +244,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     func applyViewMode() {
         guard isViewLoaded else { return }
-        mode = Prefs.viewMode
+        mode = FolderViewSettings.viewMode(for: url)
         scrollView.isHidden = mode != .list
         collectionScroll.isHidden = mode != .icon
         if mode == .column { return }
@@ -292,6 +292,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // The column browser is rebuilt for the new folder, so whatever it had
         // selected no longer exists as far as the commands are concerned.
         columnSelection = []
+        // The folder decides how it is shown, when it has an opinion recorded.
+        if FolderViewSettings.isEnabled {
+            sortOrder = FolderViewSettings.sortOrder(for: url)
+            updateSortIndicators()
+            applyViewMode()
+        }
         delegate?.fileList(self, didNavigateTo: url)
         reload(selecting: nil, resetScroll: true)
     }
@@ -1310,6 +1316,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     private func commitSortChange() {
         Prefs.sortOrder = sortOrder
+        FolderViewSettings.record(url, viewMode: mode, sortOrder: sortOrder)
         updateSortIndicators()
         applyFilterAndSort(preservingSelection: true)
         delegate?.fileList(self, didReportStatus: "Sorted by " + sortOrder.summary)
@@ -1380,7 +1387,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     /// Reloads the sort from preferences, for when another pane changed it.
     func adoptGlobalViewSettings() {
-        sortOrder = Prefs.sortOrder
+        sortOrder = FolderViewSettings.sortOrder(for: url)
         updateSortIndicators()
         applyColumnVisibility()
         rebuildMetadataColumns()

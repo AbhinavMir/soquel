@@ -577,6 +577,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
     }
 
+    @objc func menuTogglePerFolderViews(_ sender: Any?) {
+        FolderViewSettings.isEnabled.toggle()
+        if FolderViewSettings.isEnabled, let list = focusedList {
+            FolderViewSettings.record(list.url, viewMode: Prefs.viewMode, sortOrder: Prefs.sortOrder)
+        } else {
+            FolderViewSettings.forgetAll()
+        }
+        statusLeft.stringValue = FolderViewSettings.isEnabled
+            ? "Each folder remembers its own view and sort"
+            : "One view and sort for every folder; what was remembered is forgotten"
+        propagateViewSettings()
+    }
+
     @objc func menuMakeSymlink(_ sender: Any?) { focusedList?.makeSymlink() }
     @objc func menuNewFolder(_ sender: Any?) { focusedList?.newFolder() }
     @objc func menuNewFile(_ sender: Any?) { focusedList?.newFile() }
@@ -700,18 +713,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     @objc func menuUseListView(_ sender: Any?) {
         Log.info(.ui, "View mode → list (was \(Prefs.viewMode.rawValue))")
         Prefs.viewMode = .list
+        if let list = focusedList {
+            FolderViewSettings.record(list.url, viewMode: .list, sortOrder: nil)
+        }
         propagateViewSettings()
     }
 
     @objc func menuUseIconView(_ sender: Any?) {
         Log.info(.ui, "View mode → icon (was \(Prefs.viewMode.rawValue))")
         Prefs.viewMode = .icon
+        if let list = focusedList {
+            FolderViewSettings.record(list.url, viewMode: .icon, sortOrder: nil)
+        }
         propagateViewSettings()
     }
 
     @objc func menuUseColumnView(_ sender: Any?) {
         Log.info(.ui, "View mode → column (was \(Prefs.viewMode.rawValue))")
         Prefs.viewMode = .column
+        if let list = focusedList {
+            FolderViewSettings.record(list.url, viewMode: .column, sortOrder: nil)
+        }
         propagateViewSettings()
     }
 
