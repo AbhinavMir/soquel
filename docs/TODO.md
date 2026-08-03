@@ -95,6 +95,17 @@ tail, and it is not ranked above the two issues below.
 | Hidden-files button state | Draws `eye.slash` when hidden files are off, `eye` when on |
 | Muted view pill | The selected segment fills grey rather than the selection blue |
 | Sidebar focus fix | Clicking a favourite no longer hands the highlight to the folder tree |
+| Quick Look a folder | Space on a folder shows a grid of what is inside instead of nothing |
+| Sync browsing | A selected folder shows in the next pane along. Off by default |
+| Duplicate finder | Hash-based, files and whole folders, review before anything moves, undo after |
+| Verified copy | Checksums both ends of a copy and reports per-file pass/fail. Off by default |
+| Make Symlink | A real `ln -s` link, relative when both ends share a parent |
+| Per-folder views | Each folder can remember its own view mode and sort. Off by default |
+| Transfer retry and reorder | Put a job's failed files back on the queue; move a waiting job up or down |
+| Tags | Read and set Finder tags, colour the whole row, warn where the disk cannot keep them |
+| Network trash warning | Says a share has no Trash before deleting from one |
+| Uninstall | Finds an application's caches, preferences and containers for review |
+| Run a Command Here | Runs one command in the current folder and streams its output. Not a terminal |
 
 ## Next
 

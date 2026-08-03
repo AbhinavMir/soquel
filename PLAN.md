@@ -1,6 +1,6 @@
 # Working state
 
-Branch: `main`, clean and pushed. 617 tests pass in 13.5s.
+Branch: `main`, clean and pushed. 683 tests pass in 13.6s.
 
 **1.0.1 is shipped.** Signed with a Developer ID, notarised, disk image on the GitHub
 release, landing page live at trysoquel.com.
@@ -36,7 +36,11 @@ background image, four ready-made palettes, all in `theme.json` — is enough.
 
 ## Since 1.0.1, unreleased
 
-Six changes on `main`, none of them cut into a build yet:
+Eighteen changes on `main`, none of them cut into a build yet. The eight below,
+plus eleven features from the research backlog — folder Quick Look, sync browsing,
+duplicate finder, verified copy, symlinks, per-folder views, transfer retry and
+reorder, tags, the network trash warning, the uninstaller and Run a Command Here.
+docs/TODO.md lists them all.
 
 - Clicking a favourite no longer hands the highlight to the folder tree. The tree still
   opens down to the folder; it just does not steal the selected row.
