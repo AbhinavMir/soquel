@@ -181,9 +181,20 @@ final class ThemedContainerView: NSView {
 /// slab highlight.
 final class FileRowView: NSTableRowView {
     var isAlternateRow = false
+    /// Set when the file carries a tag. Finder stopped colouring the whole row
+    /// and colours a dot instead, which is a named reason people still pay for
+    /// Path Finder.
+    var tagTint: NSColor?
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
+        if let tagTint, !isSelected {
+            // Faint: the row still has to be readable, and a saturated fill
+            // behind body text is not.
+            tagTint.withAlphaComponent(0.16).setFill()
+            dirtyRect.fill()
+            return
+        }
         guard isAlternateRow, !isSelected else { return }
         Theme.rowAlternate.setFill()
         dirtyRect.fill()

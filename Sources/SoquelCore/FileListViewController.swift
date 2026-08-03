@@ -844,6 +844,71 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
     }
 
+    /// The Tags submenu. A tick means every selected file already has it.
+    private func tagsMenuItem() -> NSMenuItem {
+        let urls = selectedURLs()
+        let submenu = NSMenu()
+        let shared = Set(urls.map { Set(Tags.read($0)) }.reduce(Set<String>()) {
+            $0.isEmpty ? $1 : $0.intersection($1)
+        })
+
+        for (name, colour) in Tags.standard {
+            let item = NSMenuItem(title: name, action: #selector(toggleTag(_:)), keyEquivalent: "")
+            item.representedObject = name
+            item.target = self
+            item.state = shared.contains(name) ? .on : .off
+            item.image = Self.swatch(colour)
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+        let clear = NSMenuItem(title: "Clear Tags", action: #selector(clearTags), keyEquivalent: "")
+        clear.target = self
+        submenu.addItem(clear)
+
+        let item = NSMenuItem(title: "Tags", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    private static func swatch(_ colour: NSColor) -> NSImage {
+        let image = NSImage(size: NSSize(width: 12, height: 12))
+        image.lockFocus()
+        colour.setFill()
+        NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: 10, height: 10)).fill()
+        image.unlockFocus()
+        return image
+    }
+
+    @objc private func toggleTag(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        let urls = selectedURLs()
+        guard let first = urls.first else { return }
+
+        // Warn once, before anything is written, rather than per file.
+        if let warning = Tags.warning(for: first) {
+            let alert = NSAlert()
+            alert.messageText = "This disk cannot keep tags"
+            alert.informativeText = warning
+            alert.addButton(withTitle: "Tag Anyway")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        var failed = 0
+        for url in urls where Tags.toggle(name, on: url) != nil { failed += 1 }
+        delegate?.fileList(self, didReportStatus: failed == 0
+            ? "Tagged \(urls.count) item(s) \(name)"
+            : "Could not tag \(failed) of \(urls.count) item(s)")
+        reload(selecting: urls.first)
+    }
+
+    @objc private func clearTags() {
+        let urls = selectedURLs()
+        for url in urls { Tags.write([], to: url) }
+        delegate?.fileList(self, didReportStatus: "Cleared tags on \(urls.count) item(s)")
+        reload(selecting: urls.first)
+    }
+
     /// Makes a symlink beside each selected item. Finder's Make Alias makes an
     /// alias, which the shell cannot follow.
     @objc func makeSymlink() {
@@ -1569,6 +1634,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             menu.addItem(withTitle: "Open in New Tab", action: #selector(openInNewTabAction), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Open in Opposite Pane", action: #selector(openInOppositePaneAction), keyEquivalent: "").target = self
             if let openWith = openWithMenuItem() { menu.addItem(openWith) }
+            menu.addItem(tagsMenuItem())
             menu.addItem(withTitle: "Make Symlink", action: #selector(makeSymlink), keyEquivalent: "").target = self
             if selectedItems.count == 1, PackageContents.canInspect(selectedItems[0]) {
                 menu.addItem(withTitle: "Show Package Contents",
@@ -1815,6 +1881,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             return fresh
         }()
         view.isAlternateRow = row % 2 == 1
+        view.tagTint = items.indices.contains(row) ? Tags.rowTint(for: Tags.read(items[row].url)) : nil
         return view
     }
 
