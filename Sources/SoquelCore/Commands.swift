@@ -257,6 +257,7 @@ enum CommandRegistry {
         .command(Command("view.diskMap", "Disk Map…", #selector(M.menuShowDiskMap(_:)), Shortcut("u", [.command, .shift]))),
         .command(Command("view.inspector", "Show Preview", #selector(M.menuToggleInspector(_:)), Shortcut("i", [.command, .option]))),
         .command(Command("view.folderTree", "Show Folder Tree", #selector(M.menuToggleFolderTree(_:)), Shortcut("t", [.command, .shift]))),
+        .command(Command("view.syncBrowsing", "Sync Browsing", #selector(M.menuToggleSyncBrowsing(_:)))),
         .command(Command("view.sidebar", "Toggle Sidebar", #selector(M.menuToggleSidebar(_:)), Shortcut("s", [.command, .control]))),
         .command(Command("view.refresh", "Refresh", #selector(M.menuRefresh(_:)), Shortcut("r"))),
         .separator,

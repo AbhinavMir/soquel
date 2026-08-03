@@ -11,6 +11,7 @@ enum Prefs {
         "showFolderTree", "showInspector", "showGitStatus", "calculateFolderSizes",
         "autoFitColumns", "iconSize", "sortOrder", "terminalBundleID", "keyboardFirst",
         "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
+        "syncBrowsing",
     ]
 
     static var showHiddenFiles: Bool {
@@ -51,6 +52,12 @@ enum Prefs {
     static var showInspector: Bool {
         get { d.object(forKey: "showInspector") as? Bool ?? true }
         set { d.set(newValue, forKey: "showInspector") }
+    }
+
+    /// Selecting a folder in one pane shows its contents in the next one.
+    static var syncBrowsing: Bool {
+        get { d.object(forKey: "syncBrowsing") as? Bool ?? false }
+        set { d.set(newValue, forKey: "syncBrowsing") }
     }
 
     /// vi-style keys in the file list: j/k to move, h/l to leave and enter.

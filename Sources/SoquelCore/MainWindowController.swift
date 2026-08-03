@@ -554,6 +554,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                    in: view)
     }
 
+    @objc func menuToggleSyncBrowsing(_ sender: Any?) {
+        Prefs.syncBrowsing.toggle()
+        statusLeft.stringValue = Prefs.syncBrowsing
+            ? "Sync browsing on — selecting a folder shows it in the next pane"
+            : "Sync browsing off"
+        if Prefs.syncBrowsing, let pane = focusedPane, let list = focusedList {
+            syncBrowse(from: pane, selection: list.selectedURLs())
+        }
+    }
+
     @objc func menuNewFolder(_ sender: Any?) { focusedList?.newFolder() }
     @objc func menuNewFile(_ sender: Any?) { focusedList?.newFile() }
     @objc func menuRename(_ sender: Any?) { focusedList?.beginRename() }
@@ -1480,8 +1490,35 @@ extension MainWindowController: PaneDelegate {
     }
 
     func pane(_ pane: PaneViewController, didChangeSelection urls: [URL]) {
-        guard pane === focusedPane, Prefs.showInspector else { return }
-        inspector.show(urls)
+        guard pane === focusedPane else { return }
+        if Prefs.showInspector { inspector.show(urls) }
+        syncBrowse(from: pane, selection: urls)
+    }
+
+    /// Shows the selected folder in the next pane along.
+    ///
+    /// Only a single folder does anything: a multiple selection has no one
+    /// folder to show, and a file has none at all. Both leave the other pane
+    /// where it is rather than clearing it.
+    private func syncBrowse(from pane: PaneViewController, selection urls: [URL]) {
+        guard Prefs.syncBrowsing, panes.count > 1,
+              let index = panes.firstIndex(where: { $0 === pane }),
+              let target = MainWindowController.syncTarget(for: urls)
+        else { return }
+        // The other pane is only being shown something; focus stays here, or
+        // arrowing down a list would throw the keyboard across the window on
+        // every row.
+        panes[(index + 1) % panes.count].activeList?.navigate(to: target)
+    }
+
+    /// The folder a selection should show in the other pane, if any.
+    static func syncTarget(for urls: [URL]) -> URL? {
+        guard urls.count == 1, let url = urls.first else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else { return nil }
+        return url
     }
 
     func paneDidChangeTabs(_ pane: PaneViewController) {
