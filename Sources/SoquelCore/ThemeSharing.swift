@@ -1,12 +1,82 @@
 import AppKit
 
-/// Sharing a theme as a GitHub gist.
+/// Sharing a theme as a gist or a git repository.
 ///
 /// There is still one theme format, and it is `theme.json`. A gist holds that
-/// same file verbatim — nothing is wrapped, renamed or converted, so a theme
-/// someone sends is a file you could equally have written by hand, and the
-/// thing you paste back out is the file you already have.
+/// same file verbatim, and a repository holds it at the top level under that
+/// name — nothing is wrapped, renamed or converted. A theme someone sends is a
+/// file you could equally have written by hand, and the thing you paste back
+/// out is the file you already have.
+///
+/// A repository is the better home for one you keep working on: it has a
+/// history, it takes pull requests, and the address does not change when you
+/// edit it.
 enum ThemeSharing {
+    /// Where a pasted address points.
+    enum Source: Equatable {
+        case gist(String)
+        /// owner and repository, and the branch or tag to read from.
+        case repository(owner: String, name: String, ref: String)
+
+        /// Where the JSON actually lives.
+        var url: URL? {
+            switch self {
+            case .gist(let id):
+                return URL(string: "https://api.github.com/gists/\(id)")
+            case .repository(let owner, let name, let ref):
+                return URL(string:
+                    "https://raw.githubusercontent.com/\(owner)/\(name)/\(ref)/theme.json")
+            }
+        }
+    }
+
+    /// Reads whichever of the two was pasted.
+    ///
+    /// A gist id is a long hex string and a repository is owner/name, so the
+    /// two never collide.
+    static func source(from input: String) -> Source? {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if let id = gistID(from: text) { return .gist(id) }
+        return repository(from: text)
+    }
+
+    /// Accepts the page URL, the clone URL, and bare `owner/name`, with an
+    /// optional branch or tag after a hash.
+    static func repository(from input: String) -> Source? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var ref = "HEAD"
+        if let hash = text.firstIndex(of: "#") {
+            let named = String(text[text.index(after: hash)...])
+            if !named.isEmpty { ref = named }
+            text = String(text[..<hash])
+        }
+
+        var path = text
+        if let url = URL(string: text), let host = url.host?.lowercased() {
+            guard host.hasSuffix("github.com") else { return nil }
+            path = url.path
+        } else if text.contains("://") || text.contains("@") {
+            // Something that looks like a URL but is not GitHub, or an SSH
+            // remote for a host we cannot read over HTTPS.
+            guard text.hasPrefix("git@github.com:") else { return nil }
+            path = String(text.dropFirst("git@github.com:".count))
+        }
+
+        let parts = path
+            .replacingOccurrences(of: ".git", with: "")
+            .split(separator: "/")
+            .map(String.init)
+        guard parts.count >= 2 else { return nil }
+
+        // github.com/owner/name/tree/branch names the branch in the path.
+        if parts.count >= 4, parts[2] == "tree" || parts[2] == "blob" {
+            return .repository(owner: parts[0], name: parts[1], ref: parts[3])
+        }
+        guard parts.count == 2 else { return nil }
+        return .repository(owner: parts[0], name: parts[1], ref: ref)
+    }
     enum Failure: LocalizedError, Equatable {
         case notAGist(String)
         case network(String)
@@ -16,7 +86,7 @@ enum ThemeSharing {
         var errorDescription: String? {
             switch self {
             case .notAGist(let text):
-                return "“\(text)” is not a gist address."
+                return "“\(text)” is not a gist or a GitHub repository."
             case .network(let reason):
                 return "Could not reach GitHub: \(reason)"
             case .noJSON:
@@ -111,7 +181,7 @@ enum ThemeSharing {
         session: URLSession = .shared,
         completion: @escaping (Result<ThemeConfig, Failure>) -> Void
     ) {
-        guard let id = gistID(from: input), let url = apiURL(for: id) else {
+        guard let source = source(from: input), let url = source.url else {
             completion(.failure(.notAGist(input)))
             return
         }
@@ -128,7 +198,16 @@ enum ThemeSharing {
             } else if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                 outcome = .failure(.network("answered \(http.statusCode)"))
             } else if let data {
-                outcome = theme(fromGist: data)
+                // A gist comes back as the API's file listing; a repository
+                // comes back as the file itself.
+                switch source {
+                case .gist:
+                    outcome = theme(fromGist: data)
+                case .repository:
+                    outcome = String(data: data, encoding: .utf8)
+                        .flatMap(decode)
+                        .map { .success($0) } ?? .failure(.unreadable)
+                }
             } else {
                 outcome = .failure(.unreadable)
             }

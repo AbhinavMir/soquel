@@ -147,6 +147,7 @@ final class SidebarViewController: NSViewController {
         scroll.autohidesScrollers = true
 
         view = scroll
+        applyTheme()
         rebuild()
 
         for name in [Notification.Name.soquelSidebarChanged, .soquelSavedSearchesChanged] {
@@ -160,6 +161,16 @@ final class SidebarViewController: NSViewController {
 
     deinit {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    /// The sidebar is a big flat surface, so it carries the theme's chrome
+    /// colour rather than staying whatever the system would paint it.
+    func applyTheme() {
+        guard let scroll = view as? NSScrollView else { return }
+        scroll.drawsBackground = true
+        scroll.backgroundColor = Theme.chrome
+        outline?.backgroundColor = Theme.chrome
+        outline?.enclosingScrollView?.drawsBackground = true
     }
 
     func rebuild() {

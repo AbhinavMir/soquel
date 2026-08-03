@@ -94,3 +94,58 @@ final class ThemeSharingTests: XCTestCase {
         XCTAssertEqual(ThemeSharing.summary(config), "2 light colours, 1 dark colour")
     }
 }
+
+final class ThemeRepositoryTests: XCTestCase {
+    private func repo(_ input: String) -> ThemeSharing.Source? {
+        ThemeSharing.source(from: input)
+    }
+
+    /// However the address was copied: the page, the clone URL, or by hand.
+    func testEveryFormOfRepositoryAddressIsAccepted() {
+        let expected = ThemeSharing.Source.repository(owner: "someone", name: "my-theme", ref: "HEAD")
+        for input in [
+            "someone/my-theme",
+            "https://github.com/someone/my-theme",
+            "https://github.com/someone/my-theme.git",
+            "git@github.com:someone/my-theme.git",
+            "  https://github.com/someone/my-theme  ",
+        ] {
+            XCTAssertEqual(repo(input), expected, input)
+        }
+    }
+
+    /// A branch or tag, so a theme can be tried before it is merged.
+    func testABranchCanBeNamed() {
+        XCTAssertEqual(repo("someone/my-theme#dark-mode"),
+                       .repository(owner: "someone", name: "my-theme", ref: "dark-mode"))
+        XCTAssertEqual(repo("https://github.com/someone/my-theme/tree/v2"),
+                       .repository(owner: "someone", name: "my-theme", ref: "v2"))
+    }
+
+    /// A gist id is hex and a repository is owner/name, so the two never
+    /// collide.
+    func testAGistIsStillReadAsAGist() {
+        let id = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+        XCTAssertEqual(repo("https://gist.github.com/someone/\(id)"), .gist(id))
+        XCTAssertEqual(repo(id), .gist(id))
+    }
+
+    /// Somewhere else entirely is refused rather than turned into a request.
+    func testOtherHostsAreRefused() {
+        for input in ["https://example.com/someone/my-theme", "https://gitlab.com/a/b",
+                      "git@gitlab.com:a/b.git", "just-a-word", ""] {
+            XCTAssertNil(repo(input), input)
+        }
+    }
+
+    /// theme.json at the top level, which is the one format.
+    func testTheRepositoryURLPointsAtTheThemeFile() {
+        let url = repo("someone/my-theme")?.url?.absoluteString
+        XCTAssertEqual(url, "https://raw.githubusercontent.com/someone/my-theme/HEAD/theme.json")
+    }
+
+    func testTheBranchReachesTheURL() {
+        let url = repo("someone/my-theme#v2")?.url?.absoluteString
+        XCTAssertEqual(url, "https://raw.githubusercontent.com/someone/my-theme/v2/theme.json")
+    }
+}

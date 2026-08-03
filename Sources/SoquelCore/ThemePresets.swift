@@ -50,12 +50,14 @@ enum ThemePresets {
     static let all: [ThemePreset] = [
         ThemePreset(
             name: "Windows 95",
-            about: "Grey panels, a navy title bar, and the selection blue everyone remembers.",
+            about: "Grey everywhere and a high-contrast blue on top of it.",
             light: [
                 // The system grey is #C0C0C0 and the selected-row navy #000080.
-                // Both are the real values, not an impression of them.
-                "accent": "#000080", "selectionFill": "#000080", "selectionFillInactive": "#C0C0C0",
-                "rowAlternate": "#EFEFEF", "chrome": "#C0C0C0", "hairline": "#808080",
+                // Both are the real values, not an impression of them. chrome
+                // paints the window and the sidebar as well as the toolbars, so
+                // the grey covers the whole thing rather than stopping at a strip.
+                "accent": "#000080", "selectionFill": "#000080", "selectionFillInactive": "#B0B0B0",
+                "rowAlternate": "#E4E4E4", "chrome": "#C0C0C0", "hairline": "#808080",
                 "danger": "#800000",
             ],
             dark: [

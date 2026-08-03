@@ -161,6 +161,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         // draws the shadow from the window's own shape, so it fades with it and
         // there is nothing separate to control.
         window?.alphaValue = Theme.windowOpacity
+        // The window itself, not only the strips inside it. A theme whose grey
+        // stops at the toolbar is a grey toolbar on a white window, which is
+        // not the look anybody picked it for.
+        window?.backgroundColor = Theme.chrome
+        sidebar.applyTheme()
         for pane in panes { pane.applyTheme() }
         window?.contentView?.needsDisplay = true
     }

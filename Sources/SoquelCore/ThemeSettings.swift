@@ -63,7 +63,7 @@ final class ThemeSettingsView: NSView {
         styleRow.translatesAutoresizingMaskIntoConstraints = false
 
         gistField = NSTextField()
-        gistField.placeholderString = "Paste a gist address to install a theme"
+        gistField.placeholderString = "Paste a gist or a GitHub repo — owner/name"
         gistField.font = .systemFont(ofSize: 12)
         gistField.target = self
         gistField.action = #selector(installFromGist)
@@ -71,7 +71,7 @@ final class ThemeSettingsView: NSView {
 
         installButton = NSButton(title: "Install", target: self, action: #selector(installFromGist))
         let copyButton = NSButton(title: "Copy Mine", target: self, action: #selector(copyForSharing))
-        copyButton.toolTip = "Puts your theme.json on the clipboard, ready to paste into a gist"
+        copyButton.toolTip = "Puts your theme.json on the clipboard, for a gist or the top of a repo"
 
         let shareRow = NSStackView(views: [gistField, installButton, copyButton])
         shareRow.orientation = .horizontal
