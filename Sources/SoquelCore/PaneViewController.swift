@@ -333,9 +333,12 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
     private func rebuildTabBar() {
         for sub in tabBar.arrangedSubviews { tabBar.removeArrangedSubview(sub); sub.removeFromSuperview() }
-        tabBarScroll.isHidden = tabs.count < 2
-        addTabButton.isHidden = tabBarScroll.isHidden
-        guard tabs.count > 1 else { return }
+        // A pane always has at least one tab, and that tab is the folder in
+        // front of you — so there is always something to show and the bar never
+        // hides. Hiding it below two tabs also hid the plus, which is exactly
+        // the control someone with one tab is looking for.
+        tabBarScroll.isHidden = false
+        addTabButton.isHidden = false
 
         for (index, list) in tabs.enumerated() {
             let name = list.url.lastPathComponent.isEmpty ? "/" : list.url.lastPathComponent

@@ -127,4 +127,23 @@ final class MultiTabTests: XCTestCase {
         XCTAssertEqual(names, ["two"])
         XCTAssertFalse(pane.closeTab(at: 0))
     }
+
+    /// A pane cannot have no tabs, so the bar always has something in it and
+    /// never hides. It used to appear only at two tabs, which took the plus
+    /// away from the one person most likely to want it.
+    func testTheSingleTabStillShowsAndCannotBeClosed() {
+        XCTAssertEqual(pane.tabs.count, 1)
+        XCTAssertFalse(pane.closeTab(at: 0), "the last tab is the pane")
+        XCTAssertEqual(pane.currentURL?.lastPathComponent, "one")
+    }
+
+    /// Closing back down to one leaves that tab in place rather than an empty
+    /// pane.
+    func testClosingDownToOneStopsThere() {
+        pane.addTab(url: folder("two"))
+        XCTAssertTrue(pane.closeTab(at: 0))
+        XCTAssertEqual(pane.tabs.count, 1)
+        XCTAssertFalse(pane.closeTab(at: 0))
+        XCTAssertEqual(pane.tabs.count, 1)
+    }
 }
