@@ -15,6 +15,8 @@ struct OperationResult {
     /// Folders that were merged into. Undo cannot separate what was already
     /// there from what arrived, so a merge is not offered as undoable.
     var mergedDestinations: [URL] = []
+    /// Set when verified copy is on and the operation was a copy.
+    var manifest: VerifiedCopy.Manifest?
 }
 
 enum ConflictChoice {
@@ -231,6 +233,19 @@ final class OperationEngine {
                         job.advance(bytes: 0, file: name, now: Date())
                         TransferQueue.shared.notify()
                     }
+                }
+            }
+
+            // A move leaves nothing at the source to compare against, so only
+            // copies are verified.
+            if VerifiedCopy.isEnabled, !move, !result.createdDestinations.isEmpty {
+                let verified = VerifiedCopy.verify(
+                    sources: result.succeeded, destinations: result.createdDestinations
+                )
+                result.manifest = verified
+                DispatchQueue.main.async {
+                    job.recordVerification(verified)
+                    TransferQueue.shared.notify()
                 }
             }
 

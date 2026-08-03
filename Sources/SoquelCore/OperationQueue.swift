@@ -112,6 +112,16 @@ final class TransferJob {
         justFailedFile = url.lastPathComponent
     }
 
+    private(set) var manifest: VerifiedCopy.Manifest?
+
+    func recordVerification(_ manifest: VerifiedCopy.Manifest) {
+        self.manifest = manifest
+        // A copy whose bytes did not survive is not a finished job.
+        for entry in manifest.failed {
+            failures.append((entry.destination, "Checksum did not match after copying"))
+        }
+    }
+
     func pause() { if state == .running { state = .paused } }
     func resume() { if state == .paused { state = .running } }
     func cancel() { if isActive { state = .cancelled } }

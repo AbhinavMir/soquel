@@ -554,6 +554,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                    in: view)
     }
 
+    @objc func menuToggleVerifyCopies(_ sender: Any?) {
+        VerifiedCopy.isEnabled.toggle()
+        statusLeft.stringValue = VerifiedCopy.isEnabled
+            ? "Copies will be checksummed at both ends — slower, and it reads every byte twice"
+            : "Copies will not be checksummed"
+    }
+
     @objc func menuFindDuplicates(_ sender: Any?) {
         guard let url = focusedList?.url else { return }
         DuplicatesPanelController.shared.onChanged = { [weak self] in self?.focusedList?.reload() }

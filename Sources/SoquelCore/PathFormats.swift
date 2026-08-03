@@ -72,3 +72,16 @@ enum FileClipboard {
         cutChangeCount = -1
     }
 }
+
+/// The path of `url` relative to `base`, or nil when it is not underneath it.
+///
+/// Compares resolved path components rather than string prefixes. A directory
+/// enumerator started at `/var/folders/…` hands back `/private/var/folders/…`,
+/// because /var is a symlink, and slicing by the base's character count then
+/// cuts in the middle of a path component.
+func relativePath(of url: URL, under base: URL) -> String? {
+    let root = base.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+    let full = url.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+    guard full.count > root.count, Array(full.prefix(root.count)) == root else { return nil }
+    return full.dropFirst(root.count).joined(separator: "/")
+}

@@ -259,6 +259,7 @@ enum CommandRegistry {
         .command(Command("view.folderTree", "Show Folder Tree", #selector(M.menuToggleFolderTree(_:)), Shortcut("t", [.command, .shift]))),
         .command(Command("view.syncBrowsing", "Sync Browsing", #selector(M.menuToggleSyncBrowsing(_:)))),
         .command(Command("tools.duplicates", "Find Duplicates", #selector(M.menuFindDuplicates(_:)))),
+        .command(Command("tools.verifyCopies", "Verify Copies with a Checksum", #selector(M.menuToggleVerifyCopies(_:)))),
         .command(Command("view.sidebar", "Toggle Sidebar", #selector(M.menuToggleSidebar(_:)), Shortcut("s", [.command, .control]))),
         .command(Command("view.refresh", "Refresh", #selector(M.menuRefresh(_:)), Shortcut("r"))),
         .separator,

@@ -143,14 +143,12 @@ enum Duplicates {
 
         var entries: [String] = []
         var total: Int64 = 0
-        let base = folder.path
 
         for case let url as URL in walker {
             guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
             if values.isSymbolicLink == true { return nil }
             if values.isDirectory == true { continue }
-            guard let digest = fileHashes[url] else { return nil }
-            let relative = String(url.path.dropFirst(base.count))
+            guard let digest = fileHashes[url], let relative = relativePath(of: url, under: folder) else { return nil }
             entries.append("\(relative):\(digest)")
             total += Int64(values.fileSize ?? 0)
         }
