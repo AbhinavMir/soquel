@@ -30,7 +30,7 @@ final class TabItemView: NSView {
 
     private func build(title: String, closable: Bool) {
         wantsLayer = true
-        layer?.cornerRadius = 7
+        layer?.cornerRadius = Theme.style == .bevelled ? 0 : 7
         translatesAutoresizingMaskIntoConstraints = false
 
         label.stringValue = title
@@ -81,6 +81,7 @@ final class TabItemView: NSView {
     /// A selected tab is raised, not recoloured. Filling it with the accent
     /// made a folder name shout louder than any file in the list under it.
     private func applyColours() {
+        layer?.cornerRadius = Theme.style == .bevelled ? 0 : 7
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let background: NSColor
             if isActive {
@@ -150,4 +151,14 @@ final class TabItemView: NSView {
     override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
     override func accessibilityLabel() -> String? { label.stringValue }
     override func accessibilityValue() -> Any? { isActive ? 1 : 0 }
+}
+
+extension TabItemView {
+    /// A raised edge on the tab you are on, a flat one on the rest — which is
+    /// how a nineties tab strip said which one was in front.
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard Theme.style == .bevelled else { return }
+        Bevel.raised.draw(in: bounds)
+    }
 }

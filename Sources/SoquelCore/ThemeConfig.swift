@@ -3,6 +3,28 @@ import AppKit
 /// User-editable colours, stored as a readable JSON file so advanced users can
 /// version it or share it. Anything absent or malformed falls back to the
 /// built-in value rather than to an arbitrary substitute.
+/// Whether the chrome is drawn the way macOS draws it or the way the
+/// nineties did.
+enum ChromeStyle: String, Codable, CaseIterable, Equatable {
+    /// Rounded corners, a hairline border, a filled selection.
+    case rounded
+    /// Square corners and bevelled edges: a light top-left and a dark
+    /// bottom-right, which is the whole of what made a button look pressable
+    /// before anyone had a gradient.
+    case bevelled
+
+    var title: String {
+        switch self {
+        case .rounded: return "Rounded"
+        case .bevelled: return "Bevelled (classic)"
+        }
+    }
+
+    var cornerRadius: CGFloat { self == .bevelled ? 0 : 5 }
+    /// A classic list selection runs the full width of the row.
+    var selectionInset: CGFloat { self == .bevelled ? 0 : 4 }
+}
+
 struct ThemeConfig: Codable, Equatable {
     /// Every customisable colour. Raw values are the JSON keys.
     enum Slot: String, CaseIterable, Codable {
@@ -22,6 +44,14 @@ struct ThemeConfig: Codable, Equatable {
     /// How see-through the whole window is, the way a Linux terminal can be.
     /// 1 is solid. Nil means never set, which is also solid.
     var windowOpacity: Double?
+    /// The shape of the chrome, as opposed to its colour.
+    ///
+    /// Colours alone cannot make a theme look like Windows 95: what carries
+    /// that look is square corners and bevelled edges, not the grey. Nil means
+    /// the rounded default.
+    var style: ChromeStyle?
+
+    var effectiveStyle: ChromeStyle { style ?? .rounded }
 
     static let empty = ThemeConfig(light: [:], dark: [:], background: nil)
 
@@ -33,13 +63,15 @@ struct ThemeConfig: Codable, Equatable {
     /// A window you cannot see is a window you cannot click back to.
     static let minimumWindowOpacity: Double = 0.3
 
-    /// Decoding tolerates a file written before backgrounds or opacity existed.
+    /// Decoding tolerates a file written before any of the later keys existed.
     init(light: [String: String], dark: [String: String],
-         background: BackgroundConfig? = nil, windowOpacity: Double? = nil) {
+         background: BackgroundConfig? = nil, windowOpacity: Double? = nil,
+         style: ChromeStyle? = nil) {
         self.light = light
         self.dark = dark
         self.background = background
         self.windowOpacity = windowOpacity
+        self.style = style
     }
 
     /// The colour for a slot, or nil when the user has not set one (or set one

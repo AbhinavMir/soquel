@@ -16,6 +16,10 @@ struct ThemePreset: Equatable {
     let about: String
     let light: [String: String]
     let dark: [String: String]
+    /// The shape of the chrome. Windows 95 is not the grey — it is the square
+    /// corners and the bevels, and a preset that only set colours could not
+    /// reach them.
+    var style: ChromeStyle = .rounded
 }
 
 enum ThemePresets {
@@ -24,8 +28,12 @@ enum ThemePresets {
     /// The background is chosen separately from the colours, so picking a
     /// palette must not throw away the picture behind the file list.
     static func apply(_ preset: ThemePreset) {
-        Theme.apply(ThemeConfig(light: preset.light, dark: preset.dark,
-                                background: Theme.config.background))
+        Theme.apply(ThemeConfig(
+            light: preset.light, dark: preset.dark,
+            background: Theme.config.background,
+            windowOpacity: Theme.config.windowOpacity,
+            style: preset.style
+        ))
     }
 
     /// The preset the current colours came from, if they still match one.
@@ -33,7 +41,10 @@ enum ThemePresets {
     /// Derived by comparison rather than remembered, so it cannot disagree with
     /// the file. Edit one value and no preset matches, which is the truth.
     static var current: ThemePreset? {
-        all.first { $0.light == Theme.config.light && $0.dark == Theme.config.dark }
+        all.first {
+            $0.light == Theme.config.light && $0.dark == Theme.config.dark
+                && $0.style == Theme.config.effectiveStyle
+        }
     }
 
     static let all: [ThemePreset] = [
@@ -51,7 +62,8 @@ enum ThemePresets {
                 "accent": "#5A5AC8", "selectionFill": "#000080", "selectionFillInactive": "#3A3A3A",
                 "rowAlternate": "#242424", "chrome": "#2B2B2B", "hairline": "#5A5A5A",
                 "danger": "#C05050",
-            ]
+            ],
+            style: .bevelled
         ),
         ThemePreset(
             name: "Platinum",
@@ -65,7 +77,8 @@ enum ThemePresets {
                 "accent": "#8A94C4", "selectionFill": "#4A5478", "selectionFillInactive": "#3C3C3C",
                 "rowAlternate": "#262626", "chrome": "#303030", "hairline": "#666666",
                 "danger": "#C07070",
-            ]
+            ],
+            style: .bevelled
         ),
         ThemePreset(
             name: "Soquel",

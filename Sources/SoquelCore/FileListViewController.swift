@@ -159,6 +159,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
+        // A sunken well around the list, which is how a nineties file pane was
+        // set into the window rather than floating on it.
+        scrollView.borderType = Theme.style == .bevelled ? .bezelBorder : .noBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         let layout = NSCollectionViewFlowLayout()

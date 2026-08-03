@@ -49,6 +49,19 @@ final class ThemeSettingsView: NSView {
         status.lineBreakMode = .byTruncatingTail
         status.translatesAutoresizingMaskIntoConstraints = false
 
+        styleControl = NSPopUpButton()
+        styleControl.addItems(withTitles: ChromeStyle.allCases.map(\.title))
+        styleControl.selectItem(at: ChromeStyle.allCases.firstIndex(of: Theme.style) ?? 0)
+        styleControl.target = self
+        styleControl.action = #selector(styleChanged)
+
+        let styleRow = NSStackView(views: [
+            NSTextField(labelWithString: "Edges"), styleControl,
+        ])
+        styleRow.orientation = .horizontal
+        styleRow.spacing = 8
+        styleRow.translatesAutoresizingMaskIntoConstraints = false
+
         gistField = NSTextField()
         gistField.placeholderString = "Paste a gist address to install a theme"
         gistField.font = .systemFont(ofSize: 12)
@@ -74,6 +87,7 @@ final class ThemeSettingsView: NSView {
 
         addSubview(title)
         addSubview(scroll)
+        addSubview(styleRow)
         addSubview(shareRow)
         addSubview(status)
         addSubview(buttons)
@@ -86,7 +100,10 @@ final class ThemeSettingsView: NSView {
             scroll.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            scroll.bottomAnchor.constraint(equalTo: shareRow.topAnchor, constant: -10),
+            scroll.bottomAnchor.constraint(equalTo: styleRow.topAnchor, constant: -10),
+
+            styleRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            styleRow.bottomAnchor.constraint(equalTo: shareRow.topAnchor, constant: -10),
 
             shareRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             shareRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
@@ -111,6 +128,17 @@ final class ThemeSettingsView: NSView {
     }
 
     // MARK: - Sharing
+
+    private var styleControl: NSPopUpButton!
+
+    @objc private func styleChanged() {
+        let index = styleControl.indexOfSelectedItem
+        guard ChromeStyle.allCases.indices.contains(index) else { return }
+        var config = Theme.config
+        config.style = ChromeStyle.allCases[index]
+        Theme.apply(config)
+        status.stringValue = "Edges: \(ChromeStyle.allCases[index].title). Reopen windows to redraw them all."
+    }
 
     private var gistField: NSTextField!
     private var installButton: NSButton!

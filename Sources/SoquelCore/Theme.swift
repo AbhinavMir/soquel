@@ -169,8 +169,9 @@ enum Theme {
     // MARK: - Metrics
 
     static let rowHeight: CGFloat = 21
-    static let selectionCornerRadius: CGFloat = 5
-    static let selectionInset: CGFloat = 4
+    static var style: ChromeStyle { config.effectiveStyle }
+    static var selectionCornerRadius: CGFloat { style.cornerRadius }
+    static var selectionInset: CGFloat { style.selectionInset }
     static let focusBarHeight: CGFloat = 2
 }
 
@@ -217,13 +218,23 @@ final class FileRowView: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
+        let fill = isFocusedRow ? Theme.selectionFill : Theme.selectionFillInactive
+
+        // A classic selection is a square block across the whole row. Insetting
+        // and rounding it is the modern look and undoes the effect entirely.
+        guard Theme.style != .bevelled else {
+            fill.setFill()
+            bounds.fill()
+            return
+        }
+
         let rect = bounds.insetBy(dx: Theme.selectionInset, dy: 0.5)
         let path = NSBezierPath(
             roundedRect: rect,
             xRadius: Theme.selectionCornerRadius,
             yRadius: Theme.selectionCornerRadius
         )
-        (isFocusedRow ? Theme.selectionFill : Theme.selectionFillInactive).setFill()
+        fill.setFill()
         path.fill()
     }
 
@@ -266,5 +277,33 @@ final class FileCellView: NSTableCellView {
 
     private func applyTextColor() {
         textField?.textColor = isOnFilledSelection ? .white : restingTextColor
+    }
+}
+
+/// The 3D edge that made a nineties interface look pressable.
+///
+/// A raised edge is light along the top and left and dark along the bottom and
+/// right; a sunken one is the reverse. That is the whole trick — there is no
+/// gradient, no shadow and no blur in it.
+enum Bevel {
+    case raised
+    case sunken
+
+    /// Drawn a pixel at a time rather than as a stroked path, because a
+    /// half-pixel stroke on a Retina display gives a soft grey line and the
+    /// point of this is that it is hard.
+    func draw(in rect: NSRect) {
+        let light = NSColor.white
+        let dark = NSColor(white: 0.35, alpha: 1)
+        let topLeft = self == .raised ? light : dark
+        let bottomRight = self == .raised ? dark : light
+
+        topLeft.setFill()
+        NSRect(x: rect.minX, y: rect.maxY - 1, width: rect.width, height: 1).fill()
+        NSRect(x: rect.minX, y: rect.minY, width: 1, height: rect.height).fill()
+
+        bottomRight.setFill()
+        NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 1).fill()
+        NSRect(x: rect.maxX - 1, y: rect.minY, width: 1, height: rect.height).fill()
     }
 }

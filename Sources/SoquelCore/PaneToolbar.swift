@@ -297,7 +297,7 @@ final class ToolbarPillView: NSView {
 
     private func build() {
         wantsLayer = true
-        layer?.cornerRadius = Self.height / 2
+        layer?.cornerRadius = Theme.style == .bevelled ? 0 : Self.height / 2
         layer?.borderWidth = 1
         translatesAutoresizingMaskIntoConstraints = false
         heightAnchor.constraint(equalToConstant: Self.height).isActive = true
@@ -306,7 +306,7 @@ final class ToolbarPillView: NSView {
         ).isActive = true
 
         selection.wantsLayer = true
-        selection.layer?.cornerRadius = Self.height / 2
+        selection.layer?.cornerRadius = Theme.style == .bevelled ? 0 : Self.height / 2
         addSubview(selection)
 
         for action in actions {
@@ -358,6 +358,8 @@ final class ToolbarPillView: NSView {
         // when cgColor is asked for, which during construction is the
         // application's rather than this view's. Without this the pill draws
         // its light-mode colours in a dark window.
+        layer?.cornerRadius = Theme.style == .bevelled ? 0 : Self.height / 2
+        selection.layer?.cornerRadius = layer?.cornerRadius ?? 0
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = Theme.chrome.withAlphaComponent(0.6).cgColor
             layer?.borderColor = Theme.hairline.cgColor
