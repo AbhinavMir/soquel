@@ -54,8 +54,6 @@ Six changes on `main`, none of them cut into a build yet:
 
 Smaller things, none blocking:
 - Shortcut import and export. Remapping works; sharing a keymap does not.
-- A universal binary. `scripts/build-app.sh` runs `swift build -c release`, so 1.0.1 is
-  arm64 only. The landing page now says Apple silicon rather than claiming Intel.
 
 ## Decisions taken
 
@@ -64,6 +62,9 @@ Smaller things, none blocking:
   is derived by comparing colours, never stored. Applying one keeps the background image.
   `ThemeLibrary`, `Theme_File`, the `.soquel-theme` format, the Themes folder and the
   import/export around them are deleted.
+- **Apple silicon only.** `scripts/build-app.sh` runs `swift build -c release`, which
+  builds for the host, so the disk image is arm64. A universal binary is deliberately not
+  cut. The landing page says Apple silicon, which is true, and that is the whole of it.
 - **No useless fallbacks.** Scanned all 108 `??` sites. Most are honest defaults ("—"
   placeholders, enum defaults, UI metrics) and were left. The one real offender was the
   rename date rule. `parentDirectoryURL(of:) ?? url` was left: the root's parent being

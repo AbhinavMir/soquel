@@ -79,13 +79,26 @@ The strongly-evidenced set is now built in full: cut/paste in the context menu, 
 search that walks the filesystem and hides nothing, folder merge, New File with templates, column
 view, archive browsing, metadata columns, named workspaces, batch rename, thumbnails and folder
 comparison. Nothing from that tier is outstanding. What is left in the research file is the long
-tail, and it is not ranked above the three issues below.
+tail, and it is not ranked above the two issues below.
+
+## On main, not yet released
+
+1.0.1 is the shipped build; none of these are in it.
+
+| Change | Notes |
+| --- | --- |
+| Show Package Contents | Opens a `.app` in a window over the pane instead of navigating into it. Any package, not only `.app` |
+| Files in the folder tree | Folders, then five files, then a row for the rest. Selecting a file opens its folder and selects it there |
+| Add Kind… | Settings → Applications takes any extension macOS recognises, not only the shipped twenty-three |
+| Open With button | The same list as the right-click submenu, on the toolbar |
+| Tab close and add buttons | An ✕ per tab and a + at the end of the bar |
+| Hidden-files button state | Draws `eye.slash` when hidden files are off, `eye` when on |
+| Muted view pill | The selected segment fills grey rather than the selection blue |
+| Sidebar focus fix | Clicking a favourite no longer hands the highlight to the folder tree |
 
 ## Next
 
 - [ ] **Shortcut import and export** — remapping works; sharing a keymap does not.
-- [ ] **A universal binary** — `scripts/build-app.sh` runs `swift build -c release`, which builds
-      for the host only, so 1.0.1 is arm64. The landing page says Apple silicon accordingly.
 
 ## Known gaps
 
@@ -100,7 +113,6 @@ tail, and it is not ranked above the three issues below.
 - View settings are global, not per folder.
 - `sftp://` needs macFUSE and sshfs installed; macOS cannot mount it alone, and a kernel extension cannot ship inside an app bundle. The app uses sshfs when present and names the install when not. A File Provider extension is the route that removes the dependency — issue #4. S3 is not supported at all.
 - FTP mounts read-only, which is a macOS limitation rather than a choice here.
-- `scripts/build-app.sh` builds for the host architecture only, so the 1.0.1 disk image is arm64 and will not launch on an Intel Mac. Reaching both needs a universal binary.
 - The Mac App Store is closed to this app as built: the sandbox forbids browsing outside user-granted folders, running `git`/`unzip`/`tar`, mounting servers, and whole-disk scanning. [Distribution](DISTRIBUTION.md) has the audit.
 
 ## Tracked as issues
@@ -115,9 +127,12 @@ data loss first, then wrong result, then UI — is closed.
 
 ## Ruled out
 
-AI assistant · cloud sync or accounts · plugin marketplace · built-in terminal emulator ·
+Intel Macs · AI assistant · cloud sync or accounts · plugin marketplace · built-in terminal emulator ·
 photo library replacement · automatic file organisation · mobile app · replacing Finder at the
 system level.
+
+`scripts/build-app.sh` builds for the host, so the disk image is arm64 and the landing page
+says Apple silicon. A universal binary is not planned.
 
 Remote filesystems were on this list and came off it in part: SMB, AFP, NFS, WebDAV and read-only
 FTP all mount through Connect to Server. SFTP is issue #4. S3 stays ruled out.
