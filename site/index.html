@@ -67,7 +67,7 @@ a.plain { color: var(--faint); text-decoration: underline; text-underline-offset
 
 /* Pay what you like */
 .pay {
-  margin: 44px auto 8px; max-width: 34em; text-align: center;
+  margin: 64px auto 8px; max-width: 34em; text-align: center;
   border: 1px solid var(--rule); border-radius: 12px; padding: 26px 24px; background: var(--card);
 }
 .pay h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
@@ -162,23 +162,6 @@ footer a { color: var(--faint); }
   <p class="note">Version 1.0.1 · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
 
 </header>
-
-<section class="pay" aria-labelledby="pay-heading">
-  <h3 id="pay-heading">Pay what you like</h3>
-  <p>
-    The download is the whole thing. There is no paid version and nothing is held back from
-    this one. That said, if you found it helpful, you can send USDC, USDT or ETH here:
-  </p>
-  <button class="ens" id="ens" type="button" data-address="moonforger.eth">
-    <span class="ens-name">moonforger.eth</span>
-    <span class="ens-hint">copy</span>
-  </button>
-  <p class="small">
-    Ethereum. <span class="tip" tabindex="0">Other chains too<span class="tip-body">Well
-    established tokens are fine, including on Solana and Bitcoin. Shitcoins I burn on
-    sight. They have destroyed the world of crypto.</span></span>
-  </p>
-</section>
 
 <div class="finder">
   <label class="sr-only" for="q">Search features</label>
@@ -538,6 +521,23 @@ footer a { color: var(--faint); }
       bug reports with steps to reproduce, and feature requests you want tracked
       against the code.</dd>
 </dl>
+
+<section class="pay" aria-labelledby="pay-heading">
+  <h3 id="pay-heading">Pay what you like</h3>
+  <p>
+    The download is the whole thing. There is no paid version and nothing is held back from
+    this one. That said, if you found it helpful, you can send USDC, USDT or ETH here:
+  </p>
+  <button class="ens" id="ens" type="button" data-address="moonforger.eth">
+    <span class="ens-name">moonforger.eth</span>
+    <span class="ens-hint">copy</span>
+  </button>
+  <p class="small">
+    Ethereum. <span class="tip" tabindex="0">Other chains too<span class="tip-body">Well
+    established tokens are fine, including on Solana and Bitcoin. Shitcoins I burn on
+    sight. They have destroyed the world of crypto.</span></span>
+  </p>
+</section>
 
 <footer>
   <p>MIT licensed. Source at
