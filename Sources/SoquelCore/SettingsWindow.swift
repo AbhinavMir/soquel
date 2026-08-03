@@ -10,7 +10,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// inherited one — so the window was never created and ⌘, did nothing.
     static let shared: SettingsWindowController = {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 660, height: 720),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -87,7 +87,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
 /// A colour well per slot, for light and dark, writing straight to theme.json.
 final class AppearanceSettingsView: NSView {
-    private var wells: [(slot: ThemeConfig.Slot, dark: Bool, well: NSColorWell)] = []
+    private var wells: [(slot: ThemeConfig.Slot, dark: Bool, well: ColourSwatchButton)] = []
 
     init() {
         super.init(frame: .zero)
@@ -113,8 +113,29 @@ final class AppearanceSettingsView: NSView {
         for slot in ThemeConfig.Slot.allCases {
             let lightWell = well(for: slot, dark: false)
             let darkWell = well(for: slot, dark: true)
-            grid.addRow(with: [label(title(for: slot)), lightWell, darkWell])
+
+            let name = label(Self.title(for: slot), weight: .medium)
+            let detail = label(Self.explanation(for: slot))
+            detail.font = .systemFont(ofSize: 11)
+            detail.textColor = .secondaryLabelColor
+            detail.lineBreakMode = .byWordWrapping
+            detail.maximumNumberOfLines = 3
+            detail.preferredMaxLayoutWidth = 300
+
+            let text = NSStackView(views: [name, detail])
+            text.orientation = .vertical
+            text.alignment = .leading
+            text.spacing = 1
+
+            grid.addRow(with: [text, lightWell, darkWell])
         }
+
+        let preview = ThemePreviewView()
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        let previewCaption = label("A pane, drawn with these colours.")
+        previewCaption.font = .systemFont(ofSize: 11)
+        previewCaption.textColor = .secondaryLabelColor
+        previewCaption.translatesAutoresizingMaskIntoConstraints = false
 
         let backgroundBox = buildBackgroundControls()
 
@@ -132,6 +153,8 @@ final class AppearanceSettingsView: NSView {
         note.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(grid)
+        addSubview(previewCaption)
+        addSubview(preview)
         addSubview(backgroundBox)
         addSubview(buttons)
         addSubview(note)
@@ -140,7 +163,15 @@ final class AppearanceSettingsView: NSView {
             grid.topAnchor.constraint(equalTo: topAnchor, constant: 18),
             grid.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
 
-            backgroundBox.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 18),
+            previewCaption.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 16),
+            previewCaption.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+
+            preview.topAnchor.constraint(equalTo: previewCaption.bottomAnchor, constant: 5),
+            preview.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            preview.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            preview.heightAnchor.constraint(equalToConstant: 108),
+
+            backgroundBox.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 18),
             backgroundBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             backgroundBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
@@ -245,15 +276,42 @@ final class AppearanceSettingsView: NSView {
         Theme.setBackground(background)
     }
 
-    private func title(for slot: ThemeConfig.Slot) -> String {
+    /// What the slot is called on screen. "Accent" and "chrome" are words for
+    /// people who write user interfaces, not for people using one.
+    static func title(for slot: ThemeConfig.Slot) -> String {
         switch slot {
-        case .accent: return "Accent"
-        case .selectionFill: return "Selection"
-        case .selectionFillInactive: return "Selection (unfocused pane)"
-        case .rowAlternate: return "Alternating row"
-        case .chrome: return "Toolbars"
-        case .hairline: return "Dividers"
-        case .danger: return "Destructive actions"
+        case .accent: return "Highlights"
+        case .selectionFill: return "Selected row"
+        case .selectionFillInactive: return "Selected row, other pane"
+        case .rowAlternate: return "Every other row"
+        case .chrome: return "Toolbars and tabs"
+        case .hairline: return "Lines and borders"
+        case .danger: return "Warnings and errors"
+        }
+    }
+
+    /// Where the colour actually turns up, so the row can be understood
+    /// without changing it and hunting for what moved.
+    static func explanation(for slot: ThemeConfig.Slot) -> String {
+        switch slot {
+        case .accent:
+            return "The bar above the pane you are in, the current folder in the path, "
+                + "a toolbar button that is switched on, and a file Git says has changed."
+        case .selectionFill:
+            return "The file you have clicked, in the pane you are working in."
+        case .selectionFillInactive:
+            return "The file still selected in a pane you have moved away from, "
+                + "and the fill behind the list/icon/column switch."
+        case .rowAlternate:
+            return "The faint banding down a long list, so a row is easy to follow across."
+        case .chrome:
+            return "The strip holding the toolbar buttons, the tab you are on, "
+                + "and the middle of the disk map."
+        case .hairline:
+            return "The one-pixel rules between panes, around tabs and under headers."
+        case .danger:
+            return "A transfer that failed, a rename that cannot be applied, "
+                + "a search that could not read something."
         }
     }
 
@@ -263,29 +321,23 @@ final class AppearanceSettingsView: NSView {
         return field
     }
 
-    private func well(for slot: ThemeConfig.Slot, dark: Bool) -> NSColorWell {
-        let well = NSColorWell()
-        well.color = Theme.resolved(slot, dark: dark)
-        well.target = self
-        well.action = #selector(wellChanged(_:))
-        well.translatesAutoresizingMaskIntoConstraints = false
-        well.widthAnchor.constraint(equalToConstant: 54).isActive = true
-        well.heightAnchor.constraint(equalToConstant: 22).isActive = true
-        wells.append((slot, dark, well))
-        return well
+    private func well(for slot: ThemeConfig.Slot, dark: Bool) -> NSView {
+        let swatch = ColourSwatchButton(
+            color: Theme.resolved(slot, dark: dark), dark: dark
+        ) { [weak self] colour in
+            self?.store(colour, in: slot, dark: dark)
+        }
+        swatch.setAccessibilityLabel("\(Self.title(for: slot)), \(dark ? "dark" : "light")")
+        wells.append((slot, dark, swatch))
+        return swatch
     }
 
-    @objc private func wellChanged(_ sender: NSColorWell) {
-        guard let entry = wells.first(where: { $0.well === sender }) else {
-            Log.info(.ui, "wellChanged: fired for a well that is not in the table")
-            return
-        }
-        Log.info(.ui, "wellChanged: \(entry.slot.rawValue) dark=\(entry.dark) → \(sender.color.hexString)")
+    private func store(_ colour: NSColor, in slot: ThemeConfig.Slot, dark: Bool) {
         var config = Theme.config
-        if entry.dark {
-            config.dark[entry.slot.rawValue] = sender.color.hexString
+        if dark {
+            config.dark[slot.rawValue] = colour.hexString
         } else {
-            config.light[entry.slot.rawValue] = sender.color.hexString
+            config.light[slot.rawValue] = colour.hexString
         }
         Theme.apply(config)
     }
@@ -498,4 +550,175 @@ final class ShortcutRecorderView: NSView {
         Theme.selectionFill.setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 4, yRadius: 4).fill()
     }
+}
+
+
+/// Sits behind a colour well so a nearly transparent slot is seen against the
+/// surface it will be drawn on, rather than against the well's own chequerboard.
+final class SwatchBackingView: NSView {
+    private let dark: Bool
+
+    init(dark: Bool) {
+        self.dark = dark
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 4
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        (dark ? NSColor.black : NSColor.white).setFill()
+        bounds.fill()
+        super.draw(dirtyRect)
+    }
+}
+
+/// A mock file list, drawn with the colours as they are now.
+///
+/// The pane behind the Settings window is usually covered by it, so a change
+/// used to mean closing Settings to find out what moved. This shows it in place.
+final class ThemePreviewView: NSView {
+    private var observer: NSObjectProtocol?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+        observer = NotificationCenter.default.addObserver(
+            forName: .soquelThemeChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.needsDisplay = true
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 108) }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rowHeight: CGFloat = 20
+        let toolbar: CGFloat = 24
+
+        NSColor.textBackgroundColor.setFill()
+        bounds.fill()
+
+        // The toolbar strip, with the accent bar above it.
+        Theme.chrome.setFill()
+        NSRect(x: 0, y: bounds.maxY - toolbar, width: bounds.width, height: toolbar).fill()
+        Theme.accent.setFill()
+        NSRect(x: 0, y: bounds.maxY - 2, width: bounds.width, height: 2).fill()
+
+        Theme.hairline.setFill()
+        NSRect(x: 0, y: bounds.maxY - toolbar, width: bounds.width, height: 1).fill()
+
+        let names = ["Reports", "notes.txt", "budget.csv", "archive.zip"]
+        for (index, name) in names.enumerated() {
+            let y = bounds.maxY - toolbar - CGFloat(index + 1) * rowHeight
+            let row = NSRect(x: 0, y: y, width: bounds.width, height: rowHeight)
+
+            if index == 1 {
+                Theme.selectionFill.setFill()
+                row.insetBy(dx: 3, dy: 1).fill()
+            } else if index == 3 {
+                Theme.selectionFillInactive.setFill()
+                row.insetBy(dx: 3, dy: 1).fill()
+            } else if index % 2 == 1 {
+                Theme.rowAlternate.setFill()
+                row.fill()
+            }
+
+            let colour: NSColor
+            if index == 1 {
+                colour = .white
+            } else if index == 2 {
+                colour = Theme.danger
+            } else if index == 0 {
+                colour = Theme.accent
+            } else {
+                colour = .labelColor
+            }
+            let text = index == 2 ? "\(name)  could not be read" : name
+            NSAttributedString(string: text, attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: colour,
+            ]).draw(at: NSPoint(x: 10, y: y + 4))
+        }
+    }
+}
+
+/// A colour swatch that shows what the colour will actually look like.
+///
+/// NSColorWell draws a black-and-white diagonal for anything with alpha, which
+/// is how AppKit says "this is transparent". Two of the slots are transparent
+/// on purpose — the row banding is 2% white, the hairline 10% black — so the
+/// control that is meant to show them showed a barber's pole instead. This
+/// paints the colour over the surface it will really sit on.
+final class ColourSwatchButton: NSView {
+    /// The swatch the shared colour panel is currently editing.
+    private(set) static weak var owner: ColourSwatchButton?
+
+    var color: NSColor { didSet { needsDisplay = true } }
+    /// Which page the colour lands on, so a faint one is judged against it.
+    private let dark: Bool
+    private let onChange: (NSColor) -> Void
+
+    init(color: NSColor, dark: Bool, onChange: @escaping (NSColor) -> Void) {
+        self.color = color
+        self.dark = dark
+        self.onChange = onChange
+        super.init(frame: .zero)
+        wantsLayer = true
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: 54).isActive = true
+        heightAnchor.constraint(equalToConstant: 22).isActive = true
+        setAccessibilityRole(.colorWell)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+
+        (dark ? NSColor.black : NSColor.white).setFill()
+        path.fill()
+        color.setFill()
+        path.fill()
+
+        NSColor.separatorColor.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = true
+        panel.color = color
+        Self.owner = self
+        panel.setTarget(self)
+        panel.setAction(#selector(panelChanged(_:)))
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func panelChanged(_ sender: NSColorPanel) {
+        // The shared panel keeps talking to whichever swatch opened it last,
+        // and it cannot be asked who that is. Tracking it here stops a stale
+        // swatch quietly rewriting the slot the open one owns.
+        guard ColourSwatchButton.owner === self else { return }
+        color = sender.color
+        onChange(sender.color)
+    }
+
+    override func accessibilityValue() -> Any? { color.hexString }
 }
