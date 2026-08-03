@@ -525,6 +525,37 @@ final class OperationEngine {
         return url
     }
 
+    /// A real POSIX symlink, not a Finder alias.
+    ///
+    /// The two look alike and behave differently: `ln -s` links read as aliases
+    /// in Finder, Finder aliases are invisible to the shell, and Finder's own
+    /// menu makes an alias when what was wanted was a symlink.
+    ///
+    /// The link is relative when both ends share a parent, so moving or
+    /// renaming the folder holding them does not break it.
+    @discardableResult
+    func createSymlink(to target: URL, in directory: URL, named name: String? = nil) throws -> URL {
+        let linkName = name ?? target.lastPathComponent
+        let link = directory.appendingPathComponent(linkName)
+        guard !FileManager.default.fileExists(atPath: link.path) else {
+            throw SoquelError.nameInUse(linkName)
+        }
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path, withDestinationPath: Self.linkDestination(to: target, from: directory)
+        )
+        return link
+    }
+
+    /// Relative when the target sits beside the link, absolute otherwise.
+    static func linkDestination(to target: URL, from directory: URL) -> String {
+        let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedTarget = target.resolvingSymlinksInPath().standardizedFileURL
+        if resolvedTarget.deletingLastPathComponent() == resolvedDirectory {
+            return resolvedTarget.lastPathComponent
+        }
+        return resolvedTarget.path
+    }
+
     // MARK: - Helpers
 
     /// Appends " 2", " 3", … before the extension until the name is free.

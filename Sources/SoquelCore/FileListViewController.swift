@@ -838,6 +838,52 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
     }
 
+    /// Makes a symlink beside each selected item. Finder's Make Alias makes an
+    /// alias, which the shell cannot follow.
+    @objc func makeSymlink() {
+        let urls = selectedURLs()
+        guard !urls.isEmpty else { return }
+        var created: [URL] = []
+        var failed: [String] = []
+
+        for target in urls {
+            let name = Self.symlinkName(for: target, in: url)
+            do {
+                created.append(try OperationEngine.shared.createSymlink(to: target, in: url, named: name))
+            } catch {
+                failed.append(target.lastPathComponent)
+            }
+        }
+
+        if !created.isEmpty { UndoStack.shared.pushCreated(created, label: "Make Symlink") }
+        delegate?.fileList(self, didReportStatus: Self.symlinkStatus(created: created, failed: failed))
+        reload(selecting: created.first)
+    }
+
+    /// "name symlink", then " 2", " 3"… A symlink named after the file it
+    /// points at would collide with it whenever both live in one folder.
+    static func symlinkName(for target: URL, in directory: URL) -> String {
+        let base = target.lastPathComponent + " symlink"
+        var candidate = base
+        var counter = 2
+        while FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent(candidate).path
+        ) {
+            candidate = "\(base) \(counter)"
+            counter += 1
+        }
+        return candidate
+    }
+
+    static func symlinkStatus(created: [URL], failed: [String]) -> String {
+        switch (created.count, failed.count) {
+        case (0, 0): return "Nothing to link"
+        case (let made, 0): return made == 1 ? "Made 1 symlink" : "Made \(made) symlinks"
+        case (0, let bad): return bad == 1 ? "Could not link \(failed[0])" : "Could not link \(bad) items"
+        case (let made, let bad): return "Made \(made) symlinks, \(bad) failed"
+        }
+    }
+
     @objc func openInNewTabAction() {
         for item in selectedItems where item.opensAsFolder {
             delegate?.fileList(self, openInNewTab: item.url.resolvingSymlinksInPath())
@@ -1516,6 +1562,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             menu.addItem(withTitle: "Open in New Tab", action: #selector(openInNewTabAction), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Open in Opposite Pane", action: #selector(openInOppositePaneAction), keyEquivalent: "").target = self
             if let openWith = openWithMenuItem() { menu.addItem(openWith) }
+            menu.addItem(withTitle: "Make Symlink", action: #selector(makeSymlink), keyEquivalent: "").target = self
             if selectedItems.count == 1, PackageContents.canInspect(selectedItems[0]) {
                 menu.addItem(withTitle: "Show Package Contents",
                              action: #selector(showPackageContents), keyEquivalent: "").target = self
