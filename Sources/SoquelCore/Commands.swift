@@ -187,6 +187,7 @@ enum CommandRegistry {
         .command(Command("file.batchRename", "Rename Many…", #selector(M.menuBatchRename(_:)), Shortcut("r", [.command, .control]))),
         .command(Command("file.duplicate", "Duplicate", #selector(M.menuDuplicate(_:)), Shortcut("d", [.command, .control]))),
         .command(Command("file.symlink", "Make Symlink", #selector(M.menuMakeSymlink(_:)))),
+        .command(Command("file.compress", "Compress", #selector(M.menuCompress(_:)))),
         .command(Command("file.trash", "Move to Trash", #selector(M.menuTrash(_:)), Shortcut("\u{8}"))),
         .command(Command("file.delete", "Delete Permanently…", #selector(M.menuDeletePermanently(_:)), Shortcut("\u{8}", [.command, .option]))),
         .separator,

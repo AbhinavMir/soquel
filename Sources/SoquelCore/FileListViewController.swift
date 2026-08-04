@@ -864,6 +864,19 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
     }
 
+    /// Zips the selection beside itself, without the macOS litter.
+    @objc func compressSelection() {
+        let urls = selectedURLs()
+        guard !urls.isEmpty else { return }
+        delegate?.fileList(self, didReportStatus: "Compressing \(urls.count) item(s)…")
+
+        Archiver.compress(urls) { [weak self] outcome in
+            guard let self else { return }
+            self.delegate?.fileList(self, didReportStatus: outcome.message)
+            self.reload(selecting: outcome.archive)
+        }
+    }
+
     /// The Tags submenu. A tick means every selected file already has it.
     private func tagsMenuItem() -> NSMenuItem {
         let urls = selectedURLs()
@@ -1670,6 +1683,8 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             menu.addItem(withTitle: "Open in New Tab", action: #selector(openInNewTabAction), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Open in Opposite Pane", action: #selector(openInOppositePaneAction), keyEquivalent: "").target = self
             if let openWith = openWithMenuItem() { menu.addItem(openWith) }
+            menu.addItem(withTitle: Archiver.menuTitle(for: selectedURLs()),
+                         action: #selector(compressSelection), keyEquivalent: "").target = self
             menu.addItem(tagsMenuItem())
             menu.addItem(withTitle: "Make Symlink", action: #selector(makeSymlink), keyEquivalent: "").target = self
             if selectedItems.count == 1, PackageContents.canInspect(selectedItems[0]) {

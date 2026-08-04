@@ -608,6 +608,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func menuMakeSymlink(_ sender: Any?) { focusedList?.makeSymlink() }
+    @objc func menuCompress(_ sender: Any?) { focusedList?.compressSelection() }
     @objc func menuNewFolder(_ sender: Any?) { focusedList?.newFolder() }
     @objc func menuNewFile(_ sender: Any?) { focusedList?.newFile() }
     @objc func menuRename(_ sender: Any?) { focusedList?.beginRename() }
