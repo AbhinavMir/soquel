@@ -1084,6 +1084,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     /// View settings are global, so every open tab adopts them at once.
     private func propagateViewSettings() {
+        // Every list learns its mode before any pane asks one what it is. The
+        // pane decides whether to show the column browser from the answer, so
+        // asking first and telling afterwards hid both the browser and the
+        // table and left an empty pane.
+        for pane in panes {
+            for tab in pane.tabs { tab.refreshMode() }
+        }
         for pane in panes {
             pane.refreshToolbar()
             pane.applyViewMode()
@@ -1592,6 +1599,10 @@ extension MainWindowController: SidebarDelegate {
     func sidebar(_ sidebar: SidebarViewController, didSelect url: URL) {
         debugLog("sidebar didSelect \(url.path)")
         focusedList?.navigate(to: url)
+        // Typing after picking a folder means "find this file in it", not
+        // "jump to another favourite". The keyboard follows the folder that
+        // was just opened.
+        focusedList?.focusTable()
     }
 
     func sidebar(_ sidebar: SidebarViewController, revealFile url: URL) {

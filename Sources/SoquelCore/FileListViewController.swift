@@ -248,9 +248,20 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     // MARK: - View mode
 
-    func applyViewMode() {
-        guard isViewLoaded else { return }
+    /// Brings `mode` up to date without needing the view to exist.
+    ///
+    /// applyViewMode() cannot do this on its own: it returns early for a list
+    /// whose view has never loaded, and the pane asks the list what mode it is
+    /// in before the list has been told. That left the pane hiding the column
+    /// browser while the list hid its own table, and the pane drew nothing at
+    /// all.
+    func refreshMode() {
         mode = FolderViewSettings.viewMode(for: url)
+    }
+
+    func applyViewMode() {
+        refreshMode()
+        guard isViewLoaded else { return }
         scrollView.isHidden = mode != .list
         collectionScroll.isHidden = mode != .icon
         if mode == .column { return }

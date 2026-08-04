@@ -240,6 +240,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
             focusIndicator.layer?.backgroundColor = Theme.accent.cgColor
         }
         rebuildPathBar()
+        // Tabs read the colours and the corner radius when they are built, so
+        // a theme change has to build them again or the old theme's grey and
+        // square corners stay on screen.
+        rebuildTabBar()
         for tab in tabs where tab.isViewLoaded {
             tab.applyBackground()
             tab.view.needsDisplay = true

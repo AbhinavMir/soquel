@@ -147,3 +147,52 @@ final class MultiTabTests: XCTestCase {
         XCTAssertEqual(pane.tabs.count, 1)
     }
 }
+
+/// The pane asks its list what mode it is in, so the list must know before the
+/// pane asks. It did not, and the pane hid the column browser while the list
+/// hid its own table — an empty pane, no rename, and no double-click.
+final class ViewModeFreshnessTests: XCTestCase {
+    private var root: URL!
+    private var list: FileListViewController!
+
+    override func setUpWithError() throws {
+        root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("soquel-mode-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        list = FileListViewController(url: root)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: root)
+        Prefs.viewMode = .list
+        super.tearDown()
+    }
+
+    /// refreshMode works without the view ever having been loaded, which is
+    /// the case applyViewMode returned early for.
+    func testTheModeIsCorrectBeforeTheViewLoads() {
+        XCTAssertFalse(list.isViewLoaded)
+        Prefs.viewMode = .column
+        list.refreshMode()
+        XCTAssertEqual(list.mode, .column)
+    }
+
+    func testTheModeFollowsEveryChange() {
+        for mode in [ViewMode.icon, .column, .list] {
+            Prefs.viewMode = mode
+            list.refreshMode()
+            XCTAssertEqual(list.mode, mode)
+        }
+    }
+
+    /// A pane decides whether to show the column browser from this, so a stale
+    /// answer draws an empty pane.
+    func testAStaleModeWouldDisagreeWithThePreference() {
+        Prefs.viewMode = .list
+        list.refreshMode()
+        Prefs.viewMode = .column
+        XCTAssertNotEqual(list.mode, Prefs.viewMode, "stale until refreshed")
+        list.refreshMode()
+        XCTAssertEqual(list.mode, Prefs.viewMode)
+    }
+}
