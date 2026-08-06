@@ -224,13 +224,15 @@ enum CommandRegistry {
                 "path.\(format.id)",
                 "Copy \(format.title)",
                 #selector(M.menuCopyPath(_:)),
-                format == .absolute ? Shortcut("p", [.command, .option]) : nil,
+                // ⌥⌘C is what Finder binds Copy as Pathname to, so it is the
+                // one people already reach for.
+                format == .absolute ? Shortcut("c", [.command, .option]) : nil,
                 representedObject: format.title
             ))
         }
         entries.append(.command(Command(
             "path.gitRelative", "Copy Path Relative to Git Root",
-            #selector(M.menuCopyRelativePath(_:)), Shortcut("c", [.command, .option])
+            #selector(M.menuCopyRelativePath(_:)), Shortcut("c", [.command, .option, .shift])
         )))
         return MenuSection(title: "Path", entries: entries)
     }

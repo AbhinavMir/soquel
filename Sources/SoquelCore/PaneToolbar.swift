@@ -91,6 +91,7 @@ enum ToolbarCatalogue {
         // button reads as both "add" and "remove".
         ToolbarAction("favourite", "Add to Sidebar", "star", #selector(M.menuAddFavourite(_:)),
                       isOn: { M.favouriteIsOn() }),
+        ToolbarAction("copyPath", "Copy Path", "doc.on.clipboard", #selector(M.menuCopyPathOfSelection(_:))),
         ToolbarAction("openWith", "Open With", "arrow.up.forward.square", #selector(M.menuOpenWith(_:))),
         ToolbarAction("newFolder", "New Folder", "folder.badge.plus", #selector(M.menuNewFolder(_:))),
         ToolbarAction("split", "Split Pane", "rectangle.split.2x1", #selector(M.menuSplitVertically(_:))),
@@ -117,7 +118,7 @@ enum ToolbarCatalogue {
     }
 
     static let defaultIDs = ["up", "listView", "iconView", "columnView", "hidden",
-                             "find", "favourite", "newFolder", "terminal"]
+                             "find", "copyPath", "favourite", "newFolder", "terminal"]
 
     /// The chosen buttons, in order. Unknown ids from an older build are dropped
     /// rather than crashing the bar.

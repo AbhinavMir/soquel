@@ -113,17 +113,26 @@ final class SortOrderTests: XCTestCase {
                         size: size, modified: .distantPast, created: .distantPast, kind: kind)
     }
 
+    /// Says what it starts from rather than leaning on the default, which is
+    /// a product decision and free to change.
     func testClickingTheSameColumnFlipsDirection() {
-        var order = SortOrder.default
+        var order = SortOrder(descriptors: [SortDescriptorSpec(key: .name, ascending: true)])
         XCTAssertEqual(order.primary?.ascending, true)
         order.makePrimary(.name)
         XCTAssertEqual(order.primary?.ascending, false)
     }
 
     func testClickingANewColumnMakesItPrimaryAndKeepsTheOldOne() {
-        var order = SortOrder.default
+        var order = SortOrder(descriptors: [SortDescriptorSpec(key: .name, ascending: true)])
         order.makePrimary(.size)
         XCTAssertEqual(order.descriptors.map(\.key), [.size, .name])
+    }
+
+    /// A folder is opened to see what changed far more often than to read it
+    /// alphabetically, so the newest thing is at the top.
+    func testTheDefaultIsNewestFirst() {
+        XCTAssertEqual(SortOrder.default.primary?.key, .modified)
+        XCTAssertEqual(SortOrder.default.primary?.ascending, false)
     }
 
     func testSecondaryKeysBreakTiesInOrder() {

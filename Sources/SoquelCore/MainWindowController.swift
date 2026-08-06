@@ -1271,6 +1271,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         statusLeft.stringValue = "Copied \(format.title.lowercased())"
     }
 
+    /// The toolbar button and anything else with no format to name: the plain
+    /// absolute path, which is what "copy the path" means when nobody says
+    /// which of the six they wanted.
+    @objc func menuCopyPathOfSelection(_ sender: Any?) {
+        guard let list = focusedList else { return }
+        let urls = list.targetURLs()
+        guard !urls.isEmpty else {
+            statusLeft.stringValue = "Nothing selected"
+            return
+        }
+        copyToPasteboard(urls, format: .absolute)
+        statusLeft.stringValue = urls.count == 1
+            ? "Copied \(urls[0].path)"
+            : "Copied \(urls.count) paths"
+    }
+
     @objc func menuCopyRelativePath(_ sender: Any?) {
         guard let list = focusedList else { return }
         let base = gitRoot(for: list.url) ?? list.url

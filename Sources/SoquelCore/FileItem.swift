@@ -57,7 +57,10 @@ struct SortDescriptorSpec: Codable, Equatable {
 struct SortOrder: Codable, Equatable {
     var descriptors: [SortDescriptorSpec]
 
-    static let `default` = SortOrder(descriptors: [SortDescriptorSpec(key: .name, ascending: true)])
+    /// Newest first. A folder is opened far more often to find what changed
+    /// than to find something alphabetically, and the thing you just saved is
+    /// the thing you are usually after.
+    static let `default` = SortOrder(descriptors: [SortDescriptorSpec(key: .modified, ascending: false)])
 
     /// How many keys deep a sort may go before it stops being comprehensible.
     static let maximumDepth = 4
