@@ -522,6 +522,8 @@ final class RegressionTests: XCTestCase {
         )
         XCTAssertLessThanOrEqual(frame.maxX, host.bounds.width)
         XCTAssertGreaterThanOrEqual(frame.width, cell.width)
+        // Centred on the row it renames, not pushed up off it.
+        XCTAssertEqual(frame.midY, cell.midY, accuracy: 0.01)
     }
 
 }

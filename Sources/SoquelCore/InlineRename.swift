@@ -33,12 +33,20 @@ final class InlineRenameEditor: NSObject, NSTextFieldDelegate {
         field.alignment = alignment
         field.isEditable = true
         field.isSelectable = true
-        field.isBordered = true
-        field.bezelStyle = .roundedBezel
+        field.isBezeled = true
+        field.bezelStyle = .squareBezel
         field.drawsBackground = true
         field.backgroundColor = .textBackgroundColor
         field.textColor = .textColor
         field.focusRingType = .exterior
+        // A bezel alone let the row's highlight and the old name show through,
+        // so the two names were legible on top of each other. A layer of its
+        // own is what actually covers what is underneath.
+        field.wantsLayer = true
+        field.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        field.layer?.cornerRadius = 3
+        field.layer?.borderWidth = 1
+        field.layer?.borderColor = NSColor.separatorColor.cgColor
         field.cell?.usesSingleLineMode = true
         field.cell?.lineBreakMode = .byClipping
         field.delegate = self
@@ -52,6 +60,9 @@ final class InlineRenameEditor: NSObject, NSTextFieldDelegate {
         self.finished = false
         self.original = name
 
+        // Whatever had focus gets it back when the editor goes, or the click
+        // that dismissed it lands on a view that is no longer listening.
+        previousResponder = host.window?.firstResponder as? NSView
         host.window?.makeFirstResponder(field)
         if let editor = field.currentEditor() {
             editor.selectedRange = Self.selection(for: name)
@@ -59,6 +70,7 @@ final class InlineRenameEditor: NSObject, NSTextFieldDelegate {
     }
 
     private var original = ""
+    private weak var previousResponder: NSView?
 
     /// The extension left out of the selection, so the first keystroke replaces
     /// the name and not the type. A dotfile has no extension to protect.
@@ -77,7 +89,11 @@ final class InlineRenameEditor: NSObject, NSTextFieldDelegate {
         let measured = (name as NSString).size(withAttributes: attributes).width + 18
         var frame = rect
         frame.size.width = max(rect.width, min(measured, host.bounds.width - rect.minX - 4))
+        // Grown about the middle of the cell. Growing from the origin pushed the
+        // editor half a row off, so it covered the name above the one being
+        // renamed.
         frame.size.height = max(rect.height, 20)
+        frame.origin.y = rect.midY - frame.height / 2
         frame.origin.x = max(0, min(frame.minX, host.bounds.width - frame.width))
         return frame
     }
@@ -85,9 +101,11 @@ final class InlineRenameEditor: NSObject, NSTextFieldDelegate {
     /// Takes the editor away without committing.
     func cancel() {
         finished = true
+        let window = field?.window
         field?.removeFromSuperview()
         field = nil
         commit = nil
+        if let previousResponder { window?.makeFirstResponder(previousResponder) }
     }
 
     /// Takes the editor away and reports the new name, unless nothing changed.
@@ -100,11 +118,13 @@ final class InlineRenameEditor: NSObject, NSTextFieldDelegate {
         field.removeFromSuperview()
         self.field = nil
         self.commit = nil
-        // Focus goes back to whatever was showing the file, or the next key
-        // press lands nowhere.
-        if let window, window.firstResponder === window { window.makeFirstResponder(window.contentView) }
-        guard !typed.isEmpty, typed != original else { return }
-        commit?(typed)
+        if let previousResponder { window?.makeFirstResponder(previousResponder) }
+        guard !typed.isEmpty, typed != original, let commit else { return }
+        // Committing rebuilds the rows, and doing that inside the click that
+        // dismissed the editor pulls the view out from under the click still
+        // being delivered — in the column browser that read as the parent
+        // column closing. The rename happens once the click is finished.
+        DispatchQueue.main.async { commit(typed) }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
