@@ -57,24 +57,24 @@ final class UpdateSettingsView: NSView {
         [title, toggle, detail, checkButton, status, version].forEach(addSubview)
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: topAnchor, constant: 14),
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
             toggle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 16),
-            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
 
             detail.topAnchor.constraint(equalTo: toggle.bottomAnchor, constant: 6),
             detail.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 34),
-            detail.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            detail.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
             checkButton.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 16),
-            checkButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            checkButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
 
             status.centerYAnchor.constraint(equalTo: checkButton.centerYAnchor),
             status.leadingAnchor.constraint(equalTo: checkButton.trailingAnchor, constant: 10),
-            status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
-            version.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            version.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             version.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
         ])
         updateStatus()

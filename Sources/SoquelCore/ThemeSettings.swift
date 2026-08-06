@@ -94,30 +94,30 @@ final class ThemeSettingsView: NSView {
 
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
             scroll.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10),
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             scroll.bottomAnchor.constraint(equalTo: styleRow.topAnchor, constant: -10),
 
-            styleRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            styleRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             styleRow.bottomAnchor.constraint(equalTo: shareRow.topAnchor, constant: -10),
 
-            shareRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            shareRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            shareRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            shareRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             shareRow.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -10),
 
             rowStack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
             rowStack.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
             rowStack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
 
-            status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             status.centerYAnchor.constraint(equalTo: buttons.centerYAnchor),
             status.trailingAnchor.constraint(lessThanOrEqualTo: buttons.leadingAnchor, constant: -10),
 
-            buttons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            buttons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             buttons.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
         ])
 

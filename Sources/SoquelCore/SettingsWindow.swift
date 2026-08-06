@@ -123,12 +123,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         root.addSubview(resultsScroll)
         NSLayoutConstraint.activate([
             search.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
-            search.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-            search.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            search.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
+            search.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
 
             resultsScroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 8),
-            resultsScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-            resultsScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            resultsScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
+            resultsScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
             resultsScroll.heightAnchor.constraint(equalToConstant: 200),
 
             tabs.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 10),
@@ -378,15 +378,15 @@ final class KeyboardSettingsView: NSView, NSTableViewDataSource, NSTableViewDele
 
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: topAnchor, constant: 14),
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             scroll.bottomAnchor.constraint(equalTo: conflictLabel.topAnchor, constant: -8),
 
-            conflictLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            conflictLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            conflictLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            conflictLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             conflictLabel.bottomAnchor.constraint(equalTo: resetAll.topAnchor, constant: -10),
 
-            resetAll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            resetAll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             resetAll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
         ])
     }

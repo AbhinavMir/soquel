@@ -246,26 +246,26 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
 
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
             scroll.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10),
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             scroll.bottomAnchor.constraint(equalTo: confirmRow.topAnchor, constant: -10),
 
-            confirmRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            confirmRow.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
+            confirmRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            confirmRow.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -18),
             confirmRow.bottomAnchor.constraint(equalTo: status.topAnchor, constant: -10),
 
-            status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             status.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
             status.trailingAnchor.constraint(equalTo: addKind.leadingAnchor, constant: -10),
 
             addKind.trailingAnchor.constraint(equalTo: refresh.leadingAnchor, constant: -8),
             addKind.centerYAnchor.constraint(equalTo: status.centerYAnchor),
 
-            refresh.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            refresh.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             refresh.centerYAnchor.constraint(equalTo: status.centerYAnchor),
         ])
         reload()
