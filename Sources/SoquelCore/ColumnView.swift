@@ -32,14 +32,35 @@ final class ColumnBrowserView: NSView {
     private var scroll: NSScrollView!
     /// One entry per visible column: the folder it lists and its contents.
     private var levels: [(url: URL, items: [FileItem], table: NSTableView,
-                          container: NSScrollView, divider: NSView)] = []
+                          container: NSScrollView, divider: ColumnDivider)] = []
 
     /// Narrows the deepest column. Only the deepest: the columns to its left
     /// are the path you took to get here, and hiding a folder you are standing
     /// inside would leave the view describing a route that is not on screen.
     private var filterText = ""
 
-    static let columnWidth: CGFloat = 240
+    /// One width for every column, dragged from any divider and remembered.
+    ///
+    /// Finder sizes its columns individually; one width for all of them is a
+    /// simpler thing to explain and to drag, and the width people actually want
+    /// is "wide enough for these names", which is the same answer in every
+    /// column of the same folder.
+    static var columnWidth: CGFloat {
+        get {
+            let stored = Settings.object(forKey: "columnViewWidth") as? Double ?? 240
+            return CGFloat(Swift.min(Swift.max(stored, minimumColumnWidth), maximumColumnWidth))
+        }
+        set {
+            Settings.set(
+                Double(Swift.min(Swift.max(newValue, minimumColumnWidth), maximumColumnWidth)),
+                forKey: "columnViewWidth"
+            )
+        }
+    }
+
+    /// Narrow enough to be useful, never narrow enough to hide every name.
+    static let minimumColumnWidth: CGFloat = 140
+    static let maximumColumnWidth: CGFloat = 640
 
     /// A column's rows as drawn, which is its contents with the filter applied
     /// when it is the deepest one.
@@ -92,7 +113,7 @@ final class ColumnBrowserView: NSView {
         for level in levels {
             level.container.frame = NSRect(x: x, y: 0, width: Self.columnWidth, height: height)
             x += Self.columnWidth
-            level.divider.frame = NSRect(x: x, y: 0, width: 1, height: height)
+            level.divider.frame = NSRect(x: x - 3, y: 0, width: 7, height: height)
             x += 1
         }
         documentView.frame = NSRect(x: 0, y: 0, width: max(x, scroll.contentSize.width), height: height)
@@ -148,8 +169,13 @@ final class ColumnBrowserView: NSView {
         columnScroll.hasVerticalScroller = true
         columnScroll.drawsBackground = false
 
-        let divider = NSBox()
-        divider.boxType = .separator
+        let divider = ColumnDivider()
+        divider.onDrag = { [weak self] delta in
+            guard let self else { return }
+            Self.columnWidth = Self.columnWidth + delta
+            self.needsLayout = true
+            self.layoutColumns()
+        }
 
         documentView.addSubview(columnScroll)
         documentView.addSubview(divider)
@@ -321,5 +347,40 @@ extension ColumnBrowserView {
     func refreshDeepest() {
         guard let url = levels.last?.url else { return }
         show(url)
+    }
+}
+
+
+/// The line between two columns, which is also the handle that resizes them.
+///
+/// A one-pixel separator is not something anyone can grab, so the view is seven
+/// points wide and draws its line down the middle.
+final class ColumnDivider: NSView {
+    var onDrag: ((CGFloat) -> Void)?
+    private var lastX: CGFloat?
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.separatorColor.setFill()
+        NSRect(x: bounds.midX, y: 0, width: 1, height: bounds.height).fill()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        lastX = convert(event.locationInWindow, from: nil).x
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let previous = lastX else { return }
+        let now = convert(event.locationInWindow, from: nil).x
+        // The delta is reported against this view, which the drag itself moves,
+        // so the anchor is not updated: doing that would halve every movement.
+        onDrag?(now - previous)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        lastX = nil
     }
 }

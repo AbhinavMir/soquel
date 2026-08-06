@@ -10,6 +10,7 @@ enum Prefs {
         "showHiddenFiles", "foldersFirst", "favouritePaths", "viewMode",
         "showFolderTree", "showInspector", "showGitStatus", "calculateFolderSizes",
         "autoFitColumns", "iconSize", "sortOrder", "terminalBundleID", "keyboardFirst",
+        "columnViewWidth",
         "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
         "syncBrowsing", "checkForUpdates", "lastUpdateCheck", "skippedUpdateVersion",
         "sortOrderDefaultMigrated",
@@ -110,9 +111,22 @@ enum Prefs {
         set { d.set(newValue, forKey: "autoFitColumns") }
     }
 
+    static let minimumIconSize: Double = 32
+    static let maximumIconSize: Double = 224
+
     static var iconSize: Double {
-        get { d.double(forKey: "iconSize") ?? 72 }
-        set { d.set(newValue, forKey: "iconSize") }
+        get {
+            let stored = d.double(forKey: "iconSize") ?? 72
+            return Swift.min(Swift.max(stored, minimumIconSize), maximumIconSize)
+        }
+        set { d.set(Swift.min(Swift.max(newValue, minimumIconSize), maximumIconSize), forKey: "iconSize") }
+    }
+
+    /// One step of zoom. Proportional rather than a fixed number of points, so
+    /// a step feels the same at 32 as it does at 200.
+    static func zoomedIconSize(from size: Double, larger: Bool) -> Double {
+        let stepped = larger ? size * 1.25 : size / 1.25
+        return Swift.min(Swift.max(stepped.rounded(), minimumIconSize), maximumIconSize)
     }
 
     static var sortOrder: SortOrder {

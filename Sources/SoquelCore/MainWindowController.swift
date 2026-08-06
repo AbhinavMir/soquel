@@ -609,6 +609,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         CommandPanelController.shared.show(in: focusedList?.url, over: window)
     }
 
+    @objc func menuZoomIn(_ sender: Any?) { zoomIcons(larger: true) }
+    @objc func menuZoomOut(_ sender: Any?) { zoomIcons(larger: false) }
+
+    @objc func menuZoomReset(_ sender: Any?) {
+        Prefs.iconSize = 72
+        propagateViewSettings()
+        statusLeft.stringValue = "Icon size 72"
+    }
+
+    /// Zooming in list or column view switches to icons first: the command
+    /// means "make these bigger", and a list has no size to change.
+    private func zoomIcons(larger: Bool) {
+        if (focusedList?.mode ?? Prefs.viewMode) != .icon {
+            Prefs.viewMode = .icon
+        }
+        Prefs.iconSize = Prefs.zoomedIconSize(from: Prefs.iconSize, larger: larger)
+        propagateViewSettings()
+        statusLeft.stringValue = "Icon size \(Int(Prefs.iconSize))"
+    }
+
     @objc func menuMakeSymlink(_ sender: Any?) { focusedList?.makeSymlink() }
     @objc func menuCompress(_ sender: Any?) { focusedList?.compressSelection() }
     @objc func menuNewFolder(_ sender: Any?) { focusedList?.newFolder() }

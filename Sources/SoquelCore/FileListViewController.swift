@@ -157,12 +157,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         filterField.setAccessibilityLabel("Filter files in this folder")
 
         addColumn("git", "", width: 22, min: 22)
-        addColumn("name", "Name", width: 200, min: 100)
-        addColumn("ext", "Ext", width: 60, min: 40)
-        addColumn("size", "Size", width: 90, min: 60)
-        addColumn("kind", "Kind", width: 120, min: 70)
-        addColumn("modified", "Date Modified", width: 160, min: 110)
-        addColumn("created", "Date Created", width: 160, min: 110)
+        addColumn("name", "Name", width: 200, min: 140)
+        addColumn("ext", "Ext", width: 60, min: 48)
+        addColumn("size", "Size", width: 90, min: 70)
+        addColumn("kind", "Kind", width: 120, min: 90)
+        addColumn("modified", "Date Modified", width: 160, min: 130)
+        addColumn("created", "Date Created", width: 160, min: 130)
         updateSortIndicators()
         applyColumnVisibility()
         rebuildMetadataColumns()
@@ -304,7 +304,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // so the divider between headers does nothing when dragged.
         column.resizingMask = [.userResizingMask, .autoresizingMask]
         column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
-        if let saved = Self.savedWidth(for: id) { column.width = saved }
+        if let saved = Self.savedWidth(for: id) {
+            column.width = Swift.max(Swift.min(saved, column.maxWidth), column.minWidth)
+        }
         tableView.addTableColumn(column)
     }
 
@@ -334,6 +336,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         guard let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
               view.window?.isKeyWindow == true
         else { return }
+        let floor = column.minWidth
+        if column.width < floor {
+            column.width = floor
+            return
+        }
         Self.saveWidth(column.width, for: column.identifier.rawValue)
 
         if Prefs.autoFitColumns {
