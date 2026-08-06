@@ -140,7 +140,7 @@ enum ToolbarCatalogue {
     }
 
     /// Keys owned outside Prefs that also move into settings.json.
-    static let migratedKeys = ["toolbarActions", "visibleColumns", "shortcutOverrides", "sidebarLayout"]
+    static let migratedKeys = ["toolbarActions", "visibleColumns", "shortcutOverrides", "sidebarLayout", "columnWidths"]
 }
 
 extension Notification.Name {

@@ -299,8 +299,48 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         column.title = title
         column.width = width
         column.minWidth = min
+        column.maxWidth = 900
+        // Without userResizingMask a column only ever resizes with the table,
+        // so the divider between headers does nothing when dragged.
+        column.resizingMask = [.userResizingMask, .autoresizingMask]
         column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
+        if let saved = Self.savedWidth(for: id) { column.width = saved }
         tableView.addTableColumn(column)
+    }
+
+    // MARK: - Column widths
+
+    private static let widthsKey = "columnWidths"
+
+    static func savedWidth(for id: String) -> CGFloat? {
+        guard let table = Settings.object(forKey: widthsKey) as? [String: Double],
+              let value = table[id]
+        else { return nil }
+        return CGFloat(value)
+    }
+
+    static func saveWidth(_ width: CGFloat, for id: String) {
+        var table = (Settings.object(forKey: widthsKey) as? [String: Double]) ?? [:]
+        table[id] = Double(width)
+        Settings.set(table, forKey: widthsKey)
+    }
+
+    /// A dragged column stays where it was put.
+    ///
+    /// Fitting to content on every reload would undo the drag on the next
+    /// keystroke, so dragging one turns the automatic fitting off and says so
+    /// rather than quietly fighting the user for the width.
+    @objc func tableViewColumnDidResize(_ notification: Notification) {
+        guard let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
+              view.window?.isKeyWindow == true
+        else { return }
+        Self.saveWidth(column.width, for: column.identifier.rawValue)
+
+        if Prefs.autoFitColumns {
+            Prefs.autoFitColumns = false
+            delegate?.fileList(self, didReportStatus:
+                "Column widths are yours now — automatic fitting is off")
+        }
     }
 
     // MARK: - Navigation
@@ -1516,7 +1556,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 // The name column also carries a 16pt icon and its gap.
                 widest = max(widest, width + (key == "name" ? 26 : 10))
             }
-            column.width = min(max(widest, column.minWidth), 600)
+            // A name column that grows to fit the longest name is a name column
+            // that pushes Size and Date off the right-hand edge in any folder
+            // holding one long filename. Truncating is the lesser loss.
+            let ceiling: CGFloat = key == "name" ? 320 : 600
+            column.width = min(max(widest, column.minWidth), ceiling)
         }
     }
 
