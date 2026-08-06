@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 import Quartz
 
 /// The right-hand panel: a live preview of the selected file above, and its
@@ -10,6 +11,7 @@ import Quartz
 final class InspectorView: NSView {
     private var previewContainer: NSView!
     private var previewView: QLPreviewView?
+    private var webPreview: WKWebView?
     private var placeholder: NSTextField!
     private var titleField: NSTextField!
     private var detailStack: NSStackView!
@@ -143,12 +145,23 @@ final class InspectorView: NSView {
         previewView?.close()
         previewView?.removeFromSuperview()
         previewView = nil
+        webPreview?.stopLoading()
+        webPreview?.removeFromSuperview()
+        webPreview = nil
     }
 
     /// A fresh QLPreviewView per file. Reusing one leaks the previous document
     /// for some types, and `close()` is the documented way to release it.
     private func showPreview(of url: URL) {
         teardownPreview()
+
+        // Quick Look shows an HTML file as its source, or as nothing at all
+        // for a fragment with no <html> around it. Rendering it is what anyone
+        // looking at a .html file wanted to see.
+        if Self.rendersAsWeb(url) {
+            showWebPreview(of: url)
+            return
+        }
 
         let preview = QLPreviewView(frame: previewContainer.bounds, style: .compact) ?? QLPreviewView()
         preview.autoresizingMask = [.width, .height]
@@ -157,6 +170,30 @@ final class InspectorView: NSView {
         previewContainer.addSubview(preview)
         preview.previewItem = url as QLPreviewItem
         previewView = preview
+    }
+
+    /// Whether the file is one to render rather than hand to Quick Look.
+    static func rendersAsWeb(_ url: URL) -> Bool {
+        ["html", "htm", "xhtml", "svg"].contains(url.pathExtension.lowercased())
+    }
+
+    /// A local renderer with nothing switched on.
+    ///
+    /// Reading a file must not become a way for that file to reach the
+    /// network, run anything of consequence or leave something behind, so
+    /// JavaScript is off, the store is non-persistent and it is granted read
+    /// access to the file's own folder and no further.
+    private func showWebPreview(of url: URL) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+
+        let web = WKWebView(frame: previewContainer.bounds, configuration: configuration)
+        web.autoresizingMask = [.width, .height]
+        web.setValue(false, forKey: "drawsBackground")
+        previewContainer.addSubview(web)
+        web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        webPreview = web
     }
 
     // MARK: - Details

@@ -21,6 +21,9 @@ final class ColumnBrowserView: NSView {
     /// Called when the user picks something: a folder to descend into, or a
     /// file to act on.
     var onSelect: ((URL, Bool) -> Void)?
+    /// Everything selected in the deepest column, for commands that act on a
+    /// set rather than on one file.
+    var onSelectMany: (([URL]) -> Void)?
     /// Called when a row is opened (double-click or Return).
     var onOpen: ((URL) -> Void)?
     /// Handles a key press before the table sees it; returns true if consumed.
@@ -31,7 +34,22 @@ final class ColumnBrowserView: NSView {
     private var levels: [(url: URL, items: [FileItem], table: NSTableView,
                           container: NSScrollView, divider: NSView)] = []
 
+    /// Narrows the deepest column. Only the deepest: the columns to its left
+    /// are the path you took to get here, and hiding a folder you are standing
+    /// inside would leave the view describing a route that is not on screen.
+    private var filterText = ""
+
     static let columnWidth: CGFloat = 240
+
+    /// A column's rows as drawn, which is its contents with the filter applied
+    /// when it is the deepest one.
+    func items(at index: Int) -> [FileItem] {
+        guard levels.indices.contains(index) else { return [] }
+        let all = levels[index].items
+        guard index == levels.count - 1, !filterText.isEmpty else { return all }
+        let needle = filterText.lowercased()
+        return all.filter { $0.name.lowercased().contains(needle) }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -118,6 +136,7 @@ final class ColumnBrowserView: NSView {
         table.dataSource = self
         table.delegate = self
         table.target = self
+        table.allowsMultipleSelection = true
         table.doubleAction = #selector(openClicked)
         table.identifier = NSUserInterfaceItemIdentifier(url.path)
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
@@ -158,9 +177,9 @@ final class ColumnBrowserView: NSView {
     @objc private func openClicked(_ sender: Any?) {
         guard let table = sender as? NSTableView ?? (sender as? NSObject as? NSTableView),
               let index = levelIndex(for: table),
-              levels[index].items.indices.contains(table.selectedRow)
+              items(at: index).indices.contains(table.selectedRow)
         else { return }
-        onOpen?(levels[index].items[table.selectedRow].url)
+        onOpen?(items(at: index)[table.selectedRow].url)
     }
 
     /// Scrolls so the newest column is visible, which is the point of the view.
@@ -173,7 +192,7 @@ final class ColumnBrowserView: NSView {
 extension ColumnBrowserView: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int {
         guard let index = levelIndex(for: tableView) else { return 0 }
-        return levels[index].items.count
+        return items(at: index).count
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -181,9 +200,9 @@ extension ColumnBrowserView: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let index = levelIndex(for: tableView), levels[index].items.indices.contains(row)
+        guard let index = levelIndex(for: tableView), items(at: index).indices.contains(row)
         else { return nil }
-        let item = levels[index].items[row]
+        let item = items(at: index)[row]
 
         let cell = FileCellView()
         let field = NSTextField(labelWithString: item.name)
@@ -235,16 +254,72 @@ extension ColumnBrowserView: NSTableViewDataSource, NSTableViewDelegate {
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard let table = notification.object as? NSTableView,
               let index = levelIndex(for: table),
-              levels[index].items.indices.contains(table.selectedRow)
+              items(at: index).indices.contains(table.selectedRow)
         else { return }
 
-        let item = levels[index].items[table.selectedRow]
+        let rows = items(at: index)
+        let chosen = table.selectedRowIndexes.compactMap { row in
+            rows.indices.contains(row) ? rows[row] : nil
+        }
+        let item = rows[table.selectedRow]
         truncate(after: index)
 
-        if item.opensAsFolder {
+        // Only a single folder opens the next column. A range or a scattered
+        // set has no one folder to descend into, and descending into the last
+        // one clicked would throw away the selection being built.
+        if chosen.count == 1, item.opensAsFolder {
             appendColumn(for: item.url.resolvingSymlinksInPath())
             DispatchQueue.main.async { [weak self] in self?.scrollToEnd() }
         }
-        onSelect?(item.url, item.opensAsFolder)
+        onSelect?(item.url, chosen.count == 1 && item.opensAsFolder)
+        onSelectMany?(chosen.map(\.url))
+    }
+}
+
+
+extension ColumnBrowserView {
+    /// Narrows the deepest column as you type in the filter box.
+    ///
+    /// The file list filters its own table, which is not what is on screen
+    /// here, so the box appeared to do nothing in this view.
+    func applyFilter(_ text: String) {
+        filterText = text
+        levels.last?.table.reloadData()
+    }
+
+    /// Selects the first row in the deepest column whose name starts with
+    /// `prefix`. The file list's own type-select drives a table that is not on
+    /// screen in this view, so typing appeared to do nothing.
+    @discardableResult
+    func typeSelect(prefix: String) -> Bool {
+        guard let level = levels.last else { return false }
+        let rows = items(at: levels.count - 1)
+        guard let match = rows.firstIndex(where: {
+            $0.name.lowercased().hasPrefix(prefix.lowercased())
+        }) else { return false }
+        level.table.selectRowIndexes([match], byExtendingSelection: false)
+        level.table.scrollRowToVisible(match)
+        return true
+    }
+
+    /// Everything selected in the deepest column.
+    var selectedURLs: [URL] {
+        guard let level = levels.last else { return [] }
+        let rows = items(at: levels.count - 1)
+        return level.table.selectedRowIndexes.compactMap {
+            rows.indices.contains($0) ? rows[$0].url : nil
+        }
+    }
+
+    /// Selects every row of the deepest column, for ⌘A.
+    func selectAllInDeepestColumn() {
+        guard let level = levels.last else { return }
+        level.table.selectAll(nil)
+    }
+
+    /// Re-reads the deepest column, for after a trash or a rename.
+    func refreshDeepest() {
+        guard let url = levels.last?.url else { return }
+        show(url)
     }
 }

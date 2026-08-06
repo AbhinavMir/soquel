@@ -207,7 +207,7 @@ enum CommandRegistry {
         .command(Command("edit.copy", "Copy", #selector(NSText.copy(_:)), Shortcut("c"))),
         .command(Command("edit.paste", "Paste", #selector(NSText.paste(_:)), Shortcut("v"))),
         .separator,
-        .command(Command("edit.selectAll", "Select All", #selector(NSText.selectAll(_:)), Shortcut("a"))),
+        .command(Command("edit.selectAll", "Select All", #selector(M.menuSelectAll(_:)), Shortcut("a"))),
         .command(Command("edit.invertSelection", "Invert Selection", #selector(M.menuInvertSelection(_:)))),
         .separator,
         .command(Command("edit.filter", "Filter This Folder", #selector(M.menuFilter(_:)), Shortcut("f"))),

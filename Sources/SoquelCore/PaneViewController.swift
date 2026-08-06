@@ -147,12 +147,15 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         }
         // Column view keeps its own selection, so it has to report it the same
         // way the table does or the inspector and status bar go stale.
-        columnBrowser.onSelect = { [weak self] url, _ in
+        columnBrowser.onSelectMany = { [weak self] urls in
             guard let self else { return }
-            self.activeList?.setColumnSelection([url])
-            self.delegate?.pane(self, didChangeSelection: [url])
-            self.delegate?.pane(self, didReportStatus: url.lastPathComponent)
+            self.activeList?.setColumnSelection(urls)
+            self.delegate?.pane(self, didChangeSelection: urls)
+            self.delegate?.pane(self, didReportStatus: urls.count == 1
+                ? (urls[0].lastPathComponent)
+                : "\(urls.count) selected")
         }
+        columnBrowser.onSelect = { _, _ in }
         // Return renames, Space previews, Delete trashes — in columns too.
         columnBrowser.onKeyDown = { [weak self] event in
             self?.activeList?.handleKeyDown(event) ?? false
@@ -411,7 +414,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
     }
 
     @objc private func paneFilterChanged() {
+        // Both: the list filters its table, and the column browser filters the
+        // column that is actually on screen in that view.
         activeList?.setFilter(filterField.stringValue)
+        columnBrowser.applyFilter(filterField.stringValue)
     }
 
     /// Keeps the toolbar's toggle states honest after a command changes one.
@@ -538,6 +544,19 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         rebuildPathBar()
         rebuildTabBar()
         delegate?.paneDidChangeTabs(self)
+    }
+
+    func fileListDidReload(_ list: FileListViewController) {
+        guard list === activeList, (activeList?.mode ?? Prefs.viewMode) == .column else { return }
+        columnBrowser.refreshDeepest()
+    }
+
+    func fileListDidRequestSelectAllInColumns(_ list: FileListViewController) {
+        columnBrowser.selectAllInDeepestColumn()
+    }
+
+    func fileList(_ list: FileListViewController, typeSelectInColumns prefix: String) -> Bool {
+        columnBrowser.typeSelect(prefix: prefix)
     }
 
     func fileList(_ list: FileListViewController, openInNewTab url: URL) {

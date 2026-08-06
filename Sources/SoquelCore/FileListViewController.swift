@@ -8,6 +8,13 @@ protocol FileListDelegate: AnyObject {
     func fileListDidRequestFocus(_ list: FileListViewController)
     func fileList(_ list: FileListViewController, didReportStatus text: String)
     func fileList(_ list: FileListViewController, didChangeSelection urls: [URL])
+    /// The contents changed under the view — after a trash, a rename or a
+    /// move — so anything drawing them from its own copy has to re-read.
+    func fileListDidReload(_ list: FileListViewController)
+    func fileListDidRequestSelectAllInColumns(_ list: FileListViewController)
+    /// Returns true when the column browser found a match, so a keystroke that
+    /// did something is not also passed on.
+    func fileList(_ list: FileListViewController, typeSelectInColumns prefix: String) -> Bool
 }
 
 /// Table subclass that routes navigation and single-key commands before
@@ -377,6 +384,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 self.allItems = loaded
                 self.applyFilterAndSort(preservingSelection: false)
                 self.restoreSelection(previousSelection)
+                self.delegate?.fileListDidReload(self)
                 if resetScroll, self.tableView.numberOfRows > 0 {
                     self.tableView.scrollRowToVisible(self.tableView.selectedRow >= 0 ? self.tableView.selectedRow : 0)
                 }
@@ -797,6 +805,13 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         let current = selectedIndex()
         let start = repeatingSameLetter && current >= 0 ? current + 1 : 0
         let order = (0..<items.count).map { (start + $0) % items.count }
+
+        // In column view the table is off screen, so the visible column is
+        // what has to move.
+        if mode == .column {
+            if delegate?.fileList(self, typeSelectInColumns: prefix) != true { NSSound.beep() }
+            return true
+        }
 
         guard let match = order.first(where: {
             items[$0].name.lowercased().hasPrefix(prefix.lowercased())
@@ -1412,7 +1427,17 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     }
 
     @objc func selectAllItems() {
-        tableView.selectAll(nil)
+        switch mode {
+        case .icon:
+            collectionView.selectionIndexPaths = Set(
+                (0..<items.count).map { IndexPath(item: $0, section: 0) }
+            )
+            collectionSelectionChanged()
+        case .column:
+            delegate?.fileListDidRequestSelectAllInColumns(self)
+        case .list:
+            tableView.selectAll(nil)
+        }
     }
 
     @objc func invertSelection() {
