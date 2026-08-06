@@ -551,6 +551,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         columnBrowser.refreshDeepest()
     }
 
+    func fileListDidRequestFilter(_ list: FileListViewController) {
+        view.window?.makeFirstResponder(filterField)
+    }
+
     func fileListDidRequestSelectAllInColumns(_ list: FileListViewController) {
         columnBrowser.selectAllInDeepestColumn()
     }

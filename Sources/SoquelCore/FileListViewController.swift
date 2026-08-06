@@ -12,6 +12,9 @@ protocol FileListDelegate: AnyObject {
     /// move — so anything drawing them from its own copy has to re-read.
     func fileListDidReload(_ list: FileListViewController)
     func fileListDidRequestSelectAllInColumns(_ list: FileListViewController)
+    /// "/" puts the caret in the pane's filter box. The list used to own a
+    /// second one of its own, so the window showed two identical fields.
+    func fileListDidRequestFilter(_ list: FileListViewController)
     /// Returns true when the column browser found a match, so a keystroke that
     /// did something is not also passed on.
     func fileList(_ list: FileListViewController, typeSelectInColumns prefix: String) -> Bool
@@ -138,9 +141,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // Alternating rows and selection are drawn by FileRowView so they follow
         // the theme instead of the system slab highlight.
         tableView.usesAlternatingRowBackgroundColors = false
-        tableView.style = .inset
+        // .inset adds a wide margin of its own down both sides, which on a file
+        // list is a stripe of nothing before every icon.
+        tableView.style = .plain
         tableView.rowHeight = Theme.rowHeight
-        tableView.intercellSpacing = NSSize(width: 8, height: 0)
+        tableView.intercellSpacing = NSSize(width: 4, height: 0)
         tableView.doubleAction = #selector(openSelection)
         tableView.target = self
         tableView.allowsColumnReordering = true
@@ -152,7 +157,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         filterField.setAccessibilityLabel("Filter files in this folder")
 
         addColumn("git", "", width: 22, min: 22)
-        addColumn("name", "Name", width: 240, min: 120)
+        addColumn("name", "Name", width: 200, min: 100)
         addColumn("ext", "Ext", width: 60, min: 40)
         addColumn("size", "Size", width: 90, min: 60)
         addColumn("kind", "Kind", width: 120, min: 70)
@@ -1039,8 +1044,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     }
 
     func beginFilter() {
-        setFilterBarVisible(true)
-        view.window?.makeFirstResponder(filterField)
+        delegate?.fileListDidRequestFilter(self)
     }
 
     @objc private func filterChanged() {
@@ -1510,7 +1514,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 let font = key == "name" ? Theme.rowName : Theme.rowNumeric
                 let width = (text as NSString).size(withAttributes: [.font: font]).width
                 // The name column also carries a 16pt icon and its gap.
-                widest = max(widest, width + (key == "name" ? 34 : 14))
+                widest = max(widest, width + (key == "name" ? 26 : 10))
             }
             column.width = min(max(widest, column.minWidth), 600)
         }
@@ -1947,14 +1951,14 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.addSubview(image)
             cell.imageView = image
             NSLayoutConstraint.activate([
-                image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 0),
                 image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                 image.widthAnchor.constraint(equalToConstant: 16),
                 image.heightAnchor.constraint(equalToConstant: 16),
-                field.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6),
+                field.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
             ])
         } else {
-            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2).isActive = true
+            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 0).isActive = true
         }
 
         NSLayoutConstraint.activate([
