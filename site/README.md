@@ -24,8 +24,13 @@ The disk image itself is built by `../scripts/make-dmg.sh` and is not committed 
 artefact, and a 2.4 MB binary in git history is one that never leaves.
 
 `scripts/build-app.sh` runs `swift build -c release`, which builds for the host architecture
-only. The 1.0.1 image is therefore arm64, and the page says Apple silicon. If a universal
-binary is ever cut, that line changes with it.
+only, so the image is arm64 and the page says Apple silicon. A universal binary is not planned.
+
+## When a deploy does not happen
+
+The workflow triggers on a push touching `site/`. GitHub occasionally does not queue a run for
+one, and `gh workflow run site.yml --ref main` can answer 500 or sit queued. A fresh commit
+touching this directory is the reliable way to force it.
 
 ## Assets
 
