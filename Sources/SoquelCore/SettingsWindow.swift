@@ -32,6 +32,31 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private var search: NSSearchField!
+    private var results: NSTableView!
+    private var resultsScroll: NSScrollView!
+    private var matches: [SettingsIndex.Entry] = []
+
+    fileprivate var matchCount: Int { matches.count }
+    fileprivate func match(at row: Int) -> SettingsIndex.Entry? {
+        matches.indices.contains(row) ? matches[row] : nil
+    }
+
+    @objc private func searchChanged() {
+        matches = SettingsIndex.search(search.stringValue)
+        // The list only covers the tabs while it has something in it, so an
+        // empty box leaves the pane you were on exactly where it was.
+        resultsScroll.isHidden = matches.isEmpty
+        results.reloadData()
+    }
+
+    @objc private func resultClicked() {
+        guard let entry = match(at: results.selectedRow) else { return }
+        show(pane: entry.pane)
+        search.stringValue = ""
+        searchChanged()
+    }
+
     fileprivate func build() {
         tabs = NSTabView()
         tabs.translatesAutoresizingMaskIntoConstraints = false
@@ -52,20 +77,61 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         applications.label = "Applications"
         applications.view = ApplicationSettingsView()
 
+        let windowPane = NSTabViewItem(identifier: "window")
+        windowPane.label = "Window"
+        windowPane.view = WindowSettingsView()
+
         let updates = NSTabViewItem(identifier: "updates")
         updates.label = "Updates"
         updates.view = UpdateSettingsView()
 
         tabs.addTabViewItem(appearance)
+        tabs.addTabViewItem(windowPane)
         tabs.addTabViewItem(themes)
         tabs.addTabViewItem(keyboard)
         tabs.addTabViewItem(applications)
         tabs.addTabViewItem(updates)
 
+        search = NSSearchField()
+        search.placeholderString = "Search settings — try “transparent” or “default app”"
+        search.target = self
+        search.action = #selector(searchChanged)
+        search.sendsSearchStringImmediately = true
+        search.translatesAutoresizingMaskIntoConstraints = false
+
+        results = NSTableView()
+        results.headerView = nil
+        results.rowHeight = 30
+        results.dataSource = self
+        results.delegate = self
+        results.target = self
+        results.action = #selector(resultClicked)
+        let resultColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("result"))
+        resultColumn.resizingMask = .autoresizingMask
+        results.addTableColumn(resultColumn)
+
+        resultsScroll = NSScrollView()
+        resultsScroll.documentView = results
+        resultsScroll.hasVerticalScroller = true
+        resultsScroll.borderType = .bezelBorder
+        resultsScroll.isHidden = true
+        resultsScroll.translatesAutoresizingMaskIntoConstraints = false
+
         let root = NSView()
+        root.addSubview(search)
         root.addSubview(tabs)
+        root.addSubview(resultsScroll)
         NSLayoutConstraint.activate([
-            tabs.topAnchor.constraint(equalTo: root.topAnchor, constant: 10),
+            search.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
+            search.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            search.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+
+            resultsScroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 8),
+            resultsScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            resultsScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            resultsScroll.heightAnchor.constraint(equalToConstant: 200),
+
+            tabs.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 10),
             tabs.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
             tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
             tabs.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
@@ -130,36 +196,6 @@ final class AppearanceSettingsView: NSView {
             grid.addRow(with: [text, lightWell, darkWell])
         }
 
-        let windowHeading = label("Window", weight: .semibold)
-        windowSlider = NSSlider(value: Double(Theme.windowOpacity),
-                                minValue: ThemeConfig.minimumWindowOpacity, maxValue: 1,
-                                target: self, action: #selector(windowOpacityChanged))
-        windowSlider.isContinuous = true
-        windowSlider.widthAnchor.constraint(equalToConstant: 160).isActive = true
-
-        windowReadout = label(Self.percent(Double(Theme.windowOpacity)))
-        windowReadout.font = Theme.rowNumeric
-        windowReadout.textColor = .secondaryLabelColor
-        windowReadout.widthAnchor.constraint(equalToConstant: 44).isActive = true
-
-        let windowNote = label("How see-through the whole window is. macOS draws the shadow "
-            + "from the window itself, so it fades along with it.")
-        windowNote.font = .systemFont(ofSize: 11)
-        windowNote.textColor = .secondaryLabelColor
-        windowNote.lineBreakMode = .byWordWrapping
-        windowNote.maximumNumberOfLines = 2
-        windowNote.preferredMaxLayoutWidth = 560
-
-        let windowRow = NSStackView(views: [label("Opacity"), windowSlider, windowReadout])
-        windowRow.orientation = .horizontal
-        windowRow.spacing = 8
-
-        let windowBox = NSStackView(views: [windowHeading, windowRow, windowNote])
-        windowBox.orientation = .vertical
-        windowBox.alignment = .leading
-        windowBox.spacing = 6
-        windowBox.translatesAutoresizingMaskIntoConstraints = false
-
         let preview = ThemePreviewView()
         preview.translatesAutoresizingMaskIntoConstraints = false
         let previewCaption = label("A pane, drawn with these colours.")
@@ -167,7 +203,6 @@ final class AppearanceSettingsView: NSView {
         previewCaption.textColor = .secondaryLabelColor
         previewCaption.translatesAutoresizingMaskIntoConstraints = false
 
-        let backgroundBox = buildBackgroundControls()
 
         let reset = NSButton(title: "Reset to Defaults", target: self, action: #selector(resetAll))
         let openFile = NSButton(title: "Reveal theme.json", target: self, action: #selector(revealFile))
@@ -185,8 +220,6 @@ final class AppearanceSettingsView: NSView {
         addSubview(grid)
         addSubview(previewCaption)
         addSubview(preview)
-        addSubview(windowBox)
-        addSubview(backgroundBox)
         addSubview(buttons)
         addSubview(note)
 
@@ -202,15 +235,7 @@ final class AppearanceSettingsView: NSView {
             preview.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             preview.heightAnchor.constraint(equalToConstant: 108),
 
-            windowBox.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 18),
-            windowBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            windowBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
-
-            backgroundBox.topAnchor.constraint(equalTo: windowBox.bottomAnchor, constant: 18),
-            backgroundBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            backgroundBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
-
-            buttons.topAnchor.constraint(equalTo: backgroundBox.bottomAnchor, constant: 18),
+            buttons.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 18),
             buttons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
 
             note.topAnchor.constraint(equalTo: buttons.bottomAnchor, constant: 12),
@@ -219,125 +244,8 @@ final class AppearanceSettingsView: NSView {
         ])
     }
 
-    // MARK: - Background image
-
-    private var pathLabel: NSTextField!
-    private var opacitySlider: NSSlider!
-    private var opacityReadout: NSTextField!
-    private var fitControl: NSPopUpButton!
-    private var windowSlider: NSSlider!
-    private var windowReadout: NSTextField!
-    private var imageRow: NSStackView?
-
-    private func buildBackgroundControls() -> NSView {
-        let config = Theme.background
-
-        let heading = label("Background image", weight: .semibold)
-
-        pathLabel = label(config.imageURL?.lastPathComponent ?? "None")
-        pathLabel.textColor = .secondaryLabelColor
-        pathLabel.lineBreakMode = .byTruncatingMiddle
-
-        let choose = NSButton(title: "Choose…", target: self, action: #selector(chooseImage))
-        let clear = NSButton(title: "Clear", target: self, action: #selector(clearImage))
-
-        opacitySlider = NSSlider(value: config.opacity, minValue: 0, maxValue: 1,
-                                 target: self, action: #selector(opacityChanged))
-        opacitySlider.isContinuous = true
-        opacitySlider.widthAnchor.constraint(equalToConstant: 160).isActive = true
-
-        opacityReadout = label(Self.percent(config.opacity))
-        opacityReadout.font = Theme.rowNumeric
-        opacityReadout.textColor = .secondaryLabelColor
-        opacityReadout.widthAnchor.constraint(equalToConstant: 44).isActive = true
-
-        fitControl = NSPopUpButton()
-        fitControl.addItems(withTitles: BackgroundFit.allCases.map(\.title))
-        fitControl.selectItem(at: BackgroundFit.allCases.firstIndex(of: config.fit) ?? 0)
-        fitControl.target = self
-        fitControl.action = #selector(fitChanged)
-
-        let row1 = NSStackView(views: [choose, clear, pathLabel])
-        row1.orientation = .horizontal
-        row1.spacing = 8
-
-        let row2 = NSStackView(views: [label("Image opacity"), opacitySlider, opacityReadout,
-                                       label("Fit"), fitControl])
-        row2.orientation = .horizontal
-        row2.spacing = 8
-        imageRow = row2
-
-        let stack = NSStackView(views: [heading, row1, row2])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        updateBackgroundControls()
-        return stack
-    }
-
-    /// Opacity and fit describe an image. With no image there is nothing for
-    /// them to describe, and a live slider that changes nothing on screen reads
-    /// as broken rather than as inapplicable.
-    private func updateBackgroundControls() {
-        // No image means nothing for a fit mode or an image opacity to describe,
-        // so the row goes rather than sitting there greyed out next to a window
-        // opacity that does work.
-        let hasImage = Theme.background.imageURL != nil
-        imageRow?.isHidden = !hasImage
-        pathLabel.stringValue = Theme.background.imageURL?.lastPathComponent ?? "None"
-    }
-
     private static func percent(_ value: Double) -> String {
         "\(Int((value * 100).rounded()))%"
-    }
-
-    @objc private func chooseImage() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.message = "Pick an image to show behind the file list"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        var background = Theme.background
-        background.imagePath = url.path
-        // An image at 0% is an image nobody can see, and the slider it lands on
-        // was disabled a moment ago, so it is the one setting that cannot have
-        // been chosen deliberately.
-        if background.opacity <= 0.001 { background.opacity = BackgroundConfig.none.opacity }
-        Theme.setBackground(background)
-        opacitySlider.doubleValue = background.opacity
-        opacityReadout.stringValue = Self.percent(background.opacity)
-        updateBackgroundControls()
-    }
-
-    @objc private func clearImage() {
-        var background = Theme.background
-        background.imagePath = nil
-        Theme.setBackground(background)
-        updateBackgroundControls()
-    }
-
-    @objc private func windowOpacityChanged() {
-        Theme.setWindowOpacity(windowSlider.doubleValue)
-        windowReadout.stringValue = Self.percent(windowSlider.doubleValue)
-    }
-
-    @objc private func opacityChanged() {
-        guard Theme.background.imageURL != nil else { return }
-        var background = Theme.background
-        background.opacity = opacitySlider.doubleValue
-        opacityReadout.stringValue = Self.percent(background.opacity)
-        Theme.setBackground(background)
-    }
-
-    @objc private func fitChanged() {
-        var background = Theme.background
-        let index = fitControl.indexOfSelectedItem
-        guard BackgroundFit.allCases.indices.contains(index) else { return }
-        background.fit = BackgroundFit.allCases[index]
-        Theme.setBackground(background)
     }
 
     /// What the slot is called on screen. "Accent" and "chrome" are words for
@@ -411,10 +319,6 @@ final class AppearanceSettingsView: NSView {
         for entry in wells {
             entry.well.color = Theme.resolved(entry.slot, dark: entry.dark)
         }
-        opacitySlider.doubleValue = BackgroundConfig.none.opacity
-        opacityReadout.stringValue = Self.percent(BackgroundConfig.none.opacity)
-        fitControl.selectItem(at: 0)
-        updateBackgroundControls()
     }
 
     @objc private func revealFile() {
@@ -785,4 +689,37 @@ final class ColourSwatchButton: NSView {
     }
 
     override func accessibilityValue() -> Any? { color.hexString }
+}
+
+
+extension SettingsWindowController: NSTableViewDataSource, NSTableViewDelegate {
+    public func numberOfRows(in tableView: NSTableView) -> Int { matchCount }
+
+    public func tableView(_ tableView: NSTableView,
+                          viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard let entry = match(at: row) else { return nil }
+        let cell = NSTableCellView()
+
+        let title = NSTextField(labelWithString: entry.title)
+        title.font = .systemFont(ofSize: 12, weight: .medium)
+        title.translatesAutoresizingMaskIntoConstraints = false
+
+        // The pane is on the row, so a result says where it is going to take
+        // you before you click it.
+        let pane = NSTextField(labelWithString: entry.subtitle)
+        pane.font = .systemFont(ofSize: 11)
+        pane.textColor = .secondaryLabelColor
+        pane.translatesAutoresizingMaskIntoConstraints = false
+
+        cell.addSubview(title)
+        cell.addSubview(pane)
+        NSLayoutConstraint.activate([
+            title.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+            title.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            pane.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10),
+            pane.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: pane.leadingAnchor, constant: -10),
+        ])
+        return cell
+    }
 }
