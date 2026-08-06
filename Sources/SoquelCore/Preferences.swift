@@ -10,7 +10,7 @@ enum Prefs {
         "showHiddenFiles", "foldersFirst", "favouritePaths", "viewMode",
         "showFolderTree", "showInspector", "showGitStatus", "calculateFolderSizes",
         "autoFitColumns", "iconSize", "sortOrder", "terminalBundleID", "keyboardFirst",
-        "columnViewWidth",
+        "columnViewWidth", "expandedTreeFolders",
         "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
         "syncBrowsing", "checkForUpdates", "lastUpdateCheck", "skippedUpdateVersion",
         "sortOrderDefaultMigrated",
@@ -74,6 +74,18 @@ enum Prefs {
     static var showFolderTree: Bool {
         get { d.object(forKey: "showFolderTree") as? Bool ?? true }
         set { d.set(newValue, forKey: "showFolderTree") }
+    }
+
+    /// Which folders in the sidebar tree were left open.
+    ///
+    /// Paths rather than nodes: the tree is rebuilt from disk on every launch,
+    /// so there is no object to remember, and a folder that has since been
+    /// deleted simply fails to be found again.
+    static var expandedTreeFolders: [String] {
+        get { d.stringArray(forKey: "expandedTreeFolders") ?? [] }
+        // Bounded because opening a deep tree once should not leave a
+        // thousand paths to walk on every future launch.
+        set { d.set(Array(newValue.suffix(200)), forKey: "expandedTreeFolders") }
     }
 
     /// The preview and details panel on the right.

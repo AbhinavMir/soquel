@@ -526,4 +526,52 @@ final class RegressionTests: XCTestCase {
         XCTAssertEqual(frame.midY, cell.midY, accuracy: 0.01)
     }
 
+
+    /// The tree came back closed on every launch: only user groups recorded
+    /// their open state, and a tree folder has no group to record against.
+    func testOpeningAFolderIsRemembered() {
+        var open = SidebarViewController.remembering("/a", expanded: true, in: [])
+        XCTAssertEqual(open, ["/a"])
+        open = SidebarViewController.remembering("/a/b", expanded: true, in: open)
+        XCTAssertEqual(open, ["/a", "/a/b"])
+    }
+
+    /// Shallow before deep, so replaying the list opens a parent before the
+    /// child that needs the parent loaded first.
+    func testRememberedFoldersComeBackParentFirst() {
+        var open: [String] = []
+        for path in ["/a/b/c", "/a", "/a/b"] {
+            open = SidebarViewController.remembering(path, expanded: true, in: open)
+        }
+        XCTAssertEqual(open, ["/a", "/a/b", "/a/b/c"])
+    }
+
+    /// Closing a folder closes what is inside it. Leaving the descendants
+    /// listed would spring them open again the next time the parent opened.
+    func testClosingAFolderForgetsWhatWasInsideIt() {
+        var open: [String] = []
+        for path in ["/a", "/a/b", "/a/b/c", "/other"] {
+            open = SidebarViewController.remembering(path, expanded: true, in: open)
+        }
+        let closed = SidebarViewController.remembering("/a", expanded: false, in: open)
+        XCTAssertEqual(closed, ["/other"])
+    }
+
+    /// A sibling whose name starts with the same letters is not inside it.
+    func testClosingAFolderLeavesItsNamesakeAlone() {
+        var open: [String] = []
+        for path in ["/a", "/ab", "/a/b"] {
+            open = SidebarViewController.remembering(path, expanded: true, in: open)
+        }
+        let closed = SidebarViewController.remembering("/a", expanded: false, in: open)
+        XCTAssertEqual(closed, ["/ab"])
+    }
+
+    /// Opening the same folder twice should not list it twice.
+    func testOpeningTheSameFolderTwiceListsItOnce() {
+        var open = SidebarViewController.remembering("/a", expanded: true, in: [])
+        open = SidebarViewController.remembering("/a", expanded: true, in: open)
+        XCTAssertEqual(open, ["/a"])
+    }
+
 }

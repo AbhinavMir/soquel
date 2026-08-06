@@ -107,6 +107,12 @@ final class SidebarViewController: NSViewController {
     /// click, and reveal() runs because the pane has already moved, so the row
     /// it highlights must not be handed back to the delegate as a fresh choice.
     private var isRevealingSelection = false
+    /// True while the tree is being put back the way it was left. Expanding a
+    /// folder during that would record it as a fresh choice by the user.
+    fileprivate var isRestoringTree = false
+    /// The folders still to be reopened, shallowest first. Emptied as the
+    /// levels arrive.
+    private var pendingRestore: [String] = Prefs.expandedTreeFolders
     /// Set while a row the user clicked is navigating the pane. The pane
     /// reports back and the tree follows it, and that follow must not take the
     /// highlight off the row that was clicked.
@@ -213,6 +219,9 @@ final class SidebarViewController: NSViewController {
             if case .userGroup(let group) = root.kind, group.isCollapsed { continue }
             outline.expandItem(root)
         }
+        // Put the tree back the way it was left. The first pass opens the top
+        // level; each background load carries it one level deeper.
+        restoreExpandedFolders()
     }
 
     // MARK: - Pinning
@@ -675,6 +684,9 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             // tree opens one level per call and stops, so following the pane
             // into a deep folder never gets past the first step.
             if let target = self.pendingReveal { self.reveal(target) }
+            // Same again for the folders that were open when the app last
+            // quit: each load reveals the next level down that has to open.
+            self.restoreExpandedFolders()
             // A folder holding only files has nothing to show. Leaving it open
             // draws a disclosure triangle pointing down at nothing.
             if node.children.isEmpty {
@@ -779,14 +791,96 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     }
 
     private func setCollapsed(_ collapsed: Bool, from notification: Notification) {
-        guard let node = notification.userInfo?["NSObject"] as? SidebarNode,
-              let id = node.groupID,
+        guard let node = notification.userInfo?["NSObject"] as? SidebarNode else { return }
+
+        // A tree folder has no group to record it against, so its own open
+        // state used to be dropped on the floor and the tree came back closed
+        // on every launch.
+        if case .treeFolder(let url) = node.kind {
+            // Not while restoring: expanding a folder to put the tree back the
+            // way it was would otherwise rewrite the very list being read.
+            guard !isRestoringTree else { return }
+            Prefs.expandedTreeFolders = Self.remembering(
+                url.path, expanded: !collapsed, in: Prefs.expandedTreeFolders
+            )
+            return
+        }
+
+        guard let id = node.groupID,
               let index = SidebarStore.layout.groups.firstIndex(where: { $0.id == id }),
               SidebarStore.layout.groups[index].isCollapsed != collapsed
         else { return }
         var layout = SidebarStore.layout
         layout.groups[index].isCollapsed = collapsed
         SidebarStore.layout = layout
+    }
+
+    /// Reopens the folders that were open when the app last quit.
+    ///
+    /// The tree loads one level per background read, so this cannot open a
+    /// deep folder in one pass. It opens whatever it can reach now; each load
+    /// calls it again, and it walks one level further down. It stops when a
+    /// pass opens nothing, which is either "all done" or "the rest is gone".
+    func restoreExpandedFolders() {
+        guard Prefs.showFolderTree, !pendingRestore.isEmpty else { return }
+        guard let treeGroup = roots.first(where: {
+            if case .systemGroup(let title) = $0.kind { return title == "Folders" }
+            return false
+        }) else { return }
+
+        isRestoringTree = true
+        defer { isRestoringTree = false }
+
+        outline.expandItem(treeGroup)
+        var opened = false
+        var stillMissing: [String] = []
+
+        for path in pendingRestore {
+            guard let node = treeNode(forPath: path, under: treeGroup.children) else {
+                // Its parent may not have loaded yet, so this is not proof the
+                // folder has gone. It is retried after the next level lands.
+                stillMissing.append(path)
+                continue
+            }
+            if !outline.isItemExpanded(node) {
+                outline.expandItem(node)
+                opened = true
+            }
+        }
+
+        // Nothing opened and nothing left to find: whatever remains is a
+        // folder that has been deleted or is no longer readable.
+        pendingRestore = opened ? stillMissing : []
+    }
+
+    /// The node standing for `path`, searched only through levels already
+    /// loaded. Nothing here reads the disk.
+    func treeNode(forPath path: String, under nodes: [SidebarNode]) -> SidebarNode? {
+        for node in nodes {
+            if case .treeFolder(let url) = node.kind {
+                if url.path == path { return node }
+                // Only descend where the answer could be.
+                if path.hasPrefix(url.path + "/"),
+                   let found = treeNode(forPath: path, under: node.children) {
+                    return found
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Adds or removes one path, keeping the rest in the order they were
+    /// opened. Shallow folders come first, so replaying the list opens a parent
+    /// before the child that needs it.
+    static func remembering(_ path: String, expanded: Bool, in paths: [String]) -> [String] {
+        var paths = paths.filter { $0 != path }
+        guard expanded else {
+            // Closing a folder closes what is inside it; leaving descendants
+            // listed would reopen them the next time this one is opened.
+            return paths.filter { !$0.hasPrefix(path + "/") }
+        }
+        paths.append(path)
+        return paths.sorted { $0.components(separatedBy: "/").count < $1.components(separatedBy: "/").count }
     }
 
     // MARK: - Drag and drop
