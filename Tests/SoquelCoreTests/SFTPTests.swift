@@ -109,4 +109,43 @@ final class SFTPTests: XCTestCase {
         XCTAssertEqual(SFTPSession.quote("a b"), "\"a b\"")
         XCTAssertEqual(SFTPSession.quote("say \"hi\""), "\"say \\\"hi\\\"\"")
     }
+
+    /// iCloud lives somewhere else entirely from every other provider, and
+    /// both have to be found.
+    func testFindsICloudAndTheFileProviders() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("soquel-cloud-\(UUID().uuidString)")
+        let fm = FileManager.default
+        for path in [
+            "Library/Mobile Documents/com~apple~CloudDocs",
+            "Library/CloudStorage/GoogleDrive-someone@gmail.com",
+            "Library/CloudStorage/Dropbox",
+        ] {
+            try fm.createDirectory(
+                at: home.appendingPathComponent(path), withIntermediateDirectories: true
+            )
+        }
+        defer { try? fm.removeItem(at: home) }
+
+        let names = CloudDrives.all(home: home).map(\.name)
+        XCTAssertTrue(names.contains("iCloud Drive"))
+        XCTAssertTrue(names.contains("Dropbox"))
+        // The account is kept: two of the same service can be signed in.
+        XCTAssertTrue(names.contains("Google Drive — someone@gmail.com"))
+    }
+
+    /// Nothing installed is not an error, it is an empty list.
+    func testNoCloudDrivesIsNotAFailure() {
+        let nowhere = FileManager.default.temporaryDirectory
+            .appendingPathComponent("soquel-absent-\(UUID().uuidString)")
+        XCTAssertEqual(CloudDrives.all(home: nowhere).count, 0)
+    }
+
+    /// The folders are written without spaces on disk.
+    func testProviderNamesGetTheirSpacesBack() {
+        XCTAssertEqual(CloudDrives.displayName(for: "GoogleDrive"), "Google Drive")
+        XCTAssertEqual(CloudDrives.displayName(for: "OneDrive"), "One Drive")
+        XCTAssertEqual(CloudDrives.displayName(for: "Box"), "Box")
+    }
+
 }

@@ -201,6 +201,18 @@ final class SidebarViewController: NSViewController {
             built.append(SidebarNode(.systemGroup("Locations"), children: volumes))
         }
 
+        // iCloud, Google Drive and the rest. Ordinary folders that were always
+        // reachable by typing the path; they were just never listed. Drawn as
+        // volumes because that is what they are to anyone using them, and it
+        // picks up the vendor's own icon off disk.
+        let clouds = CloudDrives.all()
+        if !clouds.isEmpty {
+            built.append(SidebarNode(
+                .systemGroup("Cloud"),
+                children: clouds.map { SidebarNode(.volume($0.url, $0.name)) }
+            ))
+        }
+
         let searches = SavedSearchStore.all
         if !searches.isEmpty {
             built.append(SidebarNode(

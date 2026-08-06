@@ -154,6 +154,17 @@ final class ConnectToServerController: NSObject {
         owner.endSheet(panel)
     }
 
+    /// SFTP needs a username; the browser has nobody to log in as without one.
+    /// The address bar accepts `sftp://host` all the same, so the logged-in
+    /// account stands in, which is what ssh itself does.
+    private func sftpLocation(from address: RemoteLocations.Address) -> SFTPSession.Location? {
+        let user = address.user?.isEmpty == false ? address.user! : NSUserName()
+        let path = address.path.isEmpty ? "." : address.path
+        return SFTPSession.Location(
+            user: user, host: address.host, port: address.port, path: path
+        )
+    }
+
     @objc private func connect() {
         status.stringValue = ""
 
@@ -168,6 +179,16 @@ final class ConnectToServerController: NSObject {
                 NSSound.beep()
                 return
             }
+            // SFTP has no mount helper on macOS and needs none: it opens in a
+            // browser window driven by the ssh already on the system, rather
+            // than sending the user off to install a kernel extension.
+            if address.scheme == .sftp, let location = sftpLocation(from: address) {
+                let host = panel?.sheetParent
+                close()
+                SFTPBrowserController.open(location, over: host)
+                return
+            }
+
             connectButton.isEnabled = false
             spinner.startAnimation(nil)
             status.textColor = .secondaryLabelColor
