@@ -81,32 +81,6 @@ view, archive browsing, metadata columns, named workspaces, batch rename, thumbn
 comparison. Nothing from that tier is outstanding. What is left in the research file is the long
 tail, and it is not ranked above the two issues below.
 
-## On main, not yet released
-
-1.0.1 is the shipped build; none of these are in it.
-
-| Change | Notes |
-| --- | --- |
-| Show Package Contents | Opens a `.app` in a window over the pane instead of navigating into it. Any package, not only `.app` |
-| Files in the folder tree | Folders, then five files, then a row for the rest. Selecting a file opens its folder and selects it there |
-| Add Kind… | Settings → Applications takes any extension macOS recognises, not only the shipped twenty-three |
-| Open With button | The same list as the right-click submenu, on the toolbar |
-| Tab close and add buttons | An ✕ per tab and a + at the end of the bar |
-| Hidden-files button state | Draws `eye.slash` when hidden files are off, `eye` when on |
-| Muted view pill | The selected segment fills grey rather than the selection blue |
-| Sidebar focus fix | Clicking a favourite no longer hands the highlight to the folder tree |
-| Quick Look a folder | Space on a folder shows a grid of what is inside instead of nothing |
-| Sync browsing | A selected folder shows in the next pane along. Off by default |
-| Duplicate finder | Hash-based, files and whole folders, review before anything moves, undo after |
-| Verified copy | Checksums both ends of a copy and reports per-file pass/fail. Off by default |
-| Make Symlink | A real `ln -s` link, relative when both ends share a parent |
-| Per-folder views | Each folder can remember its own view mode and sort. Off by default |
-| Transfer retry and reorder | Put a job's failed files back on the queue; move a waiting job up or down |
-| Tags | Read and set Finder tags, colour the whole row, warn where the disk cannot keep them |
-| Network trash warning | Says a share has no Trash before deleting from one |
-| Uninstall | Finds an application's caches, preferences and containers for review |
-| Run a Command Here | Runs one command in the current folder and streams its output. Not a terminal |
-
 ## Next
 
 - [ ] **Shortcut import and export** — remapping works; sharing a keymap does not.
@@ -128,13 +102,14 @@ tail, and it is not ranked above the two issues below.
 
 ## Tracked as issues
 
-These three are the whole open list. Every issue from the adversarial bug sweep — 38 of them,
+These are the whole open list. Every issue from the adversarial bug sweep — 38 of them,
 data loss first, then wrong result, then UI — is closed.
 
 - [#3 Frutiger Aero base theme, and an icon set for ricing](https://github.com/AbhinavMir/soquel/issues/3)
   — blocked: it asks for the named theme files the sweep deleted. See Known gaps.
 - [#4 SFTP without macFUSE: a File Provider extension](https://github.com/AbhinavMir/soquel/issues/4)
 - [#5 Disk map: become an actual DaisyDisk replacement](https://github.com/AbhinavMir/soquel/issues/5)
+- [#43 Preview .sqlite, .db, .csv and .sql without a client](https://github.com/AbhinavMir/soquel/issues/43)
 
 ## Ruled out
 

@@ -90,7 +90,7 @@ rebound. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 ```
 Sources/SoquelCore/    application code
 Sources/Soquel/        executable entry point
-Tests/SoquelCoreTests/ 683 tests
+Tests/SoquelCoreTests/ 805 tests
 scripts/               build-app.sh, make-dmg.sh, install.sh
 docs/                  architecture, keybindings, settings, security
 ```
