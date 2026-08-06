@@ -15,6 +15,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // database is carried over the first time.
         Settings.migrateFromUserDefaults(.standard, keys: Prefs.keys + ToolbarCatalogue.migratedKeys)
         Settings.startWatching()
+        Prefs.migrateSortOrderDefault()
         settingsObserver = NotificationCenter.default.addObserver(
             forName: .soquelSettingsChanged, object: nil, queue: .main
         ) { _ in

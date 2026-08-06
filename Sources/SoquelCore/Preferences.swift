@@ -12,11 +12,35 @@ enum Prefs {
         "autoFitColumns", "iconSize", "sortOrder", "terminalBundleID", "keyboardFirst",
         "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
         "syncBrowsing", "checkForUpdates", "lastUpdateCheck", "skippedUpdateVersion",
+        "sortOrderDefaultMigrated",
     ]
 
     static var showHiddenFiles: Bool {
         get { d.bool(forKey: "showHiddenFiles") }
         set { d.set(newValue, forKey: "showHiddenFiles") }
+    }
+
+    /// The sort that shipped before the default became newest-first.
+    static let legacyDefaultSortOrder = SortOrder(
+        descriptors: [SortDescriptorSpec(key: .name, ascending: true)]
+    )
+
+    /// Moves anyone still on the old default onto the new one, once.
+    ///
+    /// A stored value beats a default, and the old default was written to the
+    /// file the first time anything touched the sort — so without this the
+    /// change reaches new installs only, and the people who already have the
+    /// application never see it. Only an exact match for the old default is
+    /// replaced: a sort somebody actually chose is theirs and is left alone.
+    static func migrateSortOrderDefault() {
+        let marker = "sortOrderDefaultMigrated"
+        guard d.object(forKey: marker) == nil else { return }
+        d.set(true, forKey: marker)
+
+        guard let stored = d.decode(SortOrder.self, forKey: "sortOrder"),
+              stored == legacyDefaultSortOrder
+        else { return }
+        d.set(nil, forKey: "sortOrder")
     }
 
     static var foldersFirst: Bool {

@@ -242,3 +242,55 @@ final class GitStatusTests: XCTestCase {
         XCTAssertTrue(GitStatusReader.parse(porcelainZ: "", root: URL(fileURLWithPath: "/repo")).isEmpty)
     }
 }
+
+/// A stored value beats a default, so the old default had to be cleared for
+/// the new one to reach anyone who already had the application.
+final class SortDefaultMigrationTests: XCTestCase {
+    private let key = "sortOrder"
+    private let marker = "sortOrderDefaultMigrated"
+
+    override func setUp() {
+        super.setUp()
+        Settings.set(nil, forKey: marker)
+        Settings.set(nil, forKey: key)
+    }
+
+    override func tearDown() {
+        Settings.set(nil, forKey: marker)
+        Settings.set(nil, forKey: key)
+        super.tearDown()
+    }
+
+    func testTheOldDefaultIsCleared() {
+        Settings.encode(Prefs.legacyDefaultSortOrder, forKey: key)
+        Prefs.migrateSortOrderDefault()
+        XCTAssertNil(Settings.object(forKey: key))
+        XCTAssertEqual(Prefs.sortOrder, SortOrder.default)
+    }
+
+    /// A sort somebody actually chose is theirs.
+    func testAChosenSortIsLeftAlone() {
+        let chosen = SortOrder(descriptors: [SortDescriptorSpec(key: .size, ascending: false)])
+        Settings.encode(chosen, forKey: key)
+        Prefs.migrateSortOrderDefault()
+        XCTAssertEqual(Prefs.sortOrder, chosen)
+    }
+
+    /// Name-descending is not the old default and is not touched.
+    func testANearMissIsLeftAlone() {
+        let close = SortOrder(descriptors: [SortDescriptorSpec(key: .name, ascending: false)])
+        Settings.encode(close, forKey: key)
+        Prefs.migrateSortOrderDefault()
+        XCTAssertEqual(Prefs.sortOrder, close)
+    }
+
+    /// Runs once. Choosing name-ascending afterwards must survive a relaunch.
+    func testItDoesNotRunASecondTime() {
+        Settings.encode(Prefs.legacyDefaultSortOrder, forKey: key)
+        Prefs.migrateSortOrderDefault()
+
+        Settings.encode(Prefs.legacyDefaultSortOrder, forKey: key)
+        Prefs.migrateSortOrderDefault()
+        XCTAssertEqual(Prefs.sortOrder, Prefs.legacyDefaultSortOrder, "chosen after the migration")
+    }
+}
