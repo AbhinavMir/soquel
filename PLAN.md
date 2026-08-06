@@ -2,7 +2,7 @@
 
 Branch: `main`, clean and pushed. 805 tests pass in 15.5s.
 
-**1.0.4 is shipped.** Signed, notarised, disk image on the GitHub release,
+**1.0.5 is shipped.** Signed, notarised, disk image on the GitHub release,
 landing page live at trysoquel.com.
 
 ## What this is
@@ -32,6 +32,10 @@ is what the sweep deleted.
   content behind an opaque title bar. Newest-first sort, no folder grouping, Copy Path on
   ⌥⌘C, Safari-style tabs, Compress without `.DS_Store`, gist and repo themes, window
   opacity, Air/Windows 95/Platinum, searchable settings.
+- **1.0.5** — renaming in place, in every view. Return had been opening an editor on
+  the Git column, which has no text, so it did nothing at all in list view. The editor is
+  now put over the name itself: opaque, centred on its row, extension left out of the
+  selection, Escape cancels, clicking elsewhere commits.
 - **1.0.4** — reads Finder's `.DS_Store` (never writes one). ⌘A everywhere, ⌘/⇧-click in
   column view, draggable columns and column-view width, icon zoom, HTML previews, one
   filter box instead of two.
@@ -41,6 +45,8 @@ is what the sweep deleted.
 Smaller things, none blocking:
 - Shortcut import and export. Remapping works; sharing a keymap does not.
 - The Show HN draft on the Desktop still describes 1.0.1.
+- [docs/QA.md](docs/QA.md) is a manual sweep, 20 sections, written to be handed to someone
+  who has never used the app. Findings go in as issues.
 
 ## Decisions taken
 
