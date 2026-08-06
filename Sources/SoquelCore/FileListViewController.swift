@@ -156,13 +156,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         tableView.setAccessibilityLabel("Files in \(url.lastPathComponent)")
         filterField.setAccessibilityLabel("Filter files in this folder")
 
-        addColumn("git", "", width: 22, min: 22)
-        addColumn("name", "Name", width: 200, min: 140)
-        addColumn("ext", "Ext", width: 60, min: 48)
-        addColumn("size", "Size", width: 90, min: 70)
-        addColumn("kind", "Kind", width: 120, min: 90)
-        addColumn("modified", "Date Modified", width: 160, min: 130)
-        addColumn("created", "Date Created", width: 160, min: 130)
+        for column in Self.defaultColumns {
+            addColumn(column.id, column.title, width: column.width, min: column.min)
+        }
         updateSortIndicators()
         applyColumnVisibility()
         rebuildMetadataColumns()
@@ -293,6 +289,20 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// Selection is held as URLs so it survives switching view modes, where the
     /// index of an item means nothing to the other view.
     private var selectedURLsCache: [URL] = []
+
+    /// The columns a list starts with, in the order they are added.
+    ///
+    /// Git is first and has no text, so anything that wants the name has to ask
+    /// for it by identifier rather than assuming column zero.
+    static let defaultColumns: [(id: String, title: String, width: CGFloat, min: CGFloat)] = [
+        ("git", "", 22, 22),
+        ("name", "Name", 200, 140),
+        ("ext", "Ext", 60, 48),
+        ("size", "Size", 90, 70),
+        ("kind", "Kind", 120, 90),
+        ("modified", "Date Modified", 160, 130),
+        ("created", "Date Created", 160, 130),
+    ]
 
     private func addColumn(_ id: String, _ title: String, width: CGFloat, min: CGFloat) {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
@@ -1137,14 +1147,31 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
         let row = tableView.selectedRow
         guard row >= 0, items.indices.contains(row) else { return }
-        guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView,
+        // Where the name column actually sits, not where it started: columns
+        // can be dragged, and editing column 0 after a reorder puts the editor
+        // on the size or the date.
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("name"))
+        guard index >= 0 else { return }
+        guard let cell = tableView.view(atColumn: index, row: row, makeIfNecessary: true) as? NSTableCellView,
               let field = cell.textField else { return }
         // Remember the file, not the row: a re-sort or refresh while the editor
         // is open would otherwise commit the new name to whatever now sits there.
         renamingURL = items[row].url
+        // The name is drawn by a label, which is not selectable, and a table
+        // will not open an editor on a field it cannot select.
+        field.isSelectable = true
         field.isEditable = true
         field.delegate = self
-        tableView.editColumn(0, row: row, with: nil, select: true)
+        tableView.editColumn(index, row: row, with: nil, select: true)
+
+        // Selecting the name without its extension, as the sheet does and as
+        // Finder does. Selecting the whole thing invites an accidental
+        // extension change on the next keystroke.
+        let name = items[row].url.lastPathComponent
+        let base = items[row].url.deletingPathExtension().lastPathComponent
+        if base.count < name.count, let editor = field.currentEditor() {
+            editor.selectedRange = NSRange(location: 0, length: base.count)
+        }
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
@@ -1152,6 +1179,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         guard let original = renamingURL else { return }
         renamingURL = nil
         field.isEditable = false
+        field.isSelectable = false
 
         let oldName = original.lastPathComponent
         let newName = field.stringValue

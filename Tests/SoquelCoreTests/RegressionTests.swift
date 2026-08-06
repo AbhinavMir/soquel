@@ -488,4 +488,14 @@ final class RegressionTests: XCTestCase {
         )
         XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: origin))
     }
+
+    /// Return renamed nothing because the editor was opened on column 0, which
+    /// is the Git badge. The name column is second, and its position moves
+    /// again as soon as anyone drags a header.
+    func testRenameOpensTheNameColumnRatherThanTheFirstOne() {
+        let ids = FileListViewController.defaultColumns.map(\.id)
+        XCTAssertNotEqual(ids.first, "name", "the name column is not the first one")
+        XCTAssertTrue(ids.contains("name"))
+    }
+
 }
