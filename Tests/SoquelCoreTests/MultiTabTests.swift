@@ -196,3 +196,44 @@ final class ViewModeFreshnessTests: XCTestCase {
         XCTAssertEqual(list.mode, Prefs.viewMode)
     }
 }
+
+/// The bar across the top of a pane says which pane has the keyboard. With one
+/// pane it was on permanently and marked nothing.
+final class FocusIndicatorTests: XCTestCase {
+    private var root: URL!
+    private var pane: PaneViewController!
+
+    override func setUpWithError() throws {
+        root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("soquel-focus-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        pane = PaneViewController(url: root)
+        _ = pane.view
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: root)
+        super.tearDown()
+    }
+
+    private var barIsVisible: Bool {
+        !(pane.view.subviews.first?.isHidden ?? true)
+    }
+
+    func testTheBarIsHiddenWithOnlyOnePane() {
+        pane.setFocused(true, amongMany: false)
+        XCTAssertFalse(barIsVisible, "nothing to be told apart from")
+    }
+
+    func testTheBarShowsOnTheFocusedPaneOfSeveral() {
+        pane.setFocused(true, amongMany: true)
+        XCTAssertTrue(barIsVisible)
+    }
+
+    func testAnUnfocusedPaneNeverShowsIt() {
+        pane.setFocused(false, amongMany: true)
+        XCTAssertFalse(barIsVisible)
+        pane.setFocused(false, amongMany: false)
+        XCTAssertFalse(barIsVisible)
+    }
+}

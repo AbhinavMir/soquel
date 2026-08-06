@@ -511,10 +511,13 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
     // MARK: - Focus
 
-    func setFocused(_ focused: Bool) {
+    /// - Parameter amongMany: whether there is another pane to be told apart
+    ///   from. With one pane the bar is on permanently and marks nothing, which
+    ///   reads as a stray line across the top of the window.
+    func setFocused(_ focused: Bool, amongMany: Bool = false) {
         isFocused = focused
         // Presence of the bar, not just its colour, carries the focus state.
-        focusIndicator.isHidden = !focused
+        focusIndicator.isHidden = !focused || !amongMany
         view.effectiveAppearance.performAsCurrentDrawingAppearance {
             focusIndicator.layer?.backgroundColor = Theme.accent.cgColor
         }

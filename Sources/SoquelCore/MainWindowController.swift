@@ -322,7 +322,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     func focusPane(at index: Int) {
         guard panes.indices.contains(index) else { return }
         focusedIndex = index
-        for (i, pane) in panes.enumerated() { pane.setFocused(i == index) }
+        for (i, pane) in panes.enumerated() {
+            pane.setFocused(i == index, amongMany: panes.count > 1)
+        }
         panes[index].focus()
         updateWindowTitle()
     }
@@ -1548,7 +1550,9 @@ extension MainWindowController: PaneDelegate {
             return
         }
         focusedIndex = index
-        for (i, p) in panes.enumerated() { p.setFocused(i == index) }
+        for (i, p) in panes.enumerated() {
+            p.setFocused(i == index, amongMany: panes.count > 1)
+        }
         updateWindowTitle()
     }
 
