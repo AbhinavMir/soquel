@@ -43,8 +43,11 @@ enum Prefs {
         d.set(nil, forKey: "sortOrder")
     }
 
+    /// Off. Grouping folders above files means the sort only applies inside
+    /// each group, so "newest first" shows the newest folder and the newest
+    /// file separately rather than the newest thing.
     static var foldersFirst: Bool {
-        get { d.object(forKey: "foldersFirst") as? Bool ?? true }
+        get { d.object(forKey: "foldersFirst") as? Bool ?? false }
         set { d.set(newValue, forKey: "foldersFirst") }
     }
 

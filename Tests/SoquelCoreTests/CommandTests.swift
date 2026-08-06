@@ -135,6 +135,13 @@ final class SortOrderTests: XCTestCase {
         XCTAssertEqual(SortOrder.default.primary?.ascending, false)
     }
 
+    /// Grouping folders above files applies the sort inside each group, so the
+    /// newest thing would not be at the top — it would be the newest folder,
+    /// then much further down the newest file.
+    func testFoldersAreNotGroupedByDefault() {
+        XCTAssertFalse(Prefs.foldersFirst)
+    }
+
     func testSecondaryKeysBreakTiesInOrder() {
         var order = SortOrder(descriptors: [SortDescriptorSpec(key: .kind, ascending: true)])
         order.addSecondary(.size)
