@@ -18,6 +18,9 @@ protocol FileListDelegate: AnyObject {
     /// Returns true when the column browser found a match, so a keystroke that
     /// did something is not also passed on.
     func fileList(_ list: FileListViewController, typeSelectInColumns prefix: String) -> Bool
+    /// Puts a rename editor over the name in the column browser. Returns false
+    /// when the file is not on screen there, so the caller can fall back.
+    func fileList(_ list: FileListViewController, renameInColumns url: URL) -> Bool
 }
 
 /// Table subclass that routes navigation and single-key commands before
@@ -49,6 +52,18 @@ final class FileTableView: NSTableView {
         let ok = super.becomeFirstResponder()
         if ok { commandTarget?.didBecomeFocused() }
         return ok
+    }
+
+    /// A table refuses to hand first responder to a control unless a double
+    /// click asked for it, and `editColumn(_:row:with:select:)` passes no event
+    /// at all. Return renamed nothing for exactly that reason: the editor was
+    /// asked for and declined. The name field is the only editable control in a
+    /// row, so allowing it is enough.
+    override func validateProposedFirstResponder(
+        _ responder: NSResponder, for event: NSEvent?
+    ) -> Bool {
+        if let field = responder as? NSTextField, field.isEditable { return true }
+        return super.validateProposedFirstResponder(responder, for: event)
     }
 }
 
@@ -83,7 +98,6 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     static let filterBarHeight: CGFloat = 30
     private var filterField: NSSearchField!
     private var emptyLabel: NSTextField!
-    private var renamingURL: URL?
 
     private var backgroundView: BackgroundImageView!
     private var collectionView: FileCollectionView!
@@ -500,7 +514,8 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self else { return }
             self.refreshPending = false
-            if self.renamingURL != nil {
+            // A reload under an open editor would pull the row out from under it.
+            if self.renameEditor.isEditing {
                 self.scheduleRefresh()
                 return
             }
@@ -1138,70 +1153,91 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
     }
 
+    /// The editor that renames in place, shared by every view.
+    let renameEditor = InlineRenameEditor()
+
     func beginRename() {
-        // Only the list view has an editable cell to put an editor in; the other
-        // two views rename through a sheet rather than not at all.
-        guard mode == .list else {
-            renameThroughSheet()
+        guard let target = selectedURLs().first else {
+            Log.debug(.ui, "rename: nothing selected")
             return
         }
-        let row = tableView.selectedRow
-        guard row >= 0, items.indices.contains(row) else { return }
-        // Where the name column actually sits, not where it started: columns
-        // can be dragged, and editing column 0 after a reorder puts the editor
-        // on the size or the date.
-        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("name"))
-        guard index >= 0 else { return }
-        guard let cell = tableView.view(atColumn: index, row: row, makeIfNecessary: true) as? NSTableCellView,
-              let field = cell.textField else { return }
-        // Remember the file, not the row: a re-sort or refresh while the editor
-        // is open would otherwise commit the new name to whatever now sits there.
-        renamingURL = items[row].url
-        // The name is drawn by a label, which is not selectable, and a table
-        // will not open an editor on a field it cannot select.
-        field.isSelectable = true
-        field.isEditable = true
-        field.delegate = self
-        tableView.editColumn(index, row: row, with: nil, select: true)
-
-        // Selecting the name without its extension, as the sheet does and as
-        // Finder does. Selecting the whole thing invites an accidental
-        // extension change on the next keystroke.
-        let name = items[row].url.lastPathComponent
-        let base = items[row].url.deletingPathExtension().lastPathComponent
-        if base.count < name.count, let editor = field.currentEditor() {
-            editor.selectedRange = NSRange(location: 0, length: base.count)
+        switch mode {
+        case .list:
+            beginRenameInList(target)
+        case .icon:
+            beginRenameInIcons(target)
+        case .column:
+            // The columns are the delegate's, so it puts the editor up.
+            if delegate?.fileList(self, renameInColumns: target) != true { renameThroughSheet() }
         }
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField, field !== filterField else { return }
-        guard let original = renamingURL else { return }
-        renamingURL = nil
-        field.isEditable = false
-        field.isSelectable = false
+    /// Over the name cell, at the name column wherever it has been dragged to.
+    private func beginRenameInList(_ target: URL) {
+        let row = tableView.selectedRow
+        guard row >= 0, items.indices.contains(row) else {
+            Log.debug(.ui, "rename: no row, selectedRow \(tableView.selectedRow) of \(items.count)")
+            return
+        }
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("name"))
+        guard index >= 0 else {
+            Log.debug(.ui, "rename: no name column")
+            return
+        }
+        // The cell's own frame, not the column's: the name starts after the
+        // icon, and an editor over the icon would look wrong and cover it.
+        var rect = tableView.frameOfCell(atColumn: index, row: row)
+        if let cell = tableView.view(atColumn: index, row: row, makeIfNecessary: true) as? NSTableCellView,
+           let label = cell.textField {
+            rect = label.convert(label.bounds, to: tableView)
+            rect = rect.insetBy(dx: -2, dy: -1)
+        }
+        present(target, in: tableView, rect: rect, alignment: .left)
+    }
 
-        let oldName = original.lastPathComponent
-        let newName = field.stringValue
-        guard newName != oldName else { return }
+    /// Over the tile's label, which is centred under the thumbnail.
+    private func beginRenameInIcons(_ target: URL) {
+        guard let path = collectionView.selectionIndexPaths.first,
+              let item = collectionView.item(at: path) else {
+            Log.debug(.ui, "rename: no tile for the selection")
+            return
+        }
+        let tile = item.view
+        var rect = tile.convert(tile.bounds, to: collectionView)
+        // The label sits under the thumbnail, which takes 62% of the width.
+        let labelTop = rect.height * 0.62 + 11
+        rect = NSRect(x: rect.minX + 2, y: rect.minY + labelTop,
+                      width: rect.width - 4, height: 20)
+        present(target, in: collectionView, rect: rect, alignment: .center)
+    }
 
+    private func present(_ target: URL, in host: NSView, rect: NSRect, alignment: NSTextAlignment) {
+        renameEditor.begin(
+            name: target.lastPathComponent, in: host, rect: rect, alignment: alignment
+        ) { [weak self] newName in
+            self?.applyRename(of: target, to: newName)
+        }
+    }
+
+    /// Renames the file the editor was opened on, whatever has happened to the
+    /// rows underneath in the meantime.
+    func applyRename(of original: URL, to newName: String) {
+        guard newName != original.lastPathComponent else { return }
         guard FileManager.default.fileExists(atPath: original.path) else {
-            field.stringValue = oldName
             reload()
             return
         }
-
         if let error = validateFileName(newName) {
-            field.stringValue = oldName
             showError(error)
             return
         }
         do {
             let newURL = try OperationEngine.shared.rename(original, to: newName)
             UndoStack.shared.pushRename(from: original, to: newURL)
+            setColumnSelection([newURL])
             reload(selecting: newURL)
+            delegate?.fileList(self, didChangeSelection: [newURL])
         } catch {
-            field.stringValue = oldName
             showError(error)
         }
     }

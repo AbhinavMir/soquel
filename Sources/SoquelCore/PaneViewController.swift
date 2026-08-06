@@ -559,6 +559,16 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         columnBrowser.selectAllInDeepestColumn()
     }
 
+    func fileList(_ list: FileListViewController, renameInColumns url: URL) -> Bool {
+        guard let placement = columnBrowser.nameRect(for: url) else { return false }
+        list.renameEditor.begin(
+            name: url.lastPathComponent, in: placement.host, rect: placement.rect
+        ) { [weak list] newName in
+            list?.applyRename(of: url, to: newName)
+        }
+        return true
+    }
+
     func fileList(_ list: FileListViewController, typeSelectInColumns prefix: String) -> Bool {
         columnBrowser.typeSelect(prefix: prefix)
     }

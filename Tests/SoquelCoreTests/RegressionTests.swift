@@ -498,4 +498,30 @@ final class RegressionTests: XCTestCase {
         XCTAssertTrue(ids.contains("name"))
     }
 
+
+    /// The first keystroke should replace the name and leave the type alone.
+    func testRenameSelectsTheNameWithoutItsExtension() {
+        XCTAssertEqual(InlineRenameEditor.selection(for: "notes.txt"), NSRange(location: 0, length: 5))
+        XCTAssertEqual(InlineRenameEditor.selection(for: "archive.tar.gz"), NSRange(location: 0, length: 11))
+    }
+
+    /// A dotfile is all extension by NSString's reckoning, and selecting
+    /// nothing would leave the caret in a field that looks unresponsive.
+    func testRenameSelectsTheWholeNameWhenThereIsNoBase() {
+        XCTAssertEqual(InlineRenameEditor.selection(for: ".gitignore"), NSRange(location: 0, length: 10))
+        XCTAssertEqual(InlineRenameEditor.selection(for: "README"), NSRange(location: 0, length: 6))
+    }
+
+    /// An editor over a name near the right edge has to stay inside the view,
+    /// or the end of the name is off screen while it is being typed.
+    func testRenameEditorStaysInsideItsView() {
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        let cell = NSRect(x: 240, y: 10, width: 50, height: 17)
+        let frame = InlineRenameEditor.frame(
+            for: cell, in: host, fitting: String(repeating: "x", count: 80), font: nil
+        )
+        XCTAssertLessThanOrEqual(frame.maxX, host.bounds.width)
+        XCTAssertGreaterThanOrEqual(frame.width, cell.width)
+    }
+
 }

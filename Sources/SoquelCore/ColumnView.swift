@@ -343,6 +343,23 @@ extension ColumnBrowserView {
         level.table.selectAll(nil)
     }
 
+    /// The rect of a file's name in whichever column is showing it, in that
+    /// column's own table. Nil when the file is not on screen.
+    func nameRect(for url: URL) -> (host: NSView, rect: NSRect)? {
+        for index in levels.indices.reversed() {
+            let rows = items(at: index)
+            guard let row = rows.firstIndex(where: { $0.url == url }) else { continue }
+            let table = levels[index].table
+            var rect = table.frameOfCell(atColumn: 0, row: row)
+            if let cell = table.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView,
+               let label = cell.textField {
+                rect = label.convert(label.bounds, to: table).insetBy(dx: -2, dy: -1)
+            }
+            return (table, rect)
+        }
+        return nil
+    }
+
     /// Re-reads the deepest column, for after a trash or a rename.
     func refreshDeepest() {
         guard let url = levels.last?.url else { return }
