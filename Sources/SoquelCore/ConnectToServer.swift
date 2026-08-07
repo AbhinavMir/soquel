@@ -186,18 +186,20 @@ final class ConnectToServerController: NSObject {
             NSSound.beep()
 
         case .success(let address):
-            if let problem = RemoteLocations.check(address) {
-                status.stringValue = problem.localizedDescription
-                NSSound.beep()
-                return
-            }
-            // SFTP has no mount helper on macOS and needs none: it opens in a
-            // browser window driven by the ssh already on the system, rather
-            // than sending the user off to install a kernel extension.
+            // Before check(), not after. check() answers "can this be mounted",
+            // and the answer for SFTP is no and always will be — it opens in a
+            // browser window instead. Asking first meant the refusal was
+            // printed and the browser never ran.
             if address.scheme == .sftp, let location = sftpLocation(from: address) {
                 let host = panel?.sheetParent
                 close()
                 SFTPBrowserController.open(location, over: host)
+                return
+            }
+
+            if let problem = RemoteLocations.check(address) {
+                status.stringValue = problem.localizedDescription
+                NSSound.beep()
                 return
             }
 

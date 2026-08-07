@@ -179,4 +179,19 @@ final class SFTPTests: XCTestCase {
         }
     }
 
+
+    /// The refusal printed "macOS cannot mount sftp:// on its own" and stopped,
+    /// because check() ran before the branch that opens the browser. SFTP is
+    /// never mountable, so it must never be asked.
+    func testSFTPIsNotPutThroughTheMountCheck() {
+        guard case .success(let address) = RemoteLocations.parse("sftp://me@host/srv") else {
+            return XCTFail("should parse")
+        }
+        // check() still refuses it, which is correct and is exactly why the
+        // browser branch has to come first.
+        XCTAssertNotNil(RemoteLocations.check(address, sshfsPath: nil))
+        XCTAssertEqual(address.scheme, .sftp)
+        XCTAssertFalse(address.scheme.isNative)
+    }
+
 }
