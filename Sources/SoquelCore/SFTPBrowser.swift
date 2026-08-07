@@ -18,7 +18,9 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
     /// Where the user has been, so Up has somewhere to go.
     private var history: [String] = []
 
-    private static var live: SFTPBrowserController?
+    /// Every open browser. A single slot meant opening a second window
+    /// released the first while it was still on screen.
+    private static var live: Set<SFTPBrowserController> = []
 
     static let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -30,7 +32,7 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
     /// wants one. A host already in the SSH agent connects without a prompt.
     static func open(_ location: SFTPSession.Location, over host: NSWindow?) {
         let controller = SFTPBrowserController()
-        live = controller
+        live.insert(controller)
         controller.begin(location, over: host)
     }
 
@@ -47,12 +49,29 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
         connect(session: session, password: nil) { [weak self] failed in
             guard let self else { return }
             guard failed else { self.load(self.path); return }
-            guard let password = self.askForPassword(user: location.user, host: location.host) else {
-                self.close()
-                return
+            // The window is still being presented at this point. Running a
+            // modal on top of a window mid-animation is what put an
+            // _NSWindowTransformAnimation in an autorelease pool that outlived
+            // the window it was animating.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.promptAndConnect(session: session, location: location)
             }
-            self.setStatus("Connecting to \(location.host)…", isError: false)
-            self.connect(session: session, password: password) { stillFailed in
+        }
+    }
+
+    private func promptAndConnect(session: SFTPSession, location: SFTPSession.Location) {
+        switch askForPassword(user: location.user, host: location.host) {
+        case .cancelled:
+            close()
+        case .blank:
+            // Not a cancel. Closing the window here was the crash: it tore the
+            // window down from inside the alert's own dismissal.
+            setStatus("No password entered.", isError: true)
+        case .entered(let password):
+            setStatus("Connecting to \(location.host)…", isError: false)
+            connect(session: session, password: password) { [weak self] stillFailed in
+                guard let self else { return }
                 if stillFailed {
                     self.setStatus("That username or password was refused.", isError: true)
                 } else {
@@ -88,7 +107,17 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
         }
     }
 
-    private func askForPassword(user: String, host: String) -> String? {
+    /// Cancel and an empty box are different answers. Treating both as nil
+    /// closed the window from inside the alert's own teardown, which
+    /// deallocated it while AppKit was still animating it — a segfault in
+    /// `_NSWindowTransformAnimation dealloc`.
+    enum PasswordAnswer {
+        case entered(String)
+        case blank
+        case cancelled
+    }
+
+    private func askForPassword(user: String, host: String) -> PasswordAnswer {
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         let alert = NSAlert()
         alert.messageText = "Password for \(user)@\(host)"
@@ -97,8 +126,8 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        return field.stringValue.isEmpty ? nil : field.stringValue
+        guard alert.runModal() == .alertFirstButtonReturn else { return .cancelled }
+        return field.stringValue.isEmpty ? .blank : .entered(field.stringValue)
     }
 
     // MARK: - Listing
@@ -289,8 +318,10 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
         status.textColor = isError ? Theme.danger : .secondaryLabelColor
     }
 
+    /// Closing a window from inside a modal's teardown destroys it while
+    /// AppKit is still animating it. The next runloop turn is safe.
     private func close() {
-        window?.close()
+        DispatchQueue.main.async { [weak self] in self?.window?.close() }
     }
 
     // MARK: - Rows
@@ -352,6 +383,9 @@ extension SFTPBrowserController: NSWindowDelegate {
         let session = self.session
         self.session = nil
         DispatchQueue.global(qos: .utility).async { session?.disconnect() }
-        SFTPBrowserController.live = nil
+        // Not during the notification: releasing the last reference here
+        // deallocates this object, and its window, while AppKit is still
+        // inside the close it is telling us about.
+        DispatchQueue.main.async { SFTPBrowserController.live.remove(self) }
     }
 }
