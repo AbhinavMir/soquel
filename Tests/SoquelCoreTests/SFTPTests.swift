@@ -148,4 +148,35 @@ final class SFTPTests: XCTestCase {
         XCTAssertEqual(CloudDrives.displayName(for: "Box"), "Box")
     }
 
+
+    /// Nobody should have to know a URL scheme to reach a server they already
+    /// ssh into. An address with an @ and no scheme means sftp.
+    func testAnAddressWithAnAtSignMeansSFTP() {
+        XCTAssertEqual(ConnectToServerController.completing("me@host.com"), "sftp://me@host.com")
+        XCTAssertEqual(
+            ConnectToServerController.completing("  testclaims@34.71.244.136  "),
+            "sftp://testclaims@34.71.244.136"
+        )
+    }
+
+    /// A scheme that was typed is respected, never rewritten. This is the bug
+    /// that turned sftp:// into https:// and hung on a WebDAV mount.
+    func testATypedSchemeIsLeftAlone() {
+        XCTAssertEqual(
+            ConnectToServerController.completing("smb://server/share"), "smb://server/share"
+        )
+        XCTAssertEqual(
+            ConnectToServerController.completing("sftp://me@host"), "sftp://me@host"
+        )
+    }
+
+    /// A bare hostname could be any of five protocols, so it is still refused
+    /// rather than guessed at.
+    func testABareHostnameIsStillNotGuessedAt() {
+        XCTAssertEqual(ConnectToServerController.completing("server.com"), "server.com")
+        if case .success = RemoteLocations.parse(ConnectToServerController.completing("server.com")) {
+            XCTFail("a bare hostname should not parse")
+        }
+    }
+
 }

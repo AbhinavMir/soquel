@@ -46,7 +46,7 @@ final class ConnectToServerController: NSObject {
         prompt.translatesAutoresizingMaskIntoConstraints = false
 
         field = NSTextField()
-        field.placeholderString = "smb://server/share"
+        field.placeholderString = "me@server.com"
         field.font = Theme.path
         field.target = self
         field.action = #selector(connect)
@@ -58,11 +58,11 @@ final class ConnectToServerController: NSObject {
         recentList.translatesAutoresizingMaskIntoConstraints = false
         reloadRecents()
 
-        // Naming the protocols is the difference between "it does not work"
-        // and "that one needs macFUSE".
+        // One line, not a protocol table. Someone who needs smb:// already
+        // knows to type it; someone connecting to a server they ssh into
+        // should not have to learn a scheme first.
         let supported = NSTextField(labelWithString:
-            "smb:// · afp:// · nfs:// · https:// and http:// for WebDAV · ftp:// (read-only). "
-            + "sftp:// needs macFUSE and sshfs.")
+            "Or smb:// · afp:// · nfs:// · https:// for WebDAV · ftp://")
         supported.font = Theme.rowSecondary
         supported.textColor = .tertiaryLabelColor
         supported.lineBreakMode = .byWordWrapping
@@ -154,6 +154,18 @@ final class ConnectToServerController: NSObject {
         owner.endSheet(panel)
     }
 
+    /// Fills in the scheme nobody should have to type.
+    ///
+    /// An address with an `@` in it and no scheme is what a person types when
+    /// they mean the server they ssh into, so it is read as sftp. Anything
+    /// else is left alone and fails with a message naming the schemes.
+    static func completing(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("://") else { return trimmed }
+        guard trimmed.contains("@") else { return trimmed }
+        return "sftp://" + trimmed
+    }
+
     /// SFTP needs a username; the browser has nobody to log in as without one.
     /// The address bar accepts `sftp://host` all the same, so the logged-in
     /// account stands in, which is what ssh itself does.
@@ -168,7 +180,7 @@ final class ConnectToServerController: NSObject {
     @objc private func connect() {
         status.stringValue = ""
 
-        switch RemoteLocations.parse(field.stringValue) {
+        switch RemoteLocations.parse(Self.completing(field.stringValue)) {
         case .failure(let error):
             status.stringValue = error.localizedDescription
             NSSound.beep()

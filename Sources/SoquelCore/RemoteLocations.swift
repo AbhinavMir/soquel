@@ -89,12 +89,10 @@ enum RemoteLocations {
             case .missingHost:
                 return "The address has no server name."
             case .needsFUSE(let scheme):
-                // Naming the install is the difference between a dead end and
-                // a next step. macFUSE is a kernel extension, so it cannot be
-                // shipped inside an application bundle.
-                return "\(scheme.title) needs macFUSE and sshfs — macOS cannot mount "
-                    + "\(scheme.rawValue):// on its own. Install with: "
-                    + "brew install --cask macfuse && brew install sshfs"
+                // Nothing to install any more: SFTP opens in a browser window
+                // driven by the ssh already on the system. This is left for
+                // any other scheme that reaches it.
+                return "macOS cannot mount \(scheme.rawValue):// on its own."
             }
         }
     }

@@ -103,13 +103,17 @@ final class RemoteLocationTests: XCTestCase {
         }
     }
 
-    /// Without macFUSE the answer is "install this", not a mount that fails
-    /// with something unhelpful.
-    func testSFTPWithoutSSHFSIsRefusedWithAReason() throws {
+    /// This used to assert the answer was "go and install macFUSE". It is not
+    /// any more: SFTP opens in a browser window over the ssh already on the
+    /// system, so nothing is refused and nothing has to be installed. The
+    /// error stays for any other scheme that has no mount helper.
+    func testSFTPWithoutSSHFSNoLongerTellsAnyoneToInstallAnything() throws {
         let sftp = try XCTUnwrap(address("sftp://host/home"))
         let problem = RemoteLocations.check(sftp, sshfsPath: nil)
-        XCTAssertEqual(problem, .needsFUSE(.sftp))
-        XCTAssertTrue(problem?.localizedDescription.contains("macFUSE") ?? false)
+        XCTAssertFalse(
+            problem?.localizedDescription.contains("macFUSE") ?? false,
+            "nothing needs installing for SFTP any more"
+        )
     }
 
     func testSFTPWithSSHFSIsAllowed() throws {
