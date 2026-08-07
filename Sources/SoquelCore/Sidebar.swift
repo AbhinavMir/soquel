@@ -602,14 +602,13 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     /// Whether a reveal should move the selected row.
     ///
-    /// It should when the tree is catching up with a pane the user moved some
-    /// other way — a double-click in the file list, Back, the path bar. It
-    /// should not when the pane moved because a pinned folder or a volume was
-    /// clicked in this very sidebar: that row is the selection, and replacing
-    /// it with the tree's node for the same folder takes the highlight off
-    /// what was chosen and drops it somewhere the user was not looking.
+    /// Only when the tree itself was what moved the pane. Anything else — a
+    /// double-click in the file list, Back, the path bar, a pinned folder —
+    /// leaves the sidebar exactly where it was. It used to follow along and
+    /// scroll the clicked folder to the top, which moved the highlight out
+    /// from under whatever the user was looking at.
     static func revealMovesSelection(navigatedFrom origin: SidebarNode.Kind?) -> Bool {
-        guard let origin else { return true }
+        guard let origin else { return false }
         switch origin {
         case .treeFolder, .treeFile, .treeMore: return true
         case .pinned, .volume, .savedSearch, .userGroup, .systemGroup: return false
@@ -791,7 +790,12 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         suppressingSelectionReports {
             outline.selectRowIndexes([row], byExtendingSelection: false)
         }
-        outline.scrollRowToVisible(row)
+        // Only scroll for a row that is genuinely off screen, and never for a
+        // pane the sidebar did not move. Scrolling unconditionally is what put
+        // the opened folder at the top on every navigation.
+        if !outline.visibleRect.intersects(outline.rect(ofRow: row)) {
+            outline.scrollRowToVisible(row)
+        }
     }
 
     func outlineViewItemDidCollapse(_ notification: Notification) {

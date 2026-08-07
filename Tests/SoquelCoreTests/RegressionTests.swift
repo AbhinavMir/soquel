@@ -265,12 +265,16 @@ final class RegressionTests: XCTestCase {
         XCTAssertFalse(SidebarViewController.revealMovesSelection(navigatedFrom: .volume(volume, "Backup")))
     }
 
-    /// The tree must still follow a pane the user moved some other way — a
-    /// double-click in the file list, Back, or the path bar — which arrives
-    /// with no sidebar row as its origin.
-    func testRevealStillFollowsAPaneMovedFromOutsideTheSidebar() {
-        XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: nil))
+    /// This used to assert the opposite. A pane moved from outside the sidebar
+    /// — a double-click in the file list, Back, the path bar — arrives with no
+    /// origin, and following it moved the highlight and scrolled the opened
+    /// folder to the top of the sidebar. Nothing the user did was in the
+    /// sidebar, so nothing in the sidebar should move.
+    func testRevealNoLongerFollowsAPaneMovedFromOutsideTheSidebar() {
+        XCTAssertFalse(SidebarViewController.revealMovesSelection(navigatedFrom: nil))
 
+        // A click in the tree itself still moves it: that is the tree's own
+        // selection being kept in step with the pane it just opened.
         let folder = URL(fileURLWithPath: "/soquel-reveal/home", isDirectory: true)
         XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: .treeFolder(folder)))
     }
@@ -469,14 +473,15 @@ final class RegressionTests: XCTestCase {
                        "the highlight must still stay on the favourite three levels down")
     }
 
-    /// A walk that did not start from a sidebar click still moves the selection,
-    /// however many levels it takes.
-    func testAWalkFromElsewhereStillMovesTheSelectionAtEveryDepth() {
+    /// A walk that did not start from a sidebar click leaves the selection
+    /// alone, however many levels down it goes. The origin has to survive the
+    /// whole walk for that to hold — it re-enters once per background load.
+    func testAWalkFromElsewhereLeavesTheSelectionAloneAtEveryDepth() {
         var origin = SidebarViewController.carriedOrigin(fresh: true, clicked: nil, carried: nil)
         for _ in 0..<3 {
             origin = SidebarViewController.carriedOrigin(fresh: false, clicked: nil, carried: origin)
         }
-        XCTAssertTrue(SidebarViewController.revealMovesSelection(navigatedFrom: origin))
+        XCTAssertFalse(SidebarViewController.revealMovesSelection(navigatedFrom: origin))
     }
 
     /// A new click part-way through an old walk wins: it is a fresh walk.
@@ -572,6 +577,30 @@ final class RegressionTests: XCTestCase {
         var open = SidebarViewController.remembering("/a", expanded: true, in: [])
         open = SidebarViewController.remembering("/a", expanded: true, in: open)
         XCTAssertEqual(open, ["/a"])
+    }
+
+
+    /// Selecting the Themes tab made the whole settings window wider, because a
+    /// tab view sizes to its widest pane and a wrapping label with no width to
+    /// wrap inside asks for all of it. Every pane is now pinned to the width it
+    /// is given.
+    func testASettingsPaneCannotMakeTheWindowWider() {
+        let greedy = NSView()
+        let label = NSTextField(labelWithString: String(repeating: "wide ", count: 200))
+        label.lineBreakMode = .byWordWrapping
+        label.translatesAutoresizingMaskIntoConstraints = false
+        greedy.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: greedy.topAnchor),
+            label.leadingAnchor.constraint(equalTo: greedy.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: greedy.trailingAnchor),
+            label.bottomAnchor.constraint(equalTo: greedy.bottomAnchor),
+        ])
+
+        let container = SettingsWindowController.paneContainer(greedy)
+        container.frame = NSRect(x: 0, y: 0, width: 620, height: 400)
+        container.layoutSubtreeIfNeeded()
+        XCTAssertLessThanOrEqual(greedy.frame.width, 620)
     }
 
 }

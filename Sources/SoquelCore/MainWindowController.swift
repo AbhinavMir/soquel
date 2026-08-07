@@ -1639,10 +1639,9 @@ extension MainWindowController: SidebarDelegate {
     func sidebar(_ sidebar: SidebarViewController, didSelect url: URL) {
         debugLog("sidebar didSelect \(url.path)")
         focusedList?.navigate(to: url)
-        // Typing after picking a folder means "find this file in it", not
-        // "jump to another favourite". The keyboard follows the folder that
-        // was just opened.
-        focusedList?.focusTable()
+        // Focus stays in the sidebar. It used to jump to the file list, which
+        // meant the arrow keys never reached the sidebar at all: one click and
+        // the keyboard had already left.
     }
 
     func sidebar(_ sidebar: SidebarViewController, revealFile url: URL) {

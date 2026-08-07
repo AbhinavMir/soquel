@@ -1,5 +1,14 @@
 import AppKit
 
+/// A window that closes on Escape.
+///
+/// AppKit only routes Escape to a button wired as the cancel button, and a
+/// settings window has no Cancel — there is nothing to cancel, the changes are
+/// already applied. So the key is handled here instead.
+final class EscapableWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) { close() }
+}
+
 /// Preferences window. Appearance edits the colour slots with a real colour
 /// well, Keyboard remaps any command's shortcut, and Applications chooses what
 /// opens each kind of file.
@@ -9,7 +18,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// `init()`, and `SettingsWindowController()` silently resolved to the
     /// inherited one — so the window was never created and ⌘, did nothing.
     static let shared: SettingsWindowController = {
-        let window = NSWindow(
+        let window = EscapableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 660, height: 720),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
@@ -63,27 +72,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let appearance = NSTabViewItem(identifier: "appearance")
         appearance.label = "Appearance"
-        appearance.view = AppearanceSettingsView()
+        appearance.view = Self.paneContainer(AppearanceSettingsView())
 
         let keyboard = NSTabViewItem(identifier: "keyboard")
         keyboard.label = "Keyboard"
-        keyboard.view = KeyboardSettingsView()
+        keyboard.view = Self.paneContainer(KeyboardSettingsView())
 
         let themes = NSTabViewItem(identifier: "themes")
         themes.label = "Themes"
-        themes.view = ThemeSettingsView()
+        themes.view = Self.paneContainer(ThemeSettingsView())
 
         let applications = NSTabViewItem(identifier: "applications")
         applications.label = "Applications"
-        applications.view = ApplicationSettingsView()
+        applications.view = Self.paneContainer(ApplicationSettingsView())
 
         let windowPane = NSTabViewItem(identifier: "window")
         windowPane.label = "Window"
-        windowPane.view = WindowSettingsView()
+        windowPane.view = Self.paneContainer(WindowSettingsView())
 
         let updates = NSTabViewItem(identifier: "updates")
         updates.label = "Updates"
-        updates.view = UpdateSettingsView()
+        updates.view = Self.paneContainer(UpdateSettingsView())
 
         tabs.addTabViewItem(appearance)
         tabs.addTabViewItem(windowPane)
@@ -137,6 +146,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             tabs.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
         ])
         window?.contentView = root
+    }
+
+    /// Wraps a settings pane so it can never make the window wider.
+    ///
+    /// A tab view takes its width from the widest pane in it, so one label
+    /// that wraps without a width to wrap inside pushed the whole window out
+    /// every time the Themes tab was selected. Pinning the pane to the scroll
+    /// view's width gives every label something finite to lay out against, and
+    /// a pane taller than the window scrolls rather than being cut off.
+    static func paneContainer(_ pane: NSView) -> NSView {
+        pane.translatesAutoresizingMaskIntoConstraints = false
+
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.documentView = pane
+
+        NSLayoutConstraint.activate([
+            pane.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            pane.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            pane.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
+            // Width only. Pinning the bottom too would stop it scrolling.
+            pane.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+        ])
+        return scroll
     }
 
     /// Opens the window on a named pane, for `SOQUEL_OPEN=settings:applications`.
