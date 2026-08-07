@@ -169,10 +169,10 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.6/Soquel-1.0.6.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.7/Soquel-1.0.7.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note">Version 1.0.6 · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note"><a href="#changelog">Version 1.0.7</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
 
 </header>
 
@@ -561,140 +561,136 @@ footer a { color: var(--faint); }
 
   <div class="rel">
     <div class="rel-head">
+      <p class="rel-v">1.0.7</p>
+      <span class="rel-d">7 Aug 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.7">notes</a>
+    </div>
+    <ul>
+      <li>Command palette moved from <kbd>⌘K</kbd> to <kbd>⇧⌘P</kbd>. <kbd>⌘K</kbd> is unbound.</li>
+      <li>SFTP and cloud drive entries added to the feature search; they shipped in 1.0.6 unlisted.</li>
+      <li>Changelog added to this page.</li>
+    </ul>
+  </div>
+
+  <div class="rel">
+    <div class="rel-head">
       <p class="rel-v">1.0.6</p>
-      <span class="rel-d">6 August 2026</span>
+      <span class="rel-d">6 Aug 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.6">notes</a>
     </div>
-    <p><strong>SFTP with nothing to install.</strong> Type what you would type for ssh —
-      <code>me@server.com</code>, no scheme — and the server opens in a window. It uses the
-      <code>sftp</code> already on every Mac, so there is no macFUSE, no sshpass and no kernel
-      extension. The password goes to ssh over a pipe rather than the command line, and one
-      connection is held open so browsing does not re-handshake. It is not a mount: other
-      applications cannot see these files, and opening one downloads it first.</p>
-    <p><strong>Cloud drives in the sidebar.</strong> iCloud Drive, Google Drive, Dropbox,
-      OneDrive and Box. They were always ordinary folders on disk; there was just nowhere
-      to click.</p>
     <ul>
-      <li>An empty password crashed the application. Cancel and an empty box were the same
-        answer, so the window was torn down from inside the alert that was still animating it.</li>
-      <li>SFTP was refused by the mount check before it could open. It is not a mount, so it
-        is no longer asked.</li>
-      <li>The folder tree forgot which folders were open. Only sidebar groups recorded their
-        state; tree folders had nowhere to record it.</li>
-      <li>Opening a folder scrolled the sidebar and moved its highlight. Nothing outside the
-        sidebar moves the sidebar now.</li>
-      <li>The arrow keys did nothing in the sidebar: one click and focus had already left
-        for the file list.</li>
-      <li>Selecting the Themes tab made the Settings window wider every time.</li>
-      <li>Escape did not close Settings.</li>
-      <li>The command palette is <kbd>⇧⌘P</kbd>, as in every other application that has one.</li>
+      <li>SFTP over <code>/usr/bin/sftp</code>. No macFUSE, no sshpass, no kernel extension.</li>
+      <li>SFTP password passed via <code>SSH_ASKPASS</code> pipe, not argv. Not stored.</li>
+      <li>SFTP holds one <code>ControlMaster</code> connection; later operations skip the handshake.</li>
+      <li>SFTP is a browser window, not a mount. Other applications cannot see the files.</li>
+      <li>Connect to Server infers <code>sftp://</code> from <code>user@host</code>.</li>
+      <li>Sidebar lists iCloud Drive, and any provider under <code>~/Library/CloudStorage</code>.</li>
+      <li>Fixed: empty password segfaulted — window released inside the alert's dismissal.</li>
+      <li>Fixed: SFTP hit the mount check and was rejected before the browser opened.</li>
+      <li>Fixed: tree folder expansion was never persisted; only sidebar groups were.</li>
+      <li>Fixed: navigating a pane scrolled the sidebar and moved its selection.</li>
+      <li>Fixed: sidebar click called <code>focusTable()</code>, so arrow keys never reached the outline.</li>
+      <li>Fixed: Themes tab widened the Settings window. Panes are pinned to the tab view width.</li>
+      <li>Fixed: Escape did not close Settings.</li>
     </ul>
   </div>
 
   <div class="rel">
     <div class="rel-head">
       <p class="rel-v">1.0.5</p>
-      <span class="rel-d">6 August 2026</span>
+      <span class="rel-d">6 Aug 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.5">notes</a>
     </div>
-    <p><strong>Renaming in place, the way Finder does it.</strong> Return opens an editor over
-      the name itself in list, icon and column view alike. The name is selected without its
-      extension, Return commits, Escape cancels, and clicking elsewhere commits.</p>
     <ul>
-      <li>Return renamed nothing in list view: the editor was opened on the Git column, which
-        has no text in it. The name column is now found by identifier, so dragging the headers
-        around cannot break it again.</li>
-      <li>The editor was see-through, so the old name and the row highlight showed through
-        the new one.</li>
-      <li>Committing rebuilt the rows inside the click that dismissed the editor, which closed
-        the parent column in the column browser.</li>
+      <li>Rename edits in place in list, icon and column view. Base name selected, extension excluded.</li>
+      <li>Return commits, Escape cancels, click elsewhere commits.</li>
+      <li>Fixed: <code>editColumn(0,…)</code> targeted the Git column, which has no text field. Name column now looked up by identifier.</li>
+      <li>Fixed: editor had no opaque background; row highlight and old name showed through.</li>
+      <li>Fixed: commit ran inside the dismissing click, collapsing parent columns in column view.</li>
+      <li>Fixed: editor frame grew from the cell origin, drawing half a row high.</li>
     </ul>
   </div>
 
   <div class="rel">
     <div class="rel-head">
       <p class="rel-v">1.0.4</p>
-      <span class="rel-d">6 August 2026</span>
+      <span class="rel-d">6 Aug 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.4">notes</a>
     </div>
-    <p><strong>Finder's own settings, read but never written.</strong> A folder Finder already
-      knows should be in icon view opens in icon view. Soquel does not write a
-      <code>.DS_Store</code> of its own, and Compress still leaves them out of the archive.</p>
     <ul>
-      <li><kbd>⌘A</kbd> selects everything, in every view.</li>
-      <li><kbd>⌘</kbd> and <kbd>⇧</kbd> click work in column view.</li>
-      <li>Columns and the column-view width drag, and stop at a width you can still read.</li>
-      <li>Icon view zooms.</li>
-      <li>HTML files preview as pages.</li>
-      <li>One filter box instead of two.</li>
+      <li>Reads <code>.DS_Store</code> for view mode, sort column and icon size. Never writes one.</li>
+      <li>Soquel's own per-folder settings take precedence over Finder's.</li>
+      <li><kbd>⌘A</kbd> in list, icon and column view.</li>
+      <li><kbd>⌘</kbd>-click and <kbd>⇧</kbd>-click in column view.</li>
+      <li>Column widths and column-view width draggable, clamped to a minimum.</li>
+      <li>Icon view zoom.</li>
+      <li>HTML preview via WKWebView.</li>
+      <li>Fixed: two filter fields were on screen at once.</li>
     </ul>
   </div>
 
   <div class="rel">
     <div class="rel-head">
       <p class="rel-v">1.0.3</p>
-      <span class="rel-d">5 August 2026</span>
+      <span class="rel-d">5 Aug 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.3">notes</a>
     </div>
-    <p><strong>The tab bar had never been visible in any build.</strong> The window extended its
-      content behind an opaque title bar, so the top 28 points of every pane — exactly where the
-      tab bar lives — sat underneath it. Tabs worked; there was nothing on screen to click.</p>
     <ul>
-      <li>Double-click did nothing, and Rename did nothing in list view: the pane asked its list
-        which view mode it was in before the list had been told.</li>
-      <li>Column view drew an empty pane, for the same reason.</li>
-      <li>The path bar wrote <code>//Applications</code>.</li>
-      <li>Newest first, and folders no longer forced above files.</li>
-      <li>Copy Path on <kbd>⌥⌘C</kbd>. Safari-style tabs. Compress without <code>.DS_Store</code>.</li>
-      <li>Themes install from a gist or a git repository, a repository so it can carry an image.
-        Air, Windows 95 and Platinum added. Window opacity applies to the window, not the
-        background image.</li>
-      <li>Settings are searchable.</li>
+      <li>Fixed: tab bar invisible in every build shipped. <code>.fullSizeContentView</code> put the top 28pt of each pane behind an opaque title bar.</li>
+      <li>Fixed: double-click and list-view rename did nothing. Pane read <code>Prefs.viewMode</code> while the list drew from its own mode.</li>
+      <li>Fixed: column view drew an empty pane, same cause.</li>
+      <li>Fixed: path bar emitted <code>//Applications</code>; a separator followed the root crumb.</li>
+      <li>Default sort is newest first. Folders no longer grouped above files.</li>
+      <li>Copy Path on <kbd>⌥⌘C</kbd>.</li>
+      <li>Compress excludes <code>.DS_Store</code>, <code>__MACOSX</code> and <code>._*</code>.</li>
+      <li>Themes install from a gist or a git repo. A repo can carry an image.</li>
+      <li>Window opacity applies to the window, not the background image.</li>
+      <li>Air, Windows 95 and Platinum themes.</li>
+      <li>Settings searchable.</li>
     </ul>
   </div>
 
   <div class="rel">
     <div class="rel-head">
       <p class="rel-v">1.0.2</p>
-      <span class="rel-d">3 August 2026</span>
+      <span class="rel-d">3 Aug 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.2">notes</a>
     </div>
-    <p>Eleven features from the research backlog.</p>
     <ul>
-      <li><strong>Find duplicates</strong> by content, grouping by size first and only hashing
-        where sizes collide. Finds duplicate folders too, so two copies of a project are one
-        row rather than a hundred pairs.</li>
-      <li><strong>Verified copy</strong> — checksums both ends and reports per-file pass or fail.</li>
-      <li><strong>Quick Look a folder</strong> — space on a folder shows what is inside it.</li>
-      <li><strong>Sync browsing</strong>, <strong>tags</strong>, <strong>real symlinks</strong>,
-        <strong>Show Package Contents</strong>, <strong>per-folder view settings</strong>,
-        <strong>transfer retry</strong>, <strong>Run a Command Here</strong>, and an
-        <strong>uninstaller</strong> that finds what an application left behind.</li>
-      <li>A warning before moving something to the Trash on a network volume.</li>
-      <li>An update check you have to turn on.</li>
+      <li>Duplicate finder. Groups by size, hashes only on collision. Detects duplicate folders, not just files.</li>
+      <li>Verified copy. Checksums both ends, reports per-file pass or fail. Off by default.</li>
+      <li>Quick Look on a folder shows its contents.</li>
+      <li>Sync browsing. Off by default.</li>
+      <li>Make Symlink — <code>ln -s</code>, relative when link and target share a parent.</li>
+      <li>Folder tree lists files, five then an overflow row.</li>
+      <li>Show Package Contents in a window over the pane.</li>
+      <li>Tags, per-folder view settings, transfer retry, Run a Command Here.</li>
+      <li>Uninstaller matches both <code>Name</code> and <code>com.vendor.Name</code> support folders.</li>
+      <li>Warning before trashing on a network volume.</li>
+      <li>Opt-in update check.</li>
     </ul>
   </div>
 
   <div class="rel">
     <div class="rel-head">
       <p class="rel-v">1.0.1</p>
-      <span class="rel-d">27 July 2026</span>
+      <span class="rel-d">27 Jul 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.1">notes</a>
     </div>
-    <p>The first public release. Thirty-eight bugs found by an adversarial sweep against the
-      code were fixed before it shipped. Seven of them lost data:</p>
+    <p>First public release. 38 issues from an adversarial sweep closed. Seven could lose data:</p>
     <ul>
-      <li>Running the test suite overwrote your colours.</li>
-      <li>Asking to look at <code>theme.json</code> rewrote it with the shipped palette and
-        dropped your background.</li>
-      <li>Folder sync would put a file where a folder was, deleting the tree, and report it as
-        one replaced file.</li>
-      <li>A replace deleted the destination before checking the replacement had landed.</li>
+      <li>Fixed: the test suite wrote over the user's colours.</li>
+      <li>Fixed: opening <code>theme.json</code> rewrote it with the shipped palette and dropped the background.</li>
+      <li>Fixed: folder sync wrote a file over a directory, deleting the tree, and reported one replaced file.</li>
+      <li>Fixed: replace deleted the destination before confirming the replacement landed.</li>
+      <li>Fixed: type-to-select only worked in list view — NSTableView implements it; nothing else did.</li>
+      <li>Fixed: thumbnail cancellation was a no-op; every generator ran to completion and was discarded.</li>
+      <li>Fixed: a failed regex reported "no matches" instead of an error.</li>
+      <li>Fixed: semantic search scoped to <code>~/Notes</code> returned hits from <code>~/Notes-archive</code>.</li>
+      <li>Fixed: disk map charged unreadable files zero bytes, so a protected folder read as empty.</li>
+      <li>Fixed: sidebar drops landed at the bottom regardless of target.</li>
+      <li><kbd>⇧⌘L</kbd> pins and unpins the current folder.</li>
     </ul>
-    <p>Two more made the application feel broken: typing a name only jumped to it in list view,
-      because NSTableView implements that itself and nothing else did; and cancelling a
-      thumbnail cancelled nothing, so scrolling ran a generator for every file it passed and
-      discarded the results.</p>
   </div>
 
 </div>
