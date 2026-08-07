@@ -1,29 +1,34 @@
 import XCTest
 @testable import SoquelCore
 
-/// Talks to a real server. Skipped unless SOQUEL_SFTP_HOST is set, so it never
-/// runs in an ordinary `swift test`.
+/// Talks to a real server. Skipped unless SOQUEL_SFTP_HOST is set.
 final class SFTPLiveTests: XCTestCase {
-    func testConnectAndList() throws {
+    /// Exactly what the browser window does: connect with no password first,
+    /// then with one, then list ".".
+    func testTheBrowsersOwnSequence() throws {
         let env = ProcessInfo.processInfo.environment
         guard let host = env["SOQUEL_SFTP_HOST"], let user = env["SOQUEL_SFTP_USER"] else {
             throw XCTSkip("no server configured")
         }
-        let session = SFTPSession(location: .init(user: user, host: host))
-        try session.connect(password: env["SOQUEL_SFTP_PASSWORD"])
-        XCTAssertTrue(session.isConnected, "master connection should be up")
+        let session = SFTPSession(location: .init(user: user, host: host, path: "."))
 
-        let top = try session.list(".")
-        print("LIVE: \(top.count) entries at top level")
-        for entry in top { print("LIVE:   \(entry.isDirectory ? "dir " : "file") \(entry.name)") }
-
-        let outgoing = try session.list("outgoing")
-        print("LIVE: \(outgoing.count) entries in outgoing")
-        for entry in outgoing.prefix(3) {
-            print("LIVE:   \(entry.name) — \(entry.size) bytes — \(entry.modified.map(String.init(describing:)) ?? "no date")")
+        // Step 1, as the window does: try without a password.
+        var firstFailed = false
+        do { try session.connect(password: nil) } catch {
+            firstFailed = true
+            print("LIVE: keyless attempt failed as expected: \(error)")
         }
-        XCTAssertGreaterThan(outgoing.count, 0)
-        XCTAssertTrue(outgoing.allSatisfy { !$0.name.isEmpty })
+        XCTAssertTrue(firstFailed, "server should refuse a keyless connect")
+
+        // Step 2: with the password.
+        try session.connect(password: env["SOQUEL_SFTP_PASSWORD"])
+        print("LIVE: connected=\(session.isConnected)")
+
+        // Step 3: list ".", which is what a bare user@host resolves to.
+        let entries = try session.list(".")
+        print("LIVE: list(\".\") returned \(entries.count) entries")
+        for entry in entries { print("LIVE:   \(entry.isDirectory ? "dir " : "file") \(entry.name)") }
+        XCTAssertGreaterThan(entries.count, 0, "listing the home directory returned nothing")
         session.disconnect()
     }
 }

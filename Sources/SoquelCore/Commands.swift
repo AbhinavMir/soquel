@@ -238,7 +238,9 @@ enum CommandRegistry {
     }
 
     static let viewSection = MenuSection(title: "View", entries: [
-        .command(Command("view.palette", "Command Palette…", #selector(M.menuCommandPalette(_:)), Shortcut("k"))),
+        // ⇧⌘P, as every editor with a command palette uses. ⌘K was the old
+        // binding and is still reachable by remapping it in Settings.
+        .command(Command("view.palette", "Command Palette…", #selector(M.menuCommandPalette(_:)), Shortcut("p", [.command, .shift]))),
         .separator,
         .command(Command("view.listView", "As List", #selector(M.menuUseListView(_:)), Shortcut("1", [.command, .option]))),
         .command(Command("view.iconView", "As Icons", #selector(M.menuUseIconView(_:)), Shortcut("2", [.command, .option]))),

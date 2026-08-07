@@ -139,6 +139,19 @@ kbd {
 }
 code { font: 13px ui-monospace, "SF Mono", Menlo, monospace; color: var(--deep); }
 
+.log { margin-top: 10px; }
+.rel { border-bottom: 1px solid var(--rule); padding: 18px 0; }
+.rel:last-child { border-bottom: 0; }
+.rel-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.rel-v { font-size: 16px; font-weight: 620; margin: 0; }
+.rel-d { font-size: 12.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.rel-dl { font-size: 12.5px; margin-left: auto; }
+.rel p { margin: 8px 0 0; color: var(--dim); font-size: 14.5px; }
+.rel ul { margin: 8px 0 0; padding-left: 18px; color: var(--dim); font-size: 14.5px; }
+.rel li { margin: 3px 0; }
+.rel strong { color: var(--ink); font-weight: 600; }
 footer {
   border-top: 1px solid var(--rule); margin-top: 64px; padding-top: 26px;
   font-size: 13.5px; color: var(--faint); text-align: center;
@@ -413,6 +426,22 @@ footer a { color: var(--faint); }
     <dt>Connect to Server <kbd>⌃⌘K</kbd></dt>
     <dd>Mount SMB, AFP, NFS, WebDAV or read-only FTP. No password goes through Soquel.</dd>
   </div>
+  <div class="row" data-alt="sftp ssh scp remote server macfuse sshfs sshpass fuse kernel extension">
+    <dt>SFTP with nothing to install</dt>
+    <dd>Type what you would type for ssh. No macFUSE, no sshpass, no kernel extension.</dd>
+  </div>
+  <div class="row" data-alt="sftp password security keychain pipe command line">
+    <dt>The SFTP password never reaches the command line</dt>
+    <dd>It goes to ssh over a pipe, and is not stored.</dd>
+  </div>
+  <div class="row" data-alt="sftp speed connection reuse controlmaster handshake">
+    <dt>One SFTP connection, reused</dt>
+    <dd>You are asked for the password once. Browsing after that does not reconnect.</dd>
+  </div>
+  <div class="row" data-alt="icloud google drive dropbox onedrive box cloud storage sidebar">
+    <dt>Cloud drives in the sidebar</dt>
+    <dd>iCloud Drive, Google Drive, Dropbox, OneDrive and Box, wherever they are installed.</dd>
+  </div>
   <div class="row" data-alt="iterm vscode shell command line here">
     <dt>Terminal and editor <kbd>⌃⌘T</kbd> <kbd>⌃⌘E</kbd></dt>
     <dd>Open the current folder in your terminal or editor.</dd>
@@ -526,6 +555,150 @@ footer a { color: var(--faint); }
       against the code.</dd>
 </dl>
 
+
+<h2 id="changelog">Changelog</h2>
+<div class="log">
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.0.6</p>
+      <span class="rel-d">6 August 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.6">notes</a>
+    </div>
+    <p><strong>SFTP with nothing to install.</strong> Type what you would type for ssh —
+      <code>me@server.com</code>, no scheme — and the server opens in a window. It uses the
+      <code>sftp</code> already on every Mac, so there is no macFUSE, no sshpass and no kernel
+      extension. The password goes to ssh over a pipe rather than the command line, and one
+      connection is held open so browsing does not re-handshake. It is not a mount: other
+      applications cannot see these files, and opening one downloads it first.</p>
+    <p><strong>Cloud drives in the sidebar.</strong> iCloud Drive, Google Drive, Dropbox,
+      OneDrive and Box. They were always ordinary folders on disk; there was just nowhere
+      to click.</p>
+    <ul>
+      <li>An empty password crashed the application. Cancel and an empty box were the same
+        answer, so the window was torn down from inside the alert that was still animating it.</li>
+      <li>SFTP was refused by the mount check before it could open. It is not a mount, so it
+        is no longer asked.</li>
+      <li>The folder tree forgot which folders were open. Only sidebar groups recorded their
+        state; tree folders had nowhere to record it.</li>
+      <li>Opening a folder scrolled the sidebar and moved its highlight. Nothing outside the
+        sidebar moves the sidebar now.</li>
+      <li>The arrow keys did nothing in the sidebar: one click and focus had already left
+        for the file list.</li>
+      <li>Selecting the Themes tab made the Settings window wider every time.</li>
+      <li>Escape did not close Settings.</li>
+      <li>The command palette is <kbd>⇧⌘P</kbd>, as in every other application that has one.</li>
+    </ul>
+  </div>
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.0.5</p>
+      <span class="rel-d">6 August 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.5">notes</a>
+    </div>
+    <p><strong>Renaming in place, the way Finder does it.</strong> Return opens an editor over
+      the name itself in list, icon and column view alike. The name is selected without its
+      extension, Return commits, Escape cancels, and clicking elsewhere commits.</p>
+    <ul>
+      <li>Return renamed nothing in list view: the editor was opened on the Git column, which
+        has no text in it. The name column is now found by identifier, so dragging the headers
+        around cannot break it again.</li>
+      <li>The editor was see-through, so the old name and the row highlight showed through
+        the new one.</li>
+      <li>Committing rebuilt the rows inside the click that dismissed the editor, which closed
+        the parent column in the column browser.</li>
+    </ul>
+  </div>
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.0.4</p>
+      <span class="rel-d">6 August 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.4">notes</a>
+    </div>
+    <p><strong>Finder's own settings, read but never written.</strong> A folder Finder already
+      knows should be in icon view opens in icon view. Soquel does not write a
+      <code>.DS_Store</code> of its own, and Compress still leaves them out of the archive.</p>
+    <ul>
+      <li><kbd>⌘A</kbd> selects everything, in every view.</li>
+      <li><kbd>⌘</kbd> and <kbd>⇧</kbd> click work in column view.</li>
+      <li>Columns and the column-view width drag, and stop at a width you can still read.</li>
+      <li>Icon view zooms.</li>
+      <li>HTML files preview as pages.</li>
+      <li>One filter box instead of two.</li>
+    </ul>
+  </div>
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.0.3</p>
+      <span class="rel-d">5 August 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.3">notes</a>
+    </div>
+    <p><strong>The tab bar had never been visible in any build.</strong> The window extended its
+      content behind an opaque title bar, so the top 28 points of every pane — exactly where the
+      tab bar lives — sat underneath it. Tabs worked; there was nothing on screen to click.</p>
+    <ul>
+      <li>Double-click did nothing, and Rename did nothing in list view: the pane asked its list
+        which view mode it was in before the list had been told.</li>
+      <li>Column view drew an empty pane, for the same reason.</li>
+      <li>The path bar wrote <code>//Applications</code>.</li>
+      <li>Newest first, and folders no longer forced above files.</li>
+      <li>Copy Path on <kbd>⌥⌘C</kbd>. Safari-style tabs. Compress without <code>.DS_Store</code>.</li>
+      <li>Themes install from a gist or a git repository, a repository so it can carry an image.
+        Air, Windows 95 and Platinum added. Window opacity applies to the window, not the
+        background image.</li>
+      <li>Settings are searchable.</li>
+    </ul>
+  </div>
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.0.2</p>
+      <span class="rel-d">3 August 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.2">notes</a>
+    </div>
+    <p>Eleven features from the research backlog.</p>
+    <ul>
+      <li><strong>Find duplicates</strong> by content, grouping by size first and only hashing
+        where sizes collide. Finds duplicate folders too, so two copies of a project are one
+        row rather than a hundred pairs.</li>
+      <li><strong>Verified copy</strong> — checksums both ends and reports per-file pass or fail.</li>
+      <li><strong>Quick Look a folder</strong> — space on a folder shows what is inside it.</li>
+      <li><strong>Sync browsing</strong>, <strong>tags</strong>, <strong>real symlinks</strong>,
+        <strong>Show Package Contents</strong>, <strong>per-folder view settings</strong>,
+        <strong>transfer retry</strong>, <strong>Run a Command Here</strong>, and an
+        <strong>uninstaller</strong> that finds what an application left behind.</li>
+      <li>A warning before moving something to the Trash on a network volume.</li>
+      <li>An update check you have to turn on.</li>
+    </ul>
+  </div>
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.0.1</p>
+      <span class="rel-d">27 July 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.1">notes</a>
+    </div>
+    <p>The first public release. Thirty-eight bugs found by an adversarial sweep against the
+      code were fixed before it shipped. Seven of them lost data:</p>
+    <ul>
+      <li>Running the test suite overwrote your colours.</li>
+      <li>Asking to look at <code>theme.json</code> rewrote it with the shipped palette and
+        dropped your background.</li>
+      <li>Folder sync would put a file where a folder was, deleting the tree, and report it as
+        one replaced file.</li>
+      <li>A replace deleted the destination before checking the replacement had landed.</li>
+    </ul>
+    <p>Two more made the application feel broken: typing a name only jumped to it in list view,
+      because NSTableView implements that itself and nothing else did; and cancelling a
+      thumbnail cancelled nothing, so scrolling ran a generator for every file it passed and
+      discarded the results.</p>
+  </div>
+
+</div>
+
 <section class="pay" aria-labelledby="pay-heading">
   <h3 id="pay-heading">Pay what you like</h3>
   <p>
@@ -544,6 +717,7 @@ footer a { color: var(--faint); }
 </section>
 
 <footer>
+  <p><a href="#changelog">Changelog</a> — every release since 1.0.1.</p>
   <p>MIT licensed. Source at
      <a href="https://github.com/AbhinavMir/soquel">github.com/AbhinavMir/soquel</a>.</p>
   <p>Questions and ideas: <a href="https://soquel.hamlet.so/">soquel.hamlet.so</a>.
@@ -567,6 +741,9 @@ footer a { color: var(--faint); }
   var empty = document.getElementById('empty');
   var clear = document.getElementById('clear');
   var groups = [].slice.call(document.querySelectorAll('.group'));
+  // Not part of the feature list, but it sits below it, so a search would
+  // leave the reader scrolling past every release to reach three results.
+  var aside = [].slice.call(document.querySelectorAll('#changelog, .log'));
   var rows = [].slice.call(document.querySelectorAll('.row')).map(function (el) {
     return { el: el, hay: (el.textContent + ' ' + el.dataset.alt).toLowerCase() };
   });
@@ -588,6 +765,7 @@ footer a { color: var(--faint); }
     if (!words.length) {
       rows.forEach(function (r) { r.el.classList.remove('is-out'); });
       groups.forEach(function (g) { g.hidden = false; });
+      aside.forEach(function (a) { a.hidden = false; });
       empty.hidden = true;
       count.textContent = '';
       return;
@@ -606,6 +784,7 @@ footer a { color: var(--faint); }
       loose = hits.length > 0;
     }
 
+    aside.forEach(function (a) { a.hidden = true; });
     var keep = new Set(hits.map(function (r) { return r.el; }));
     rows.forEach(function (r) { r.el.classList.toggle('is-out', !keep.has(r.el)); });
     groups.forEach(function (g) {
