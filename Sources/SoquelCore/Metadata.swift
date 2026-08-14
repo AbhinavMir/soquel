@@ -33,6 +33,14 @@ enum MetadataField: String, CaseIterable {
     }
 }
 
+extension Notification.Name {
+    /// Posted on the main thread when a file's metadata lands; the object is
+    /// the file's URL. A notification rather than a stored closure: every
+    /// pane and the inspector listen, and a single closure slot meant the
+    /// last one to register stole the answers from the rest.
+    static let soquelMetadataRead = Notification.Name("app.soquel.metadataRead")
+}
+
 /// Reads media metadata off the main thread and remembers it per file.
 final class MetadataReader {
     static let shared = MetadataReader()
@@ -43,8 +51,6 @@ final class MetadataReader {
     private var cache: [URL: Record] = [:]
     private var inFlight: Set<URL> = []
     private let queue = DispatchQueue(label: "app.soquel.metadata", qos: .utility)
-
-    var onUpdate: ((URL) -> Void)?
 
     func cached(_ url: URL) -> Record? { cache[url] }
 
@@ -64,7 +70,7 @@ final class MetadataReader {
                 guard let self else { return }
                 self.inFlight.remove(url)
                 self.cache[url] = record
-                self.onUpdate?(url)
+                NotificationCenter.default.post(name: .soquelMetadataRead, object: url)
             }
         }
     }

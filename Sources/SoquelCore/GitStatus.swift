@@ -68,7 +68,10 @@ final class GitStatusReader {
 
     private let queue = DispatchQueue(label: "app.soquel.git", qos: .utility)
     private var cache: [URL: [String: GitState]] = [:]
-    private var generation = 0
+    /// Completions waiting on a run already under way, per repository. One
+    /// global generation counter used to stand here, and it dropped the
+    /// answer for every pane except the last one to ask.
+    private var pending: [URL: [([String: GitState], URL?) -> Void]] = [:]
 
     /// Statuses keyed by absolute path, for every changed file in the
     /// repository containing `directory`. Returns immediately with a cached
@@ -84,14 +87,20 @@ final class GitStatusReader {
         }
         if let hit = cache[root] { cached?(hit) }
 
-        generation += 1
-        let token = generation
+        // A run for this repository is already reading; every asker gets its
+        // result rather than starting another `git status` on the same tree.
+        if pending[root] != nil {
+            pending[root]?.append(completion)
+            return
+        }
+        pending[root] = [completion]
         queue.async { [weak self] in
             let statuses = Self.read(root: root)
             DispatchQueue.main.async {
-                guard let self, self.generation == token else { return }
+                guard let self else { return }
                 self.cache[root] = statuses
-                completion(statuses, root)
+                let waiting = self.pending.removeValue(forKey: root) ?? []
+                for callback in waiting { callback(statuses, root) }
             }
         }
     }

@@ -129,6 +129,40 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
+    /// Tokens for the background-work notifications this list listens to.
+    private var updateObservers: [NSObjectProtocol] = []
+
+    deinit {
+        for observer in updateObservers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let center = NotificationCenter.default
+        // Folder sizes and metadata land as notifications so that every pane
+        // hears about them; each list redraws only the row it is showing.
+        updateObservers.append(center.addObserver(
+            forName: .soquelFolderSizeComputed, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self, self.isViewLoaded, Prefs.calculateFolderSizes,
+                  let url = note.object as? URL,
+                  let row = self.items.firstIndex(where: { $0.url == url }) else { return }
+            let column = self.tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("size"))
+            guard column >= 0 else { return }
+            self.tableView.reloadData(forRowIndexes: [row], columnIndexes: [column])
+        })
+        updateObservers.append(center.addObserver(
+            forName: .soquelMetadataRead, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self, self.isViewLoaded, !MetadataColumns.enabled.isEmpty,
+                  let url = note.object as? URL,
+                  let row = self.items.firstIndex(where: { $0.url == url }) else { return }
+            self.tableView.reloadData(
+                forRowIndexes: [row], columnIndexes: IndexSet(0..<self.tableView.numberOfColumns)
+            )
+        })
+    }
+
     // MARK: - View construction
 
     override func loadView() {
@@ -600,13 +634,6 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// background; the column shows an ellipsis until an answer arrives.
     private func measureFolderSizes() {
         guard Prefs.calculateFolderSizes else { return }
-        FolderSizeCalculator.shared.onUpdate = { [weak self] url, _ in
-            guard let self, self.isViewLoaded else { return }
-            guard let row = self.items.firstIndex(where: { $0.url == url }) else { return }
-            let column = self.tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("size"))
-            guard column >= 0 else { return }
-            self.tableView.reloadData(forRowIndexes: [row], columnIndexes: [column])
-        }
         for item in items where item.opensAsFolder {
             FolderSizeCalculator.shared.measure(item.url)
         }
@@ -624,7 +651,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             guard let self else { return }
             self.gitStatuses = statuses
             self.gitRootURL = root
-            if self.isViewLoaded { self.tableView.reloadData() }
+            guard self.isViewLoaded else { return }
+            self.tableView.reloadData()
+            // The icon tiles carry the badge too; only reloading the table
+            // left them stale in icon view.
+            if self.isIconMode { self.collectionView.reloadData() }
         }
     }
 
@@ -1749,11 +1780,6 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             tableView.addTableColumn(column)
         }
 
-        MetadataReader.shared.onUpdate = { [weak self] url in
-            guard let self, self.isViewLoaded, !MetadataColumns.enabled.isEmpty else { return }
-            guard let row = self.items.firstIndex(where: { $0.url == url }) else { return }
-            self.tableView.reloadData(forRowIndexes: [row], columnIndexes: IndexSet(0..<self.tableView.numberOfColumns))
-        }
         if !wanted.isEmpty { requestMetadata() }
         tableView.reloadData()
     }

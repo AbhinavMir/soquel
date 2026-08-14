@@ -1,5 +1,14 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted on the main thread when a folder's measurement lands; the object
+    /// is the folder's URL. A notification rather than a stored closure:
+    /// every pane listens, and a single closure slot meant whichever pane
+    /// loaded last stole the answers from all the others, whose size columns
+    /// then sat on "…" forever.
+    static let soquelFolderSizeComputed = Notification.Name("app.soquel.folderSizeComputed")
+}
+
 /// Computes folder sizes off the main thread, one folder at a time, and caches
 /// the answer until the folder changes.
 ///
@@ -20,9 +29,6 @@ final class FolderSizeCalculator {
     private let queue = DispatchQueue(label: "app.soquel.foldersize", qos: .utility)
     private var cache: [URL: Measurement] = [:]
     private var inFlight: Set<URL> = []
-
-    /// Called on the main thread whenever a measurement lands.
-    var onUpdate: ((URL, Measurement) -> Void)?
 
     /// A cached size, if one is still valid.
     func cached(for url: URL) -> Measurement? {
@@ -46,7 +52,7 @@ final class FolderSizeCalculator {
                 guard let self else { return }
                 self.inFlight.remove(url)
                 self.cache[url] = measurement
-                self.onUpdate?(url, measurement)
+                NotificationCenter.default.post(name: .soquelFolderSizeComputed, object: url)
             }
         }
     }
