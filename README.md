@@ -28,11 +28,12 @@ swift test
 
 ## What it does
 
-**Panes and tabs.** Split a window any number of ways, vertically or horizontally, each pane with
-its own tabs and its own folder. `⌘1`–`⌘4` jumps between them. A layout can be saved as a workspace
-and reopened later.
+**Panes and tabs.** Split a window into up to four panes, vertically or horizontally mixed, each
+pane with its own tabs and its own folder. `⌘1`–`⌘4` jumps between them. A layout can be saved as a
+workspace and reopened later.
 
-**Four views.** List with sortable columns, icon grid, folder tree, and column view.
+**Three views.** List with sortable columns, icon grid, and column view — plus a folder tree in
+the sidebar.
 
 **Search.** By name or contents, with contains, regex or glob. It reports what it skipped rather
 than quietly returning less: too large, not text, unreadable folder, result cap. Optionally honours
@@ -61,7 +62,8 @@ insertion, with a live preview.
 **Folder comparison** (`⇧⌘K`). Left only, right only, differs, same — compared by size and date or
 by checksum — and sync in either direction over the rows you tick.
 
-**Remote locations.** SMB, AFP, NFS, WebDAV and FTP, mounted through macOS itself.
+**Remote locations.** SMB, AFP, NFS, WebDAV and FTP, mounted through macOS itself. SFTP opens in
+a built-in browser window with nothing installed.
 
 **Everything is a file you can edit.** Settings, colours, shortcuts and the sidebar are JSON under
 `~/Library/Application Support/Soquel/`. Edit one in another editor and the window redraws.
@@ -70,16 +72,16 @@ Full list with shortcuts: [trysoquel.com](https://trysoquel.com).
 
 ## Keyboard
 
-`⌘K` opens the command palette, which lists every command and its shortcut. Every shortcut can be
+`⇧⌘P` opens the command palette, which lists every command and its shortcut. Every shortcut can be
 rebound. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 
 | Action | Shortcut |
 | --- | --- |
-| Command palette | `⌘K` |
+| Command palette | `⇧⌘P` |
 | Split pane vertically / horizontally | `⌘D` / `⇧⌘D` |
 | Focus pane by position | `⌘1`–`⌘4` |
 | Filter the current folder | `/` |
-| Search / search by meaning | `⌘F` / `⌃⌘F` |
+| Search / search by meaning | `⌥⌘F` / `⌃⌘F` |
 | Go to folder | `⇧⌘G` |
 | Rename / open | `↩` / `⌘↓` |
 | Quick Look | `Space` |
@@ -90,7 +92,7 @@ rebound. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 ```
 Sources/SoquelCore/    application code
 Sources/Soquel/        executable entry point
-Tests/SoquelCoreTests/ 805 tests
+Tests/SoquelCoreTests/ 833 tests
 scripts/               build-app.sh, make-dmg.sh, install.sh
 docs/                  architecture, keybindings, settings, security
 ```
@@ -107,8 +109,8 @@ reproduce, and feature requests to track against the code.
 
 ## Known gaps
 
-There is no accessibility pass yet, and SFTP would need a File Provider extension that has not been
-written.
+There is no accessibility pass yet. SFTP browses in its own window rather than mounting; a mount
+would need a File Provider extension that has not been written.
 
 Soquel does not replace Finder at the system level, and cannot. macOS refuses to reassign
 `public.folder` to anything else — the call returns `paramErr`, and that applies to every
