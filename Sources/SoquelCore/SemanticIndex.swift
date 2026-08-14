@@ -184,12 +184,19 @@ final class SemanticIndex {
 
     private static let embedding: NLEmbedding? = NLEmbedding.sentenceEmbedding(for: .english)
 
+    /// The shared model deadlocks under concurrent use (see workerCount), and
+    /// this instance is reached from both the indexing queue — small batches
+    /// skip the per-worker models — and the main thread's search-as-you-type.
+    private static let embeddingLock = NSLock()
+
     static var isAvailable: Bool { embedding != nil }
 
     /// A unit-length vector for a piece of text, or nil when the model has
     /// nothing to say about it.
     static func vector(for text: String) -> [Float]? {
         guard let embedding else { return nil }
+        embeddingLock.lock()
+        defer { embeddingLock.unlock() }
         return normalised(embedding.vector(for: text))
     }
 
