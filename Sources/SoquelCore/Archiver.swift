@@ -59,7 +59,12 @@ enum Archiver {
     /// the items being compressed.
     static func arguments(archive: URL, items: [String]) -> [String] {
         var args = ["-r", "-X", "-q", archive.path]
-        args.append(contentsOf: items)
+        // "./" keeps a name like "-m" from being read as one of zip's own
+        // options ("-m" deletes the files it archives). zip strips the prefix
+        // when it stores the name, so the archive contents do not change.
+        // "--" would not do: everything after it, the "-x" list included,
+        // would be read as file names.
+        args.append(contentsOf: items.map { "./" + $0 })
         args.append("-x")
         for pattern in excluded {
             args.append(pattern)
