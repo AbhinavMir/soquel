@@ -87,7 +87,10 @@ final class TransferJob {
         self.totalBytes = totalBytes
         self.totalFiles = totalFiles
         startedAt = now
-        state = .running
+        // Measuring runs in the background, so a cancel can land before this
+        // does. Promoting unconditionally would resurrect that cancelled job
+        // and the copy would carry on.
+        if state == .waiting { state = .running }
     }
 
     func advance(bytes: Int64, file: String?, now: Date) {
@@ -116,9 +119,11 @@ final class TransferJob {
 
     func recordVerification(_ manifest: VerifiedCopy.Manifest) {
         self.manifest = manifest
-        // A copy whose bytes did not survive is not a finished job.
+        // A copy whose bytes did not survive is not a finished job. The SOURCE
+        // is recorded: retry re-copies it. Recording the destination made
+        // retry copy the corrupt file onto itself and report success.
         for entry in manifest.failed {
-            failures.append((entry.destination, "Checksum did not match after copying"))
+            failures.append((entry.source, "Checksum did not match after copying"))
         }
     }
 
@@ -225,7 +230,10 @@ final class TransferQueue {
         guard !urls.isEmpty else { return [] }
         OperationEngine.shared.transfer(
             urls, to: job.destination, move: job.isMove,
-            resolveConflict: { _, _ in ConflictResolution(choice: .keepBoth) },
+            // Replace, not keep-both: what a retry finds at the destination is
+            // the failed remnant of the last attempt, and a fresh copy beside
+            // a corrupt one helps nobody.
+            resolveConflict: { _, _ in ConflictResolution(choice: .replace) },
             completion: { _ in }
         )
         return urls
