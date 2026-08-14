@@ -1,7 +1,7 @@
 {
-  "updated": "2026-08-02 13:47",
+  "updated": "2026-08-14 14:30",
   "status": "shipped",
-  "statusLabel": "v1.0.1 released",
+  "statusLabel": "v1.0.7 released — beta",
   "stats": [
     {
       "label": "Build",
@@ -10,18 +10,18 @@
     },
     {
       "label": "Tests",
-      "value": "596 passing",
+      "value": "833 passing",
       "tone": "ok"
     },
     {
       "label": "Release",
-      "value": "1.0.1 notarised",
+      "value": "1.0.7 notarised",
       "tone": "ok"
     },
     {
       "label": "Open bugs",
-      "value": "none",
-      "tone": "ok"
+      "value": "sweep running",
+      "tone": "dim"
     },
     {
       "label": "Architecture",
