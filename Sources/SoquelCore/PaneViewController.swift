@@ -156,6 +156,11 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
                 : "\(urls.count) selected")
         }
         columnBrowser.onSelect = { _, _ in }
+        // Drops in a column go through the list controller so conflicts, undo
+        // and the reload that refreshes the columns all behave as elsewhere.
+        columnBrowser.onDropFiles = { [weak self] urls, destination, move in
+            self?.activeList?.transfer(urls, into: destination, move: move)
+        }
         // Return renames, Space previews, Delete trashes — in columns too.
         columnBrowser.onKeyDown = { [weak self] event in
             self?.activeList?.handleKeyDown(event) ?? false

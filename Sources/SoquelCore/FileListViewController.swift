@@ -166,6 +166,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         tableView.allowsColumnResizing = true
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
+        tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.registerForDraggedTypes([.fileURL])
         tableView.setAccessibilityLabel("Files in \(url.lastPathComponent)")
         filterField.setAccessibilityLabel("Filter files in this folder")
@@ -201,6 +202,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         collectionView.backgroundColors = [.clear]
         collectionView.register(FileIconItem.self, forItemWithIdentifier: FileIconItem.identifier)
         collectionView.setAccessibilityLabel("Files in \(url.lastPathComponent)")
+        // The icon view had drag out but no drop in, so files could leave it
+        // and never land on it.
+        collectionView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
+        collectionView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        collectionView.registerForDraggedTypes([.fileURL])
 
         collectionScroll = NSScrollView()
         collectionScroll.documentView = collectionView
@@ -1541,6 +1547,29 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         )
     }
 
+    /// A drop onto a folder row lands inside that folder rather than the
+    /// directory being listed. Every view's drop handler funnels through here.
+    func transfer(_ urls: [URL], into destination: URL, move: Bool) {
+        OperationEngine.shared.transfer(
+            urls,
+            to: destination,
+            move: move,
+            resolveConflict: { [weak self] source, existing in
+                self?.askConflict(source: source, existing: existing) ?? ConflictResolution(choice: .skip)
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                if move {
+                    UndoStack.shared.pushMove(result: result)
+                } else {
+                    UndoStack.shared.pushCopy(result: result)
+                }
+                self.reportFailures(result, verb: move ? "move" : "copy")
+                self.reload()
+            }
+        )
+    }
+
     @objc func selectAllItems() {
         switch mode {
         case .icon:
@@ -2169,21 +2198,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
 
         let move = info.draggingSourceOperationMask.contains(.move)
         if dropOperation == .on, items.indices.contains(row), items[row].opensAsFolder {
-            let destination = items[row].url
-            OperationEngine.shared.transfer(
-                dragged, to: destination, move: move,
-                resolveConflict: { [weak self] s, e in self?.askConflict(source: s, existing: e) ?? ConflictResolution(choice: .skip) },
-                completion: { [weak self] result in
-                    guard let self else { return }
-                    if move {
-                        UndoStack.shared.pushMove(result: result)
-                    } else {
-                        UndoStack.shared.pushCopy(result: result)
-                    }
-                    self.reportFailures(result, verb: move ? "move" : "copy")
-                    self.reload()
-                }
-            )
+            transfer(dragged, into: items[row].url, move: move)
         } else {
             receive(dragged, move: move)
         }
@@ -2249,5 +2264,47 @@ extension FileListViewController: NSCollectionViewDataSource, NSCollectionViewDe
 
     func collectionView(_ collectionView: NSCollectionView, pasteboardWriterForItemAt indexPath: IndexPath) -> NSPasteboardWriting? {
         items.indices.contains(indexPath.item) ? items[indexPath.item].url as NSURL : nil
+    }
+
+    // Drop in — the same rules as the list: a folder tile is a target of its
+    // own, anywhere else is the directory being shown.
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        validateDrop info: NSDraggingInfo,
+        proposedIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
+        dropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>
+    ) -> NSDragOperation {
+        guard let dragged = info.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !dragged.isEmpty else { return [] }
+
+        let item = proposedIndexPath.pointee.item
+        if dropOperation.pointee == .on, items.indices.contains(item), items[item].opensAsFolder {
+            if dragged.contains(items[item].url) { return [] }
+            return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
+        }
+
+        dropOperation.pointee = .before
+        if dragged.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == url }) { return [] }
+        return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        acceptDrop info: NSDraggingInfo,
+        indexPath: IndexPath,
+        dropOperation: NSCollectionView.DropOperation
+    ) -> Bool {
+        guard let dragged = info.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !dragged.isEmpty else { return false }
+
+        let move = info.draggingSourceOperationMask.contains(.move)
+        if dropOperation == .on, items.indices.contains(indexPath.item), items[indexPath.item].opensAsFolder {
+            transfer(dragged, into: items[indexPath.item].url, move: move)
+        } else {
+            receive(dragged, move: move)
+        }
+        return true
     }
 }

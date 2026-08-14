@@ -28,6 +28,10 @@ final class ColumnBrowserView: NSView {
     var onOpen: ((URL) -> Void)?
     /// Handles a key press before the table sees it; returns true if consumed.
     var onKeyDown: ((NSEvent) -> Bool)?
+    /// Called when files are dropped on a column: the files, the folder they
+    /// land in, and whether they move rather than copy. The pane owns the
+    /// transfer machinery, so the drop is handed up rather than done here.
+    var onDropFiles: (([URL], URL, Bool) -> Void)?
 
     private var scroll: NSScrollView!
     /// One entry per visible column: the folder it lists and its contents.
@@ -160,6 +164,11 @@ final class ColumnBrowserView: NSView {
         table.allowsMultipleSelection = true
         table.doubleAction = #selector(openClicked)
         table.identifier = NSUserInterfaceItemIdentifier(url.path)
+        // Columns had no drag support at all: files could not be dragged out of
+        // this view or dropped into it.
+        table.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
+        table.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        table.registerForDraggedTypes([.fileURL])
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
         column.width = Self.columnWidth - 4
         table.addTableColumn(column)
@@ -275,6 +284,61 @@ extension ColumnBrowserView: NSTableViewDataSource, NSTableViewDelegate {
             ),
         ])
         return cell
+    }
+
+    // Drag out
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        guard let index = levelIndex(for: tableView) else { return nil }
+        let rows = items(at: index)
+        return rows.indices.contains(row) ? rows[row].url as NSURL : nil
+    }
+
+    // Drop in — a folder row is a target of its own; anywhere else in a column
+    // is the folder that column lists.
+    func tableView(
+        _ tableView: NSTableView,
+        validateDrop info: NSDraggingInfo,
+        proposedRow row: Int,
+        proposedDropOperation dropOperation: NSTableView.DropOperation
+    ) -> NSDragOperation {
+        guard let index = levelIndex(for: tableView),
+              let dragged = info.draggingPasteboard.readObjects(
+                  forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+              ) as? [URL], !dragged.isEmpty else { return [] }
+
+        let rows = items(at: index)
+        if dropOperation == .on, rows.indices.contains(row), rows[row].opensAsFolder {
+            if dragged.contains(rows[row].url) { return [] }
+            return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
+        }
+
+        tableView.setDropRow(-1, dropOperation: .on)
+        let destination = levels[index].url.standardizedFileURL
+        if dragged.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == destination }) { return [] }
+        return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        acceptDrop info: NSDraggingInfo,
+        row: Int,
+        dropOperation: NSTableView.DropOperation
+    ) -> Bool {
+        guard let index = levelIndex(for: tableView),
+              let dragged = info.draggingPasteboard.readObjects(
+                  forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+              ) as? [URL], !dragged.isEmpty else { return false }
+
+        let move = info.draggingSourceOperationMask.contains(.move)
+        let rows = items(at: index)
+        let destination: URL
+        if dropOperation == .on, rows.indices.contains(row), rows[row].opensAsFolder {
+            destination = rows[row].url
+        } else {
+            destination = levels[index].url
+        }
+        onDropFiles?(dragged, destination, move)
+        return true
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
