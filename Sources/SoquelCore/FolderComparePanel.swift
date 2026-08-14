@@ -40,6 +40,9 @@ final class FolderComparePanelController: NSWindowController {
     /// Set while a comparison is running, and read by the walk to stop early.
     private var cancelled = false
     private var isComparing = false
+    /// Bumped per scan; a completion whose number no longer matches is from a
+    /// superseded scan and is discarded rather than shown.
+    private var scanGeneration = 0
 
     private static let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -178,7 +181,14 @@ final class FolderComparePanelController: NSWindowController {
     }
 
     @objc private func rescan(_ sender: Any?) {
-        guard let leftRoot, let rightRoot, !isComparing else { return }
+        guard let leftRoot, let rightRoot else { return }
+        // A scan already running is superseded, not respected: show() may
+        // just have pointed the panel at different folders, and the old
+        // results would land under the new header — and a copy planned from
+        // them would write into the wrong folders. Bumping the generation
+        // makes the old scan cancel itself and its completion discard.
+        scanGeneration += 1
+        let generation = scanGeneration
         isComparing = true
         cancelled = false
         chosen.removeAll()
@@ -195,10 +205,10 @@ final class FolderComparePanelController: NSWindowController {
             let result = FolderCompare.compare(
                 left: leftRoot, right: rightRoot,
                 precision: precision, includeHidden: includeHidden,
-                isCancelled: { self?.cancelled ?? true }
+                isCancelled: { self.map { $0.cancelled || $0.scanGeneration != generation } ?? true }
             )
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, self.scanGeneration == generation, !self.cancelled else { return }
                 self.isComparing = false
                 self.spinner.stopAnimation(nil)
                 self.entries = result
