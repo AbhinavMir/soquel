@@ -225,19 +225,35 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
             else { return }
             let entry = self.entries[self.table.selectedRow]
             let remote = self.child(entry.name)
-            let local = destination.appendingPathComponent(entry.name)
+            let local = Self.uniqueLocalURL(for: entry.name, in: destination)
             self.setStatus("Downloading \(entry.name)…", isError: false)
             DispatchQueue.global(qos: .userInitiated).async {
                 var failure: Error?
                 do { try session.download(remote, to: local) } catch { failure = error }
                 DispatchQueue.main.async {
                     self.setStatus(
-                        failure?.localizedDescription ?? "Saved \(entry.name)",
+                        failure?.localizedDescription ?? "Saved \(local.lastPathComponent)",
                         isError: failure != nil
                     )
                 }
             }
         }
+    }
+
+    /// "name.ext", then "name 2.ext", "name 3.ext" — sftp's get truncates an
+    /// existing file without asking, so a taken name is never handed to it.
+    static func uniqueLocalURL(for name: String, in directory: URL,
+                               fileManager: FileManager = .default) -> URL {
+        var candidate = directory.appendingPathComponent(name)
+        let base = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension
+        var counter = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            let next = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
+            candidate = directory.appendingPathComponent(next)
+            counter += 1
+        }
+        return candidate
     }
 
     // MARK: - The window
