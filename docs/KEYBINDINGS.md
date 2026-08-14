@@ -1,6 +1,6 @@
 # Keybindings
 
-Every command is also in the command palette (`⌘K`), which shows its shortcut.
+Every command is also in the command palette (`⇧⌘P`), which shows its shortcut.
 
 ## Panes and tabs
 
@@ -14,10 +14,12 @@ Every command is also in the command palette (`⌘K`), which shows its shortcut.
 | Focus next / previous pane | `⌥⌘→` / `⌥⌘←` |
 | Swap panes | palette only |
 | Compare focused pane with the other | `⇧⌘K` |
+| New window | `⌘N` |
 | New tab | `⌘T` |
 | Close tab | `⌘W` |
 | Next / previous tab | `⌃⇥` / `⌃⇧⇥` |
 | Close window | `⌥⌘W` |
+| Save workspace | `⇧⌘S` |
 
 Splitting divides the focused pane only, so vertical and horizontal splits mix in one window — split
 the right-hand pane horizontally and the left one is untouched. Splitting the same direction twice
@@ -37,7 +39,7 @@ nothing.
 | Go to folder | `⇧⌘G` |
 | Connect to Server | `⌃⌘K` |
 | Git repository root | palette only |
-| Add current folder to Favourites | palette only |
+| Add current folder to the sidebar | `⇧⌘L` |
 
 ## Files
 
@@ -53,6 +55,9 @@ nothing.
 | Delete permanently | `⌥⌘⌫` |
 | Undo | `⌘Z` |
 | Select all | `⌘A` |
+| Rename many | `⌃⌘R` |
+| Look inside archive | `⇧⌘O` |
+| Add to Shelf / show Shelf | `⌃⌘A` / `⌃⌘B` |
 
 Delete permanently always asks first. Undo covers rename, create, duplicate, trash, and move.
 
@@ -60,31 +65,39 @@ Delete permanently always asks first. Undo covers rename, create, duplicate, tra
 
 | Action | Shortcut |
 | --- | --- |
-| Copy absolute path | `⌥⌘P` |
-| Copy path relative to Git root | `⌥⌘C` |
+| Copy absolute path | `⌥⌘C` |
+| Copy path relative to Git root | `⇧⌥⌘C` |
 | File URL, filename, filename without extension, parent directory, shell-escaped | Path menu or palette |
 
 ## View
 
 | Action | Shortcut |
 | --- | --- |
-| Command palette | `⌘K` |
+| Command palette | `⇧⌘P` |
 | Filter this folder | `/` or `⌘F` |
+| Find files by name | `⌥⌘F` |
+| Find in file contents | `⇧⌘F` |
 | Search by meaning | `⌃⌘F` |
+| As list / icons / columns | `⌥⌘1` / `⌥⌘2` / `⌥⌘3` |
+| Bigger / smaller / default icons | `⌘+` / `⌘-` / `⌘0` |
 | Toggle hidden files | `⇧⌘.` |
 | Toggle sidebar | `⌃⌘S` |
+| Show folder tree | `⇧⌘T` |
 | Refresh | `⌘R` |
-| Sort by name / size / kind / date | `⌃⌘1`–`⌃⌘4` |
+| Sort by name / size / kind / date / extension / created | `⌃⌘1`–`⌃⌘6` |
+| Reverse sort | `⌥⌘R` |
+| Fit columns to content | `⌥⌘=` |
 | Quick Look | `Space` or `⌘Y` |
 | Preview and details panel | `⌥⌘I` |
 | Disk map | `⇧⌘U` |
+| Show transfers | `⌥⌘J` |
 | Edit settings.json | palette or View menu |
 | Reveal in Finder | `⇧⌘R` |
 | Open in Terminal | `⌃⌘T` |
 | Open in editor | `⌃⌘E` |
 
-Rename works in every view. The list view edits the name in place; icon and column view use a
-sheet, because there is no editable cell to put an editor in.
+Rename works in every view, with an editor over the name itself: opaque, centred on its row, the
+extension left out of the selection. Escape cancels; clicking elsewhere commits.
 
 Search can skip whatever `.gitignore` excludes; it is off by default and the count skipped is
 reported alongside the results.
@@ -94,10 +107,8 @@ are typing into a text field. Escape leaves the filter and clears it; Return kee
 moves focus to the results.
 
 `⌘X`, `⌘C`, `⌘V`, `⌘A`, and `⌘Z` use the standard AppKit selectors. In a text field they edit text;
-in the file list they act on files. `⌃H`, `⌃J`, `⌃K`, and `⌃L` are deliberately unbound — as global
-menu shortcuts they would shadow the system text-editing keys in every field. They belong to the
-keyboard-first preset below, which handles them in the file list instead of binding them as menu
-shortcuts.
+in the file list they act on files. `h`, `j`, `k` and `l` are deliberately not menu shortcuts — the
+keyboard-first preset below handles them in the file list, so they never shadow typing in a field.
 
 ## Keyboard-first preset
 
@@ -123,6 +134,6 @@ cannot change what the next key means.
 
 ## Conflicts are caught by a test
 
-`Tests/SoquelCoreTests/MenuTests.swift` walks the whole menu and fails if two commands claim the
+`Tests/SoquelCoreTests/CommandTests.swift` walks the whole menu and fails if two commands claim the
 same shortcut. This exists because `⇧⌘W` was once assigned to both Close Window and Close Pane, and
 the window quietly won — pressing it quit the app instead of closing a pane.
