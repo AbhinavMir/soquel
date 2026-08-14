@@ -123,11 +123,33 @@ enum WorkspaceStore {
         }
     }
 
+    /// One broken entry must not empty the store: `all` starts from load(),
+    /// and the next mutation saves `all` back, so an all-or-nothing decode
+    /// turned one bad hand edit into every workspace gone.
+    private struct Lenient: Decodable {
+        let workspace: Workspace?
+        init(from decoder: Decoder) {
+            workspace = try? Workspace(from: decoder)
+        }
+    }
+
     private static func load() -> [Workspace] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([Workspace].self, from: data)
-        else { return [] }
-        return decoded
+        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        guard let decoded = try? JSONDecoder().decode([Lenient].self, from: data) else {
+            // Not JSON at all. Put the file aside so the next save cannot
+            // overwrite what the user wrote by hand.
+            let backup = fileURL.appendingPathExtension("bad")
+            try? FileManager.default.removeItem(at: backup)
+            try? FileManager.default.moveItem(at: fileURL, to: backup)
+            Log.error(.app, "workspaces.json did not parse; kept as \(backup.lastPathComponent)")
+            return []
+        }
+        let survivors = decoded.compactMap(\.workspace)
+        let dropped = decoded.count - survivors.count
+        if dropped > 0 {
+            Log.error(.app, "\(dropped) workspace entr\(dropped == 1 ? "y" : "ies") did not parse and were dropped")
+        }
+        return survivors
     }
 
     private static func save() {
@@ -137,7 +159,11 @@ enum WorkspaceStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(all) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            Log.error(.app, "could not write workspaces.json: \(error.localizedDescription)")
+        }
     }
 
     static func add(_ workspace: Workspace) {

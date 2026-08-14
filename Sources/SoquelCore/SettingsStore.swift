@@ -129,9 +129,21 @@ final class SettingsStore {
     // MARK: - Disk
 
     private func load() {
-        guard let data = try? Data(contentsOf: url),
-              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return }
+        // A missing file is a first launch; nothing to do.
+        guard let data = try? Data(contentsOf: url) else { return }
+        guard let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // The file exists but does not parse — usually a hand edit gone
+            // wrong. It is put aside, not read over: with the store empty, the
+            // next write (quit at the latest) would replace the file with
+            // nothing and every setting would be gone. This way the app runs
+            // on defaults and the broken original survives beside it.
+            let backup = url.appendingPathExtension("bad")
+            try? FileManager.default.removeItem(at: backup)
+            try? FileManager.default.moveItem(at: url, to: backup)
+            Log.error(.settings,
+                "settings.json did not parse; kept as \(backup.lastPathComponent), starting from defaults")
+            return
+        }
         lock.lock()
         values = parsed
         lock.unlock()
