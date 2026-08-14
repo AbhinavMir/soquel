@@ -12,6 +12,7 @@ protocol FileListDelegate: AnyObject {
     /// move — so anything drawing them from its own copy has to re-read.
     func fileListDidReload(_ list: FileListViewController)
     func fileListDidRequestSelectAllInColumns(_ list: FileListViewController)
+    func fileListDidRequestInvertSelectionInColumns(_ list: FileListViewController)
     /// "/" puts the caret in the pane's filter box. The list used to own a
     /// second one of its own, so the window showed two identical fields.
     func fileListDidRequestFilter(_ list: FileListViewController)
@@ -1585,10 +1586,21 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     }
 
     @objc func invertSelection() {
-        let current = tableView.selectedRowIndexes
-        var inverted = IndexSet(integersIn: 0..<items.count)
-        inverted.subtract(current)
-        tableView.selectRowIndexes(inverted, byExtendingSelection: false)
+        // Inverting only the table left the command dead in icon and column view.
+        switch mode {
+        case .icon:
+            let current = collectionView.selectionIndexPaths
+            let all = Set((0..<items.count).map { IndexPath(item: $0, section: 0) })
+            collectionView.selectionIndexPaths = all.subtracting(current)
+            collectionSelectionChanged()
+        case .column:
+            delegate?.fileListDidRequestInvertSelectionInColumns(self)
+        case .list:
+            let current = tableView.selectedRowIndexes
+            var inverted = IndexSet(integersIn: 0..<items.count)
+            inverted.subtract(current)
+            tableView.selectRowIndexes(inverted, byExtendingSelection: false)
+        }
     }
 
     /// Click a column to sort by it; shift-click to keep the current sort and

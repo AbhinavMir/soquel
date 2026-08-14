@@ -564,6 +564,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         columnBrowser.selectAllInDeepestColumn()
     }
 
+    func fileListDidRequestInvertSelectionInColumns(_ list: FileListViewController) {
+        columnBrowser.invertSelectionInDeepestColumn()
+    }
+
     func fileList(_ list: FileListViewController, renameInColumns url: URL) -> Bool {
         guard let placement = columnBrowser.nameRect(for: url) else { return false }
         list.renameEditor.begin(

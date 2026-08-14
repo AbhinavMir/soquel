@@ -407,6 +407,15 @@ extension ColumnBrowserView {
         level.table.selectAll(nil)
     }
 
+    /// Selects every unselected row of the deepest column and vice versa.
+    func invertSelectionInDeepestColumn() {
+        guard let level = levels.last else { return }
+        let count = items(at: levels.count - 1).count
+        var inverted = IndexSet(integersIn: 0..<count)
+        inverted.subtract(level.table.selectedRowIndexes)
+        level.table.selectRowIndexes(inverted, byExtendingSelection: false)
+    }
+
     /// The rect of a file's name in whichever column is showing it, in that
     /// column's own table. Nil when the file is not on screen.
     func nameRect(for url: URL) -> (host: NSView, rect: NSRect)? {
