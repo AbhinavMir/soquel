@@ -32,6 +32,14 @@ final class ColumnBrowserView: NSView {
     /// land in, and whether they move rather than copy. The pane owns the
     /// transfer machinery, so the drop is handed up rather than done here.
     var onDropFiles: (([URL], URL, Bool) -> Void)?
+    /// Called when descending or backing out clears the filter, so the pane
+    /// can empty its filter box rather than showing a filter that is off.
+    var onFilterCleared: (() -> Void)?
+
+    /// Suppresses selection reporting while a reload re-selects the same
+    /// files by URL; without it the re-selection re-enters the descend logic
+    /// and appends a duplicate column.
+    private var isRemappingSelection = false
 
     private var scroll: NSScrollView!
     /// One entry per visible column: the folder it lists and its contents.
@@ -126,6 +134,10 @@ final class ColumnBrowserView: NSView {
     /// Shows `url` as the leftmost column, discarding anything to the right.
     func show(_ url: URL) {
         clearLevels()
+        // Nothing is selected in a browser that was just rebuilt, and the
+        // pane's mirror of the selection has to hear that, or Delete acts on
+        // files that are no longer on screen.
+        onSelectMany?([])
         appendColumn(for: url)
     }
 
@@ -143,6 +155,8 @@ final class ColumnBrowserView: NSView {
     /// Drops every column to the right of `index`, which is what happens when
     /// the selection in an earlier column changes.
     private func truncate(after index: Int) {
+        guard levels.count > index + 1 else { return }
+        clearFilterForDepthChange()
         while levels.count > index + 1 {
             let level = levels.removeLast()
             level.container.removeFromSuperview()
@@ -151,7 +165,32 @@ final class ColumnBrowserView: NSView {
         layoutColumns()
     }
 
+    /// The filter narrows the deepest column, and only the deepest. When the
+    /// depth changes, the filtered rows on screen would stop matching what
+    /// items(at:) returns for that column, and a click would act on a
+    /// different file than the one clicked — so the filter is cleared, the
+    /// column redrawn, and its selection carried over by URL, not by row.
+    private func clearFilterForDepthChange() {
+        guard !filterText.isEmpty, let level = levels.last else { return }
+        let filtered = items(at: levels.count - 1)
+        let selected = level.table.selectedRowIndexes.compactMap {
+            filtered.indices.contains($0) ? filtered[$0].url : nil
+        }
+        filterText = ""
+        onFilterCleared?()
+        level.table.reloadData()
+        let full = items(at: levels.count - 1)
+        let rows = IndexSet(selected.compactMap { url in full.firstIndex { $0.url == url } })
+        isRemappingSelection = true
+        level.table.selectRowIndexes(rows, byExtendingSelection: false)
+        isRemappingSelection = false
+    }
+
     private func appendColumn(for url: URL) {
+        // A descend from the filtered deepest column changes the depth the
+        // same way a truncate does. The first column of a fresh show() keeps
+        // the filter: a refresh after a rename is not a navigation.
+        if !levels.isEmpty { clearFilterForDepthChange() }
         let table = ColumnTableView()
         table.onKeyDown = { [weak self] event in self?.onKeyDown?(event) ?? false }
         table.headerView = nil
@@ -342,10 +381,20 @@ extension ColumnBrowserView: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        guard let table = notification.object as? NSTableView,
-              let index = levelIndex(for: table),
-              items(at: index).indices.contains(table.selectedRow)
+        guard !isRemappingSelection,
+              let table = notification.object as? NSTableView,
+              let index = levelIndex(for: table)
         else { return }
+
+        // A click on empty space or a ⌘-click deselect leaves selectedRow at
+        // -1. Silence here left the pane's mirror holding the old URLs, and
+        // Delete trashed files that looked deselected.
+        if table.selectedRowIndexes.isEmpty {
+            onSelectMany?([])
+            return
+        }
+
+        guard items(at: index).indices.contains(table.selectedRow) else { return }
 
         let rows = items(at: index)
         let chosen = table.selectedRowIndexes.compactMap { row in

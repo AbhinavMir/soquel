@@ -161,6 +161,13 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         columnBrowser.onDropFiles = { [weak self] urls, destination, move in
             self?.activeList?.transfer(urls, into: destination, move: move)
         }
+        // Descending clears the column filter; the box has to empty with it
+        // or it shows a filter that is no longer in force.
+        columnBrowser.onFilterCleared = { [weak self] in
+            guard let self else { return }
+            self.filterField.stringValue = ""
+            self.activeList?.setFilter("")
+        }
         // Return renames, Space previews, Delete trashes — in columns too.
         columnBrowser.onKeyDown = { [weak self] event in
             self?.activeList?.handleKeyDown(event) ?? false

@@ -393,12 +393,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             forward.removeAll()
         }
         url = standardized
-        filterText = ""
-        filterField.stringValue = ""
-        setFilterBarVisible(false)
-        // The column browser is rebuilt for the new folder, so whatever it had
-        // selected no longer exists as far as the commands are concerned.
-        columnSelection = []
+        leaveFolder()
         // The folder decides how it is shown, when it has an opinion recorded.
         if FolderViewSettings.isEnabled {
             sortOrder = FolderViewSettings.sortOrder(for: url)
@@ -409,11 +404,23 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         reload(selecting: nil, resetScroll: true)
     }
 
+    /// State tied to the folder being left: the filter, and the mirror of the
+    /// column browser's selection. Every route out of a folder must clear
+    /// these — navigate did, back, forward and up did not, and Delete after
+    /// ⌘↑ then acted on files that were no longer on screen.
+    private func leaveFolder() {
+        filterText = ""
+        filterField.stringValue = ""
+        setFilterBarVisible(false)
+        columnSelection = []
+    }
+
     func goBack() {
         guard let previous = back.popLast() else { return }
         forward.append(url)
         let leaving = url
         url = previous
+        leaveFolder()
         delegate?.fileList(self, didNavigateTo: url)
         reload(selecting: leaving, resetScroll: true)
     }
@@ -422,6 +429,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         guard let next = forward.popLast() else { return }
         back.append(url)
         url = next
+        leaveFolder()
         delegate?.fileList(self, didNavigateTo: url)
         reload(selecting: nil, resetScroll: true)
     }
@@ -432,6 +440,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         back.append(url)
         forward.removeAll()
         url = parent
+        leaveFolder()
         delegate?.fileList(self, didNavigateTo: url)
         reload(selecting: leaving, resetScroll: true)
     }
