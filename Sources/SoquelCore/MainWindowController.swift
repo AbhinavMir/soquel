@@ -860,7 +860,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     /// Rebuilds the window to match a saved arrangement.
     func apply(_ workspace: Workspace) {
-        let surviving = workspace.survivingPanes()
+        // One filesystem scan, used throughout. Re-scanning per pane raced
+        // against folders disappearing mid-open and indexed out of bounds.
+        let survivingWithIndices = workspace.survivingPanesWithIndices()
+        let surviving = survivingWithIndices.map(\.tabs)
         guard !surviving.isEmpty else {
             statusLeft.stringValue = "“\(workspace.name)” points at folders that no longer exist"
             NSSound.beep()
@@ -883,7 +886,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             for extra in tabs.dropFirst() {
                 pane.addTab(url: URL(fileURLWithPath: extra), activate: false)
             }
-            let savedIndex = workspace.survivingPanesWithIndices()[position].index
+            let savedIndex = survivingWithIndices[position].index
             if workspace.activeTabs.indices.contains(savedIndex) {
                 pane.selectTab(at: min(workspace.activeTabs[savedIndex], tabs.count - 1))
             }
@@ -891,7 +894,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
         // A workspace saved before nested splits has no layout, and reopens as
         // the single row or column it was saved as.
-        if let saved = workspace.survivingLayout(),
+        if let saved = workspace.survivingLayout(survivingWithIndices),
            let rebuilt = PaneNode.rebuilt(from: saved, paneIDs: created) {
             tree = rebuilt
             rebuildPaneViews()

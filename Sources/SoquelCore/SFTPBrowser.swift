@@ -250,6 +250,10 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
         )
         window.title = title
         window.center()
+        // No NSWindowController owns this window, so AppKit's close-time
+        // release plus this controller's own strong reference over-released
+        // it and closing the window could crash the app.
+        window.isReleasedWhenClosed = false
 
         table = NSTableView()
         table.headerView = nil

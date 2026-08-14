@@ -87,9 +87,13 @@ struct Workspace: Codable, Equatable, Identifiable {
     /// The arrangement to rebuild, with dropped panes removed and the rest
     /// renumbered. Nil when the workspace predates nested splits or nothing of
     /// its arrangement survives, in which case a flat row is the answer.
-    func survivingLayout() -> LayoutNode? {
+    func survivingLayout(
+        _ precomputed: [(index: Int, tabs: [String])]? = nil
+    ) -> LayoutNode? {
         guard let layout else { return nil }
-        let surviving = survivingPanesWithIndices()
+        // Callers that already scanned pass their result in, so the layout is
+        // built from the same snapshot the panes were.
+        let surviving = precomputed ?? survivingPanesWithIndices()
         let mapping = Dictionary(
             uniqueKeysWithValues: surviving.enumerated().map { ($1.index, $0) }
         )

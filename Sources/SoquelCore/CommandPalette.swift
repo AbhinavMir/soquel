@@ -55,7 +55,15 @@ final class CommandPalette: NSObject, NSTableViewDataSource, NSTableViewDelegate
                         let item = NSMenuItem()
                         item.representedObject = command.representedObject
                         item.tag = Int(command.representedObject ?? "") ?? 0
-                        _ = controller.perform(command.selector, with: item)
+                        // Cut, Copy, Paste and New Window live on other
+                        // responders; perform on the window controller raised
+                        // NSInvalidArgumentException and took the app down.
+                        // The responder chain is the same route the menu uses.
+                        if controller.responds(to: command.selector) {
+                            _ = controller.perform(command.selector, with: item)
+                        } else {
+                            NSApp.sendAction(command.selector, to: nil, from: item)
+                        }
                     }
                 )
             }
