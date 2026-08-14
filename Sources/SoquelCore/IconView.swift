@@ -125,6 +125,17 @@ final class FileCollectionView: NSCollectionView {
         super.keyDown(with: event)
     }
 
+    /// NSCollectionView has no doubleAction, so double-click never opened
+    /// anything in icon view. Selection is updated by super first, then a
+    /// second click on a tile opens what is selected.
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        guard event.clickCount == 2 else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard indexPathForItem(at: point) != nil else { return }
+        commandTarget?.openSelection()
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         if let indexPath = indexPathForItem(at: point) {
