@@ -37,6 +37,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 350])
 
         Theme.reload()
+        Theme.startWatching()
         let menu = makeMainMenu()
         NSApp.mainMenu = menu
         NSApp.windowsMenu = menu.items.compactMap(\.submenu).first { $0.title == "Window" }

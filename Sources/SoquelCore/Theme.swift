@@ -59,13 +59,58 @@ enum Theme {
     static func apply(_ newConfig: ThemeConfig) {
         config = newConfig
         try? ThemeConfig.write(newConfig)
+        noteOwnWrite()
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
+    }
+
+    // MARK: - Watching the file
+
+    /// What the file held when we last looked, so events for the directory's
+    /// other files — settings.json is written constantly — do not trigger a
+    /// theme reload and a full redraw.
+    private static var lastSeenData: Data?
+    private static var watcher: DispatchSourceFileSystemObject?
+
+    /// Watches theme.json, so an edit from another editor redraws the window
+    /// — and so the settings controls write on top of the file's current
+    /// content instead of a stale launch-time cache. Without this, touching
+    /// any appearance control after a hand edit silently erased the edit.
+    static func startWatching() {
+        guard watcher == nil else { return }
+        let directory = ThemeConfig.directoryURL
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let descriptor = open(directory.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+
+        lastSeenData = try? Data(contentsOf: ThemeConfig.fileURL)
+        // The directory, not the file: an atomic save from a text editor
+        // replaces the file, and a handle would point at the dead inode.
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor, eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler {
+            let data = try? Data(contentsOf: ThemeConfig.fileURL)
+            guard data != lastSeenData else { return }
+            lastSeenData = data
+            reload()
+        }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        watcher = source
+    }
+
+    /// Called after the app's own writes, so the watcher does not read back
+    /// what was just written and reload it as an outside edit.
+    private static func noteOwnWrite() {
+        lastSeenData = try? Data(contentsOf: ThemeConfig.fileURL)
     }
 
     /// Back to the shipped colours.
     static func reset() throws {
         try ThemeConfig.removeFile()
         config = .empty
+        noteOwnWrite()
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
     }
 
@@ -77,9 +122,11 @@ enum Theme {
     /// show them their theme, not replace it.
     @discardableResult
     static func writeTemplate() throws -> URL {
-        try ThemeConfig.writeTemplate(background: config.background) { slot, isDark in
+        let url = try ThemeConfig.writeTemplate(background: config.background) { slot, isDark in
             resolved(slot, dark: isDark)
         }
+        noteOwnWrite()
+        return url
     }
 
     // MARK: - Built-in palette
