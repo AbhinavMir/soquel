@@ -2194,7 +2194,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         }
 
         tableView.setDropRow(-1, dropOperation: .on)
-        if dragged.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == url }) { return [] }
+        if dragged.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == url.standardizedFileURL }) { return [] }
         return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
     }
 
@@ -2297,7 +2297,7 @@ extension FileListViewController: NSCollectionViewDataSource, NSCollectionViewDe
         }
 
         dropOperation.pointee = .before
-        if dragged.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == url }) { return [] }
+        if dragged.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == url.standardizedFileURL }) { return [] }
         return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
     }
 
