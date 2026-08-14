@@ -7,8 +7,7 @@ hand, and anything you set by hand takes effect without a restart.
 | File | Holds |
 | --- | --- |
 | `settings.json` | Behaviour, view state, keyboard remaps, sidebar layout, toolbar contents, session |
-| `theme.json` | The colours in force |
-| `Themes/*.soquel-theme` | Saved themes: colours, background and the image itself |
+| `theme.json` | The colours in force, and the background image |
 | `workspaces.json` | Saved pane and tab layouts |
 
 Open the first one with **Edit settings.json** in the View menu or the command
@@ -32,7 +31,7 @@ Anything absent falls back to the default in the right-hand column.
 | Key | Type | Default |
 | --- | --- | --- |
 | `showHiddenFiles` | bool | `false` |
-| `foldersFirst` | bool | `true` |
+| `foldersFirst` | bool | `false` |
 | `viewMode` | `"list"`, `"icon"`, `"column"` | `"list"` |
 | `showFolderTree` | bool | `true` |
 | `showInspector` | bool | `true` |
@@ -45,20 +44,33 @@ Anything absent falls back to the default in the right-hand column.
 | `terminalBundleID` | string | first installed |
 | `editorBundleID` | string | first installed |
 | `toolbarActions` | array of action ids | see below |
-| `visibleColumns` | array of column ids | name, size, modified |
-| `sortOrder` | object | name ascending, folders first |
+| `metadataColumns` | array of column ids | `[]` |
+| `sortOrder` | object | date modified, newest first |
 | `shortcutOverrides` | object, command id → shortcut | `{}` |
 | `sidebarLayout` | object | favourites, locations, folders |
 | `shelfPaths` | array of paths | `[]` |
 | `savedSearches` | array of objects | `[]` |
 | `recentServers` | array of addresses | `[]` |
 | `sessionPanes`, `sessionActiveTabs` | arrays | restored on launch |
+| `syncBrowsing` | bool | `false` |
+| `perFolderViewSettings` | bool | `false` |
+| `folderViewSettings` | object, path → view and sort | `{}` |
+| `columnViewWidth` | number | `240` |
+| `columnWidths` | object, column id → width | `{}` |
+| `expandedTreeFolders` | array of paths | `[]` |
+| `verifyTransfers` | bool | `false` |
+| `checkForUpdates` | bool | `false` |
+| `confirmHeavyLaunches` | bool | `true` |
+| `heavyApplications`, `launchWithoutAsking` | arrays of bundle ids | built-in list, `[]` |
+| `applicationKinds` | object, file kind → bundle id | `{}` |
+| `semanticRoots` | array of paths | `[]` |
 
 Toolbar action ids are `back`, `forward`, `up`, `listView`, `iconView`,
 `columnView`, `hidden`, `folderSizes`, `gitStatus`, `inspector`, `folderTree`,
 `foldersFirst`, `find`, `findContents`, `newFolder`, `split`, `terminal`,
-`editor`, `reveal`, `transfers`, `palette`. The three view modes draw as one
-segmented pill when they sit next to each other.
+`editor`, `reveal`, `transfers`, `palette`, `favourite`, `copyPath`, `openWith`,
+`diskMap`, `shelf`, `compare`. The three view modes draw as one segmented pill
+when they sit next to each other.
 
 ## Example
 
