@@ -33,6 +33,10 @@ enum Theme {
             NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
             return nil
         } catch {
+            // Logged here as well as returned, because not every caller shows
+            // the result — and a hand-edit typo that silently discards the
+            // whole theme at launch looks like the theme simply vanished.
+            Log.error(.app, "theme.json did not parse: \(error.localizedDescription)")
             return error
         }
     }
@@ -56,11 +60,27 @@ enum Theme {
     }
 
     /// Applies an edited config and writes it, for the settings colour wells.
-    static func apply(_ newConfig: ThemeConfig) {
+    ///
+    /// Returns the write error so the caller can say the edit did not stick:
+    /// the window still repaints from memory either way, which is exactly what
+    /// makes a swallowed failure invisible until the next launch reverts it.
+    @discardableResult
+    static func apply(_ newConfig: ThemeConfig) -> Error? {
         config = newConfig
-        try? ThemeConfig.write(newConfig)
+        // The image cache keys on the URL alone, and reinstalling an updated
+        // theme writes new bytes to the same path, so the old picture would
+        // survive until relaunch if the cache were kept.
+        BackgroundImageCache.shared.invalidate()
+        var failure: Error?
+        do {
+            try ThemeConfig.write(newConfig)
+        } catch {
+            Log.error(.app, "could not write theme.json: \(error.localizedDescription)")
+            failure = error
+        }
         noteOwnWrite()
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
+        return failure
     }
 
     // MARK: - Watching the file

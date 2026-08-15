@@ -136,12 +136,26 @@ final class ThemeSettingsView: NSView {
         guard ChromeStyle.allCases.indices.contains(index) else { return }
         var config = Theme.config
         config.style = ChromeStyle.allCases[index]
-        Theme.apply(config)
+        if let error = Theme.apply(config) {
+            status.stringValue = "Could not save: \(error.localizedDescription)"
+            return
+        }
         status.stringValue = "Edges: \(ChromeStyle.allCases[index].title). Reopen windows to redraw them all."
     }
 
     private var gistField: NSTextField!
     private var installButton: NSButton!
+
+    /// True while a fetch is in flight. Return in the field fires the same
+    /// action as the button, and the button being disabled does not stop it,
+    /// so without this a second concurrent fetch could start and stack two
+    /// confirm alerts.
+    private var isFetching = false
+
+    private func fetchFinished() {
+        isFetching = false
+        installButton.isEnabled = true
+    }
 
     /// Fetches a theme from a gist and asks before applying it.
     ///
@@ -149,27 +163,31 @@ final class ThemeSettingsView: NSView {
     /// still repaints the application, so it is shown and confirmed rather than
     /// applied the moment it arrives.
     @objc private func installFromGist() {
+        guard !isFetching else { return }
         let text = gistField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
+        isFetching = true
         installButton.isEnabled = false
         status.stringValue = "Fetching…"
 
         ThemeSharing.fetch(text) { [weak self] result in
             guard let self else { return }
-            self.installButton.isEnabled = true
             switch result {
             case .failure(let error):
+                self.fetchFinished()
                 self.status.stringValue = error.localizedDescription
             case .success(let (config, source)):
                 // A repository theme may carry its own picture. Fetch it before
                 // asking, so what is described is what would be applied.
                 guard config.background?.imagePath != nil else {
+                    self.fetchFinished()
                     self.confirm(config)
                     return
                 }
                 self.status.stringValue = "Fetching its background…"
                 ThemeSharing.fetchImage(for: config, from: source) { withImage in
+                    self.fetchFinished()
                     self.confirm(withImage)
                 }
             }
@@ -196,9 +214,10 @@ final class ThemeSettingsView: NSView {
         // yours alone rather than clearing it.
         if updated.background == nil { updated.background = Theme.config.background }
         updated.windowOpacity = Theme.config.windowOpacity
-        Theme.apply(updated)
+        let failure = Theme.apply(updated)
         gistField.stringValue = ""
-        status.stringValue = "Installed"
+        status.stringValue = failure.map { "Could not save: \($0.localizedDescription)" }
+            ?? "Installed"
     }
 
     @objc private func copyForSharing() {
@@ -209,6 +228,13 @@ final class ThemeSettingsView: NSView {
     }
 
     // MARK: - Rows
+
+    /// The swatches are CGColors resolved for the appearance in force when
+    /// the row was built, so a light/dark switch has to rebuild them.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        reload()
+    }
 
     private func reload() {
         for view in rowStack.arrangedSubviews {
@@ -244,6 +270,10 @@ final class ThemeSettingsView: NSView {
         swatches.orientation = .horizontal
         swatches.spacing = 3
         swatches.translatesAutoresizingMaskIntoConstraints = false
+        // The strip shows the palette for the appearance the window is in
+        // now: in light mode the dark table is a set of colours the user
+        // would not actually get.
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         for slot in ThemeConfig.Slot.allCases {
             let dot = NSView()
             dot.wantsLayer = true
@@ -252,8 +282,8 @@ final class ThemeSettingsView: NSView {
             dot.layer?.borderColor = NSColor.separatorColor.cgColor
             // A preset that leaves a slot alone shows the built-in colour, so
             // the strip always reads as what you would actually get.
-            let hex = preset.dark[slot.rawValue] ?? preset.light[slot.rawValue]
-            let swatch = hex.flatMap { NSColor(hexString: $0) } ?? Theme.builtIn(slot, dark: true)
+            let hex = (isDark ? preset.dark : preset.light)[slot.rawValue]
+            let swatch = hex.flatMap { NSColor(hexString: $0) } ?? Theme.builtIn(slot, dark: isDark)
             dot.layer?.backgroundColor = swatch.cgColor
             dot.translatesAutoresizingMaskIntoConstraints = false
             dot.widthAnchor.constraint(equalToConstant: 16).isActive = true

@@ -77,8 +77,12 @@ enum ThemeSharing {
             path = String(text.dropFirst("git@github.com:".count))
         }
 
+        // Only the clone-URL suffix is stripped. Removing ".git" wherever it
+        // appears would mangle real names — owner/owner.github.io is the
+        // standard GitHub Pages repository.
+        while path.hasSuffix("/") { path = String(path.dropLast()) }
+        if path.hasSuffix(".git") { path = String(path.dropLast(4)) }
         let parts = path
-            .replacingOccurrences(of: ".git", with: "")
             .split(separator: "/")
             .map(String.init)
         guard parts.count >= 2 else { return nil }
@@ -225,20 +229,29 @@ enum ThemeSharing {
     /// Downloads the picture a repository theme points at and rewrites the
     /// path to the local copy.
     ///
-    /// The config is handed back unchanged when there is nothing to fetch or
-    /// the fetch fails: a theme whose background did not arrive is still a
-    /// usable theme, and is better than refusing the colours over a picture.
+    /// The config is handed back unchanged only when it names no picture at
+    /// all. When it names one that cannot arrive — a gist has no files beside
+    /// the theme, and a repository download can fail — the background is
+    /// dropped instead, so the caller keeps the user's own picture rather
+    /// than writing a path to nothing over it. The colours always survive:
+    /// a theme whose background did not arrive is still a usable theme.
     static func fetchImage(
         for config: ThemeConfig,
         from source: Source,
         session: URLSession = .shared,
         completion: @escaping (ThemeConfig) -> Void
     ) {
-        guard let path = config.background?.imagePath, isRelative(path),
+        guard let path = config.background?.imagePath else {
+            completion(config)
+            return
+        }
+        guard isRelative(path),
               let url = source.url(forRelative: path),
               let directory = mediaDirectory(for: source)
         else {
-            completion(config)
+            var updated = config
+            updated.background = nil
+            completion(updated)
             return
         }
 

@@ -63,9 +63,13 @@ final class BackgroundImageView: NSView {
         let target = bounds
         guard target.width > 0, target.height > 0 else { return }
 
+        // The view is flipped, and the four-argument draw ignores that, so it
+        // would paint every picture upside down. respectFlipped makes the
+        // image honour the view's coordinate system.
         switch fit {
         case .stretch:
-            image.draw(in: target, from: .zero, operation: .sourceOver, fraction: alpha)
+            image.draw(in: target, from: .zero, operation: .sourceOver, fraction: alpha,
+                       respectFlipped: true, hints: nil)
         case .tile:
             let size = image.size
             guard size.width > 1, size.height > 1 else { return }
@@ -74,7 +78,8 @@ final class BackgroundImageView: NSView {
                 var x = target.minX
                 while x < target.maxX {
                     image.draw(in: NSRect(x: x, y: y, width: size.width, height: size.height),
-                               from: .zero, operation: .sourceOver, fraction: alpha)
+                               from: .zero, operation: .sourceOver, fraction: alpha,
+                               respectFlipped: true, hints: nil)
                     x += size.width
                 }
                 y += size.height
@@ -82,7 +87,8 @@ final class BackgroundImageView: NSView {
         case .center:
             let size = image.size
             let origin = NSPoint(x: target.midX - size.width / 2, y: target.midY - size.height / 2)
-            image.draw(in: NSRect(origin: origin, size: size), from: .zero, operation: .sourceOver, fraction: alpha)
+            image.draw(in: NSRect(origin: origin, size: size), from: .zero, operation: .sourceOver,
+                       fraction: alpha, respectFlipped: true, hints: nil)
         case .fill, .fit:
             let size = image.size
             guard size.width > 0, size.height > 0 else { return }
@@ -91,7 +97,8 @@ final class BackgroundImageView: NSView {
                 : min(target.width / size.width, target.height / size.height)
             let scaled = NSSize(width: size.width * scale, height: size.height * scale)
             let origin = NSPoint(x: target.midX - scaled.width / 2, y: target.midY - scaled.height / 2)
-            image.draw(in: NSRect(origin: origin, size: scaled), from: .zero, operation: .sourceOver, fraction: alpha)
+            image.draw(in: NSRect(origin: origin, size: scaled), from: .zero, operation: .sourceOver,
+                       fraction: alpha, respectFlipped: true, hints: nil)
         }
     }
 }
