@@ -336,6 +336,17 @@ final class SettingsStore {
         guard shouldAdopt(data) else { return }
         guard let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         lock.lock()
+        // The directory watcher fires for every neighbour — theme.json lives
+        // in the same folder — and before the run's first settings write none
+        // of the shouldAdopt guards recognise the file as our own. Identical
+        // contents are not an outside edit: remember the bytes so the next
+        // neighbour event stops at shouldAdopt, and post nothing, or every
+        // theme.json write would reload every open pane.
+        if NSDictionary(dictionary: values).isEqual(to: parsed) {
+            lastWritten = data
+            lock.unlock()
+            return
+        }
         values = parsed
         lock.unlock()
         DispatchQueue.main.async {

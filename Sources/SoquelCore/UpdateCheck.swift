@@ -21,9 +21,13 @@ enum UpdateCheck {
 
     /// When it last asked, so turning it on does not mean asking on every
     /// launch and every settings visit.
+    ///
+    /// Stored as seconds since 1970: the settings file is JSON, which has no
+    /// date type, so a Date handed to the store would be dropped rather than
+    /// written — and a check that never records when it ran runs every launch.
     static var lastChecked: Date? {
-        get { Settings.object(forKey: "lastUpdateCheck") as? Date }
-        set { Settings.set(newValue, forKey: "lastUpdateCheck") }
+        get { Settings.double(forKey: "lastUpdateCheck").map(Date.init(timeIntervalSince1970:)) }
+        set { Settings.set(newValue?.timeIntervalSince1970, forKey: "lastUpdateCheck") }
     }
 
     /// The version the user said they did not want to be told about again.

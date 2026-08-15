@@ -190,13 +190,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 /// A colour well per slot, for light and dark, writing straight to theme.json.
 final class AppearanceSettingsView: NSView {
     private var wells: [(slot: ThemeConfig.Slot, dark: Bool, well: ColourSwatchButton)] = []
+    private var observer: NSObjectProtocol?
 
     init() {
         super.init(frame: .zero)
         build()
+        // The wells are seeded once, but the Themes pane and hand edits to
+        // theme.json change the colours out from under them. The preview
+        // already follows this notification; the swatches have to as well,
+        // or a click on a stale one opens the panel on the old colour and
+        // the first drag tick writes that old colour back into the slot.
+        // Re-assigning an unchanged colour during a drag only redraws, so
+        // no feedback loop forms.
+        observer = NotificationCenter.default.addObserver(
+            forName: .soquelThemeChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            for entry in self.wells {
+                entry.well.color = Theme.resolved(entry.slot, dark: entry.dark)
+            }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
 
     fileprivate func build() {
         let grid = NSGridView()
@@ -277,6 +297,10 @@ final class AppearanceSettingsView: NSView {
             note.topAnchor.constraint(equalTo: buttons.bottomAnchor, constant: 12),
             note.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             note.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            // The last row pins the bottom, like every other pane: the scroll
+            // container takes the document height from these constraints, and
+            // without this one a short window could never scroll to the note.
+            note.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -18),
         ])
     }
 
@@ -455,11 +479,12 @@ final class KeyboardSettingsView: NSView, NSTableViewDataSource, NSTableViewDele
             return cell
         }
 
-        let recorder = ShortcutRecorderView(command: command) { [weak self] in
+        let recorder = ShortcutRecorderView(command: command, report: { [weak self] in
+            self?.conflictLabel.stringValue = $0
+        }, onCommit: { [weak self] in
             self?.commands = CommandRegistry.all
             self?.table.reloadData()
-            self?.conflictLabel.stringValue = $0
-        }
+        })
         return recorder
     }
 }
@@ -469,12 +494,18 @@ final class KeyboardSettingsView: NSView, NSTableViewDataSource, NSTableViewDele
 final class ShortcutRecorderView: NSView {
     private let command: Command
     private let report: (String) -> Void
+    /// Runs only when a binding actually changed. Kept apart from `report`:
+    /// committing reloads the table, and a reload tears this recorder down —
+    /// so a rejection that reloaded would end the very recording session its
+    /// message invites you to retry.
+    private let onCommit: () -> Void
     private var recording = false
     private var label: NSTextField!
 
-    init(command: Command, report: @escaping (String) -> Void) {
+    init(command: Command, report: @escaping (String) -> Void, onCommit: @escaping () -> Void) {
         self.command = command
         self.report = report
+        self.onCommit = onCommit
         super.init(frame: .zero)
 
         label = NSTextField(labelWithString: "")
@@ -529,6 +560,7 @@ final class ShortcutRecorderView: NSView {
             recording = false
             refresh()
             report("\(command.title) has no shortcut.")
+            onCommit()
             return
         }
 
@@ -547,6 +579,18 @@ final class ShortcutRecorderView: NSView {
         recording = false
         refresh()
         report("\(command.title) is now \(shortcut.display).")
+        onCommit()
+    }
+
+    /// Command-key events travel the window's performKeyEquivalent chain
+    /// before any keyDown, and the default NSView implementation lets the
+    /// menu take them — so ⌘N opened a window instead of being recorded, and
+    /// anything bound to a menu item could never be captured at all. While
+    /// recording, the event is claimed and given the keyDown handling here.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard recording else { return super.performKeyEquivalent(with: event) }
+        keyDown(with: event)
+        return true
     }
 
     override func draw(_ dirtyRect: NSRect) {
