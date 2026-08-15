@@ -384,7 +384,7 @@ final class AppearanceSettingsView: NSView {
     }
 
     @objc private func revealFile() {
-        try? Theme.writeTemplate()
+        _ = try? Theme.writeTemplate()
         NSWorkspace.shared.activateFileViewerSelecting([ThemeConfig.fileURL])
     }
 }
