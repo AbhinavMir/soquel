@@ -11,8 +11,16 @@ enum Checksum {
         defer { try? handle.close() }
 
         var hasher = SHA256()
-        while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
-            hasher.update(data: chunk)
+        // EOF ends the loop through the nil/empty read. A thrown read error
+        // must not end it the same way: the digest of a truncated stream would
+        // then be reported as the file's checksum, and a verify would call a
+        // good copy corrupt.
+        do {
+            while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+                hasher.update(data: chunk)
+            }
+        } catch {
+            return nil
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

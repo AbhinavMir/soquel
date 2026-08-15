@@ -33,6 +33,10 @@ final class TransferJob {
     private(set) var totalBytes: Int64 = 0
     private(set) var filesCopied = 0
     private(set) var totalFiles = 0
+    /// Failures in the same unit as `totalFiles`. `failures` holds one entry
+    /// per failed item; a folder that failed weighs in here as the files it
+    /// held, so "N of M failed" compares like with like.
+    private(set) var filesFailed = 0
     private(set) var currentFile: String?
     private(set) var failures: [(url: URL, message: String)] = []
     private(set) var startedAt: Date?
@@ -94,12 +98,20 @@ final class TransferJob {
     }
 
     func advance(bytes: Int64, file: String?, now: Date) {
-        bytesCopied += bytes
         // A named file counts as copied unless this is the zero-byte report of
         // the failure just recorded against that same name. Matching on both
         // the pending failure and the name keeps a later file that happens to
         // share a name with a failed one from being lost from the count.
-        if let file, file != justFailedFile { filesCopied += 1 }
+        let arrived = (file != nil && file != justFailedFile) ? 1 : 0
+        advance(bytes: bytes, files: arrived, file: file, now: now)
+    }
+
+    /// Advances by an explicit file count, for a caller that measured what it
+    /// placed. A copied or merged folder is one advance but many files, and
+    /// `totalFiles` counts files, so the progress counts must too.
+    func advance(bytes: Int64, files: Int, file: String?, now: Date) {
+        bytesCopied += bytes
+        filesCopied += files
         justFailedFile = nil
         currentFile = file
         if let startedAt {
@@ -109,9 +121,12 @@ final class TransferJob {
     }
 
     /// A file that could not be copied is recorded and the job carries on. One
-    /// unreadable file must not abandon the other nine hundred.
-    func recordFailure(_ url: URL, _ message: String) {
+    /// unreadable file must not abandon the other nine hundred. `files` is the
+    /// failure's weight in the unit `totalFiles` uses: a failed folder is the
+    /// files it held, not one.
+    func recordFailure(_ url: URL, _ message: String, files: Int = 1) {
         failures.append((url, message))
+        filesFailed += files
         justFailedFile = url.lastPathComponent
     }
 
@@ -124,6 +139,7 @@ final class TransferJob {
         // retry copy the corrupt file onto itself and report success.
         for entry in manifest.failed {
             failures.append((entry.source, "Checksum did not match after copying"))
+            filesFailed += 1
         }
     }
 
@@ -149,7 +165,7 @@ final class TransferJob {
         case .finished:
             return "\(filesCopied) file\(filesCopied == 1 ? "" : "s"), \(formatter.string(fromByteCount: bytesCopied))"
         case .failed:
-            return "\(failures.count) of \(totalFiles) failed — \(filesCopied) copied"
+            return "\(filesFailed) of \(totalFiles) failed — \(filesCopied) copied"
         case .running:
             var text = "\(formatter.string(fromByteCount: bytesCopied)) of \(formatter.string(fromByteCount: totalBytes))"
             if bytesPerSecond > 1 {

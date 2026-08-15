@@ -57,6 +57,23 @@ enum VerifiedCopy {
     static func verify(
         source: URL, destination: URL, hash: (URL) -> String? = Checksum.sha256(of:)
     ) -> Entry {
+        // A copied symlink is verified as a link: the same target string on
+        // both sides. Hashing would read through the link — impossible when
+        // it is broken or points outside the tree, and beside the point even
+        // when it works, because the copy wrote a link, not the target's
+        // bytes. This check must come first: fileExists follows links, so a
+        // link to a folder would otherwise walk the folder it points at.
+        if (try? source.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+            let fm = FileManager.default
+            guard let a = try? fm.destinationOfSymbolicLink(atPath: source.path),
+                  let b = try? fm.destinationOfSymbolicLink(atPath: destination.path) else {
+                return Entry(source: source, destination: destination,
+                             outcome: .unreadable, sourceHash: nil, destinationHash: nil)
+            }
+            return Entry(source: source, destination: destination,
+                         outcome: a == b ? .passed : .failed, sourceHash: nil, destinationHash: nil)
+        }
+
         var isDirectory: ObjCBool = false
         FileManager.default.fileExists(atPath: source.path, isDirectory: &isDirectory)
         if isDirectory.boolValue {
@@ -112,25 +129,47 @@ enum VerifiedCopy {
             at: root, includingPropertiesForKeys: keys, options: []
         ) else { return nil }
 
+        let rootComponents = root.resolvingSymlinksInPath().standardizedFileURL.pathComponents
         var names: Set<String> = []
         for case let url as URL in walker {
             guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
             if values.isDirectory == true { continue }
-            guard let relative = relativePath(of: url, under: root) else { return nil }
-            names.insert(relative)
+            // Resolve only the directories above the entry, never the entry
+            // itself. Resolving the leaf would list a symlink under its
+            // target's name — or drop the whole listing when the target lies
+            // outside the tree — and the two sides would then be compared
+            // against files the trees do not contain. The parents are safe to
+            // resolve: the enumerator never descends into a linked folder,
+            // and the root itself can sit behind one (/tmp, /var).
+            let parent = url.deletingLastPathComponent()
+                .resolvingSymlinksInPath().standardizedFileURL
+            let full = parent.pathComponents + [url.lastPathComponent]
+            guard full.count > rootComponents.count,
+                  Array(full.prefix(rootComponents.count)) == rootComponents else { return nil }
+            names.insert(full.dropFirst(rootComponents.count).joined(separator: "/"))
         }
         return names
     }
 
     /// Verifies a whole result. Only what a copy actually created is checked —
-    /// a move has nothing left at the source to compare against.
+    /// a move has nothing left at the source to compare against. Takes
+    /// explicit pairs: a transfer's source and destination lists do not stay
+    /// parallel once a merge has placed children one by one.
     static func verify(
-        sources: [URL], destinations: [URL], hash: (URL) -> String? = Checksum.sha256(of:)
+        pairs: [(source: URL, destination: URL)], hash: (URL) -> String? = Checksum.sha256(of:)
     ) -> Manifest {
         var manifest = Manifest()
-        for (source, destination) in zip(sources, destinations) {
+        for (source, destination) in pairs {
             manifest.entries.append(verify(source: source, destination: destination, hash: hash))
         }
         return manifest
+    }
+
+    /// Convenience for callers that hold two arrays already known to be
+    /// parallel, index for index.
+    static func verify(
+        sources: [URL], destinations: [URL], hash: (URL) -> String? = Checksum.sha256(of:)
+    ) -> Manifest {
+        verify(pairs: zip(sources, destinations).map { (source: $0.0, destination: $0.1) }, hash: hash)
     }
 }

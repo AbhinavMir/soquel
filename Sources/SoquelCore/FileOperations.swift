@@ -8,6 +8,11 @@ struct OperationResult {
     var trashedPairs: [(original: URL, inTrash: URL)] = []
     /// Destination URLs actually created by a copy/move, for undo.
     var createdDestinations: [URL] = []
+    /// What was written and where, one pair per placed item, for verification.
+    /// Kept explicitly because `succeeded` and `createdDestinations` do not
+    /// stay parallel: a merge appends one source but one destination per child
+    /// placed, so pairing them by index checks the wrong files.
+    var verifyPairs: [(source: URL, destination: URL)] = []
     /// Destinations that overwrote an existing item. Undoing these would delete
     /// the incoming file without bringing the replaced one back, so they are
     /// excluded from undo entries.
@@ -143,7 +148,12 @@ final class OperationEngine {
                     let resolution = standing ?? DispatchQueue.main.sync { resolveConflict(source, destination) }
                     if resolution.applyToAll { standing = resolution }
 
-                    if resolution.skipIdentical && looksIdentical(source, destination) { continue }
+                    // The checkbox state rides along on whichever button was
+                    // pressed, Cancel included. Cancel means stop; an
+                    // identical pair must not turn it into a skip that lets
+                    // the rest of the operation carry on.
+                    if resolution.choice != .cancel, resolution.skipIdentical,
+                       looksIdentical(source, destination) { continue }
 
                     switch resolution.choice {
                     case .cancel:
@@ -161,12 +171,36 @@ final class OperationEngine {
                     case .replace:
                         replacing = true
                     case .merge:
+                        // Merge is offered only when both sides are folders,
+                        // but a standing "apply to all" answer taken at a
+                        // folder conflict can land on a later file conflict.
+                        // Fall back to skip there, as the child-level switch
+                        // does, rather than let merge() fail on a file and the
+                        // pair still be recorded as succeeded and merged.
+                        var sourceIsFolder: ObjCBool = false
+                        var destinationIsFolder: ObjCBool = false
+                        _ = fm.fileExists(atPath: source.path, isDirectory: &sourceIsFolder)
+                        _ = fm.fileExists(atPath: destination.path, isDirectory: &destinationIsFolder)
+                        guard sourceIsFolder.boolValue, destinationIsFolder.boolValue else { continue }
+
                         // Walk both trees and resolve child by child, instead of
                         // deleting the destination folder and everything under it.
+                        let placedFrom = result.createdDestinations.count
                         let cancelled = self.merge(
                             source: source, into: destination, move: move, fileManager: fm,
                             standing: &standing, resolveConflict: resolveConflict, result: &result
                         )
+                        // merge() places children one by one and never touches
+                        // the job, so the advance the plain-copy path performs
+                        // never runs for a merged source. Credit the job with
+                        // what the merge actually created — cancelled or not,
+                        // those bytes moved.
+                        let placed = TransferQueue.measure(Array(result.createdDestinations[placedFrom...]))
+                        let mergedName = source.lastPathComponent
+                        DispatchQueue.main.async {
+                            job.advance(bytes: placed.bytes, files: placed.files, file: mergedName, now: Date())
+                            TransferQueue.shared.notify()
+                        }
                         if cancelled {
                             DispatchQueue.main.async {
                                 job.cancel()
@@ -216,20 +250,28 @@ final class OperationEngine {
                     }
                     result.succeeded.append(source)
                     result.createdDestinations.append(destination)
+                    result.verifyPairs.append((source, destination))
                     if replacing { result.replacedDestinations.append(destination) }
 
-                    let moved = TransferQueue.measure([destination]).bytes
+                    // Measured at the destination so the job's progress is in
+                    // the same units as its totals: a placed folder is many
+                    // files, not one.
+                    let moved = TransferQueue.measure([destination])
                     let name = source.lastPathComponent
                     DispatchQueue.main.async {
-                        job.advance(bytes: moved, file: name, now: Date())
+                        job.advance(bytes: moved.bytes, files: moved.files, file: name, now: Date())
                         TransferQueue.shared.notify()
                     }
                 } catch {
                     result.failures.append((source, error))
                     let name = source.lastPathComponent
                     let message = error.localizedDescription
+                    // Weigh the failure in files too. A source that cannot be
+                    // measured still counts as one: one item did fail,
+                    // whatever it held.
+                    let failedFiles = max(1, TransferQueue.measure([source]).files)
                     DispatchQueue.main.async {
-                        job.recordFailure(source, message)
+                        job.recordFailure(source, message, files: failedFiles)
                         job.advance(bytes: 0, file: name, now: Date())
                         TransferQueue.shared.notify()
                     }
@@ -238,10 +280,8 @@ final class OperationEngine {
 
             // A move leaves nothing at the source to compare against, so only
             // copies are verified.
-            if VerifiedCopy.isEnabled, !move, !result.createdDestinations.isEmpty {
-                let verified = VerifiedCopy.verify(
-                    sources: result.succeeded, destinations: result.createdDestinations
-                )
+            if VerifiedCopy.isEnabled, !move, !result.verifyPairs.isEmpty {
+                let verified = VerifiedCopy.verify(pairs: result.verifyPairs)
                 result.manifest = verified
                 DispatchQueue.main.async {
                     job.recordVerification(verified)
@@ -300,6 +340,7 @@ final class OperationEngine {
                     if move { try fm.moveItem(at: child, to: target) }
                     else { try fm.copyItem(at: child, to: target) }
                     result.createdDestinations.append(target)
+                    result.verifyPairs.append((child, target))
                 } catch {
                     result.failures.append((child, error))
                 }
@@ -317,7 +358,10 @@ final class OperationEngine {
 
             let resolution = standing ?? DispatchQueue.main.sync { resolveConflict(child, target) }
             if resolution.applyToAll { standing = resolution }
-            if resolution.skipIdentical && looksIdentical(child, target) { continue }
+            // As in transfer(): a Cancel that happens to land on an identical
+            // pair is still a cancel, not a skip.
+            if resolution.choice != .cancel, resolution.skipIdentical,
+               looksIdentical(child, target) { continue }
 
             switch resolution.choice {
             case .cancel:
@@ -334,6 +378,7 @@ final class OperationEngine {
                     if move { try fm.moveItem(at: child, to: target) }
                     else { try fm.copyItem(at: child, to: target) }
                     result.createdDestinations.append(target)
+                    result.verifyPairs.append((child, target))
                 } catch {
                     result.failures.append((child, error))
                 }
@@ -342,6 +387,7 @@ final class OperationEngine {
                     try self.replaceItem(at: target, with: child, move: move, fileManager: fm)
                     result.createdDestinations.append(target)
                     result.replacedDestinations.append(target)
+                    result.verifyPairs.append((child, target))
                 } catch {
                     result.failures.append((child, error))
                 }
