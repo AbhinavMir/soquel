@@ -338,6 +338,14 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             restoreCollectionSelection(selectedURLsCache)
         } else {
             tableView.reloadData()
+            // The cache carries the selection across the switch. Without this
+            // the table re-asserted whatever rows it held before icon mode,
+            // and the next command acted on files the user never picked.
+            if selectedURLsCache.isEmpty {
+                tableView.deselectAll(nil)
+            } else {
+                restoreSelection(selectedURLsCache)
+            }
         }
     }
 
@@ -398,7 +406,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// keystroke, so dragging one turns the automatic fitting off and says so
     /// rather than quietly fighting the user for the width.
     @objc func tableViewColumnDidResize(_ notification: Notification) {
-        guard let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
+        // Setting a column's width in code posts the same notification a drag
+        // does; without the flag every automatic fit read as a drag, saved
+        // the fitted width and switched the fitting off.
+        guard !isFittingColumns,
+              let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn,
               view.window?.isKeyWindow == true
         else { return }
         let floor = column.minWidth
@@ -511,8 +523,22 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 self.applyFilterAndSort(preservingSelection: false)
                 self.restoreSelection(previousSelection)
                 self.delegate?.fileListDidReload(self)
-                if resetScroll, self.tableView.numberOfRows > 0 {
-                    self.tableView.scrollRowToVisible(self.tableView.selectedRow >= 0 ? self.tableView.selectedRow : 0)
+                if resetScroll {
+                    if self.isIconMode {
+                        // The icon view keeps its own scroll offset; without
+                        // this a navigation carried the old folder's position
+                        // into the new one.
+                        if let first = self.collectionView.selectionIndexPaths.min() {
+                            self.collectionView.scrollToItems(
+                                at: [first], scrollPosition: .nearestHorizontalEdge
+                            )
+                        } else {
+                            self.collectionScroll.contentView.scroll(to: .zero)
+                            self.collectionScroll.reflectScrolledClipView(self.collectionScroll.contentView)
+                        }
+                    } else if self.tableView.numberOfRows > 0 {
+                        self.tableView.scrollRowToVisible(self.tableView.selectedRow >= 0 ? self.tableView.selectedRow : 0)
+                    }
                 }
                 self.emptyLabel.isHidden = !self.items.isEmpty
                 self.emptyLabel.stringValue = self.allItems.isEmpty
@@ -522,6 +548,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 self.allItems = []
                 self.items = []
                 self.tableView.reloadData()
+                // The icon view draws from the same items; leaving it alone
+                // kept the previous folder's tiles under the error message.
+                if self.isIconMode { self.collectionView.reloadData() }
                 self.emptyLabel.isHidden = false
                 self.emptyLabel.stringValue = error.localizedDescription
             }
@@ -1031,9 +1060,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     private func tagsMenuItem() -> NSMenuItem {
         let urls = selectedURLs()
         let submenu = NSMenu()
-        let shared = Set(urls.map { Set(Tags.read($0)) }.reduce(Set<String>()) {
-            $0.isEmpty ? $1 : $0.intersection($1)
-        })
+        // Seed the intersection with the first file's tags. Seeding with an
+        // empty set cannot tell "not started" from "nothing shared", so one
+        // untagged file — or two disjoint ones — restarted the intersection
+        // and ticked tags that not every file carries.
+        let sets = urls.map { Set(Tags.read($0)) }
+        let shared = sets.dropFirst().reduce(sets.first ?? []) { $0.intersection($1) }
 
         for (name, colour) in Tags.standard {
             let item = NSMenuItem(title: name, action: #selector(toggleTag(_:)), keyEquivalent: "")
@@ -1483,16 +1515,42 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // Where the cursor should land once the rows are gone. Selecting has to
         // wait for the reload; doing it immediately after landed on the old
         // contents and left nothing selected, so a second ⌘⌫ went up a folder.
-        let nextRow = max(0, (tableView.selectedRowIndexes.min() ?? 0))
-        OperationEngine.shared.trash(urls) { [weak self] result in
+        // Read from whichever view is on screen — the table's rows say nothing
+        // in icon mode.
+        let selectionIndexes = isIconMode
+            ? collectionView.selectionIndexPaths.map(\.item)
+            : Array(tableView.selectedRowIndexes)
+        let nextRow = max(0, selectionIndexes.min() ?? 0)
+
+        // The items the warning covered must be deleted outright: trashItem
+        // throws on a volume without a Trash instead of falling back, so
+        // sending them there did nothing after the user had already agreed to
+        // lose them. The rest still go through the Trash and stay undoable.
+        let permanent = urls.filter { !TrashPolicy.outcome(for: $0).isRecoverable }
+        let recoverable = urls.filter { TrashPolicy.outcome(for: $0).isRecoverable }
+
+        let finish: (OperationResult) -> Void = { [weak self] result in
             guard let self else { return }
             UndoStack.shared.pushTrash(result.trashedPairs)
-            self.reportFailures(result, verb: "move to Trash")
+            self.reportFailures(result, verb: permanent.isEmpty ? "move to Trash" : "delete")
             self.reload {
                 guard !self.items.isEmpty else { return }
-                let target = min(nextRow, self.items.count - 1)
-                self.tableView.selectRowIndexes([target], byExtendingSelection: false)
-                self.tableView.scrollRowToVisible(target)
+                self.select(index: min(nextRow, self.items.count - 1))
+            }
+        }
+
+        if permanent.isEmpty {
+            OperationEngine.shared.trash(urls, completion: finish)
+        } else if recoverable.isEmpty {
+            OperationEngine.shared.deletePermanently(permanent, completion: finish)
+        } else {
+            OperationEngine.shared.deletePermanently(permanent) { deleted in
+                OperationEngine.shared.trash(recoverable) { trashed in
+                    var merged = trashed
+                    merged.succeeded.append(contentsOf: deleted.succeeded)
+                    merged.failures.append(contentsOf: deleted.failures)
+                    finish(merged)
+                }
             }
         }
     }
@@ -1690,8 +1748,14 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// stick; an entire commercial app launched on making this the default.
     /// Measures every row, not only the visible ones, because the point is the
     /// name that is currently cut off further down.
+    /// True while fitColumnsToContent is writing widths, so the resize handler
+    /// can tell the fit's own notifications from a user's drag.
+    private var isFittingColumns = false
+
     func fitColumnsToContent() {
         guard isViewLoaded, !items.isEmpty else { return }
+        isFittingColumns = true
+        defer { isFittingColumns = false }
 
         for column in tableView.tableColumns where !column.isHidden {
             let key = column.identifier.rawValue
@@ -2267,9 +2331,21 @@ extension FileListViewController: QLPreviewPanelDataSource, QLPreviewPanelDelega
 
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         // Arrow keys should keep driving the list while the panel is open.
+        // They have to go to the view that is on screen: sending them to the
+        // table in icon mode moved a selection nobody could see, and the panel
+        // went on showing the same item. The column browser is the delegate's,
+        // so the panel keeps those keys itself.
         if event.type == .keyDown, [123, 124, 125, 126].contains(event.keyCode) {
-            tableView.keyDown(with: event)
-            return true
+            switch mode {
+            case .list:
+                tableView.keyDown(with: event)
+                return true
+            case .icon:
+                collectionView.keyDown(with: event)
+                return true
+            case .column:
+                return false
+            }
         }
         return false
     }
