@@ -122,6 +122,7 @@ final class SweepSidebarSelectionReportTests: XCTestCase {
         func sidebar(_ sidebar: SidebarViewController, revealFile url: URL) { revealed.append(url) }
         func sidebar(_ sidebar: SidebarViewController, openInNewTab url: URL) { newTabs.append(url) }
         func sidebar(_ sidebar: SidebarViewController, run search: SavedSearch) { searches.append(search) }
+        func sidebar(_ sidebar: SidebarViewController, dropFiles urls: [URL], into destination: URL, move: Bool) {}
     }
 
     private var sidebar: SidebarViewController!

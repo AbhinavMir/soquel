@@ -69,26 +69,40 @@ enum Log {
     /// Roughly an hour of chatty use. Beyond this the file is the record.
     static let bufferLimit = 4000
 
+    /// Whether DEBUG lines are recorded at all. Off unless asked for: they
+    /// exist for development, and the ordinary levels are the record a bug
+    /// report needs. Chatty debug lines were being formatted on the main
+    /// thread on every redraw and keystroke in shipping builds.
+    static var debugEnabled = ProcessInfo.processInfo.environment["SOQUEL_DEBUG_LOG"] != nil
+
     static func write(
         _ level: Level, _ category: Category, _ message: @autoclosure () -> String,
         file: String = #fileID, line: Int = #line
     ) {
+        // Only the message closure runs on the caller's thread — it can
+        // capture UI state, which must be read where it lives. The date
+        // formatting and string assembly happen on the log's own queue, off
+        // whatever thread the caller is busy on.
         let text = message()
         let now = Date()
         let origin = (file as NSString).lastPathComponent
-        let entry = "\(timeStamp.string(from: now)) \(level.rawValue.padding(toLength: 5, withPad: " ", startingAt: 0)) "
-            + "[\(category.rawValue)] \(text)  (\(origin):\(line))"
 
-        lock.lock()
-        buffer.append((now, entry))
-        if buffer.count > bufferLimit { buffer.removeFirst(buffer.count - bufferLimit) }
-        lock.unlock()
+        queue.async {
+            let entry = "\(timeStamp.string(from: now)) \(level.rawValue.padding(toLength: 5, withPad: " ", startingAt: 0)) "
+                + "[\(category.rawValue)] \(text)  (\(origin):\(line))"
 
-        queue.async { append(entry, at: now) }
+            lock.lock()
+            buffer.append((now, entry))
+            if buffer.count > bufferLimit { buffer.removeFirst(buffer.count - bufferLimit) }
+            lock.unlock()
+
+            append(entry, at: now)
+        }
     }
 
     static func debug(_ category: Category, _ message: @autoclosure () -> String,
                       file: String = #fileID, line: Int = #line) {
+        guard debugEnabled else { return }
         write(.debug, category, message(), file: file, line: line)
     }
 

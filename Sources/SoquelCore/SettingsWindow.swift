@@ -1,18 +1,30 @@
 import AppKit
 
-/// A window that closes on Escape.
+/// A window that closes on Escape and on ⌘W.
 ///
 /// AppKit only routes Escape to a button wired as the cancel button, and a
 /// settings window has no Cancel — there is nothing to cancel, the changes are
-/// already applied. So the key is handled here instead.
+/// already applied. So the key is handled here instead. ⌘W belongs to Close
+/// Tab in the menu bar, whose target lives on the main window controller, so
+/// with this window key it did nothing at all; key equivalents reach the key
+/// window before the menu, which is where it becomes Close.
 final class EscapableWindow: NSWindow {
     override func cancelOperation(_ sender: Any?) { close() }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers == "w" {
+            close()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 /// Preferences window. Appearance edits the colour slots with a real colour
 /// well, Keyboard remaps any command's shortcut, and Applications chooses what
 /// opens each kind of file.
-final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSearchFieldDelegate {
     /// Built here rather than in an `init()`. A `convenience init()` on an
     /// NSWindowController subclass collides with the inherited designated
     /// `init()`, and `SettingsWindowController()` silently resolved to the
@@ -59,6 +71,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // empty box leaves the pane you were on exactly where it was.
         resultsScroll.isHidden = matches.isEmpty
         results.reloadData()
+    }
+
+    /// Escape in the search box: a filled box clears and shows the panes
+    /// again; an empty one closes the window. Without this the field editor
+    /// swallowed the key and Escape appeared to do nothing at all.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard control === search, selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        if search.stringValue.isEmpty {
+            window?.close()
+        } else {
+            search.stringValue = ""
+            searchChanged()
+        }
+        return true
     }
 
     @objc private func resultClicked() {
@@ -108,6 +134,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         search.target = self
         search.action = #selector(searchChanged)
         search.sendsSearchStringImmediately = true
+        search.delegate = self
         search.translatesAutoresizingMaskIntoConstraints = false
 
         results = NSTableView()

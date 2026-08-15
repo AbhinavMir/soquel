@@ -91,6 +91,7 @@ protocol SidebarDelegate: AnyObject {
     func sidebar(_ sidebar: SidebarViewController, revealFile url: URL)
     func sidebar(_ sidebar: SidebarViewController, openInNewTab url: URL)
     func sidebar(_ sidebar: SidebarViewController, run search: SavedSearch)
+    func sidebar(_ sidebar: SidebarViewController, dropFiles urls: [URL], into destination: URL, move: Bool)
 }
 
 /// The sidebar's outline. Return and keypad Enter act on the selected row.
@@ -1067,6 +1068,22 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         proposedItem item: Any?,
         proposedChildIndex index: Int
     ) -> NSDragOperation {
+        // Files dropped ON a row that stands for a folder on disk land inside
+        // that folder, the way every file manager's sidebar works. Dropping
+        // between rows keeps its old meaning — pinning — and reordering
+        // travels as itemDragType, so neither loses anything to this.
+        if info.draggingPasteboard.string(forType: Self.itemDragType) == nil,
+           index == NSOutlineViewDropOnItemIndex,
+           let node = item as? SidebarNode,
+           let destination = Self.dropDestination(of: node),
+           let dragged = info.draggingPasteboard.readObjects(
+               forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+           ) as? [URL], !dragged.isEmpty {
+            if dragged.contains(where: { samePath($0, destination) }) { return [] }
+            outlineView.setDropItem(node, dropChildIndex: NSOutlineViewDropOnItemIndex)
+            return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
+        }
+
         // AppKit proposes the row under the pointer when the pointer is over an
         // item, and the group with a child index only when it is exactly
         // between two rows. Refusing the first meant the only drop that was
@@ -1092,12 +1109,34 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         return dropped.contains { $0.hasDirectoryPath } ? .copy : []
     }
 
+    /// The folder a file drop on this row lands in, when the row stands for a
+    /// folder on disk. Files, saved searches and headers are not targets.
+    static func dropDestination(of node: SidebarNode) -> URL? {
+        switch node.kind {
+        case .pinned(let item): return item.url.hasDirectoryPath ? item.url : nil
+        case .volume(let url, _), .treeFolder(let url): return url
+        case .userGroup, .systemGroup, .treeFile, .treeMore, .savedSearch: return nil
+        }
+    }
+
     func outlineView(
         _ outlineView: NSOutlineView,
         acceptDrop info: NSDraggingInfo,
         item: Any?,
         childIndex index: Int
     ) -> Bool {
+        if info.draggingPasteboard.string(forType: Self.itemDragType) == nil,
+           index == NSOutlineViewDropOnItemIndex,
+           let node = item as? SidebarNode,
+           let destination = Self.dropDestination(of: node),
+           let dragged = info.draggingPasteboard.readObjects(
+               forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+           ) as? [URL], !dragged.isEmpty {
+            let move = info.draggingSourceOperationMask.contains(.move)
+            delegate?.sidebar(self, dropFiles: dragged, into: destination, move: move)
+            return true
+        }
+
         guard let target = item as? SidebarNode, let groupID = target.groupID else { return false }
         var layout = SidebarStore.layout
 

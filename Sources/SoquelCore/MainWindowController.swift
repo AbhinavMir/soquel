@@ -1723,6 +1723,12 @@ extension MainWindowController: SidebarDelegate {
         reveal(url)
     }
 
+    func sidebar(_ sidebar: SidebarViewController, dropFiles urls: [URL], into destination: URL, move: Bool) {
+        // Through the focused list so conflicts, undo and failure reporting
+        // behave exactly as a drop into the pane does.
+        focusedList?.transfer(urls, into: destination, move: move)
+    }
+
     func sidebar(_ sidebar: SidebarViewController, run search: SavedSearch) {
         // A search saved against a folder that has gone runs in the pane's
         // folder rather than failing.
