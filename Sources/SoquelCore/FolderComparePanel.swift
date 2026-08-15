@@ -2,9 +2,10 @@ import AppKit
 
 /// Side-by-side folder comparison, and copying the differences.
 ///
-/// Rows are plain views in a stack rather than an NSTableView, for the same
-/// reason the transfer panel is: a single wide row of mixed controls lays out
-/// correctly this way and fights the column model otherwise.
+/// Rows live in an NSTableView so only the visible ones are built. A first
+/// sync of a large tree makes every file a difference, and building a
+/// constraint-laden view per entry on the main thread beachballed for minutes
+/// once the counts reached the tens of thousands.
 final class FolderComparePanelController: NSWindowController {
     static let shared: FolderComparePanelController = {
         let window = NSWindow(
@@ -24,12 +25,15 @@ final class FolderComparePanelController: NSWindowController {
     private var leftRoot: URL?
     private var rightRoot: URL?
     private var entries: [FolderCompare.Entry] = []
+    /// The entries the table is showing, after the differences-only filter.
+    /// Stored, not computed: the table indexes into it once per visible row.
+    private var visible: [FolderCompare.Entry] = []
     /// Relative paths the user has ticked for copying.
     private var chosen: Set<String> = []
 
     private var header: NSTextField!
     private var footer: NSTextField!
-    private var rowStack: NSStackView!
+    private var table: NSTableView!
     private var spinner: NSProgressIndicator!
     private var precisionControl: NSSegmentedControl!
     private var hiddenCheckbox: NSButton!
@@ -96,16 +100,23 @@ final class FolderComparePanelController: NSWindowController {
         options.spacing = 10
         options.translatesAutoresizingMaskIntoConstraints = false
 
-        rowStack = NSStackView()
-        rowStack.orientation = .vertical
-        rowStack.alignment = .leading
-        rowStack.spacing = 0
-        rowStack.translatesAutoresizingMaskIntoConstraints = false
+        table = NSTableView()
+        table.headerView = nil
+        table.rowHeight = 24
+        table.intercellSpacing = .zero
+        table.style = .fullWidth
+        table.backgroundColor = .clear
+        // The checkbox is the only interaction a row has; a selection would
+        // suggest the copy buttons act on it, and they act on the ticks.
+        table.selectionHighlightStyle = .none
+        table.dataSource = self
+        table.delegate = self
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("row"))
+        table.addTableColumn(column)
+        table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
 
         let scroll = NSScrollView()
-        // An unflipped clip view puts the first row at the bottom of the panel.
-        scroll.contentView = FlippedClipView()
-        scroll.documentView = rowStack
+        scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -146,10 +157,6 @@ final class FolderComparePanelController: NSWindowController {
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -8),
-
-            rowStack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            rowStack.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
-            rowStack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
 
             footer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
             footer.centerYAnchor.constraint(equalTo: buttons.centerYAnchor),
@@ -214,8 +221,10 @@ final class FolderComparePanelController: NSWindowController {
                 self.entries = result
                 // Differences start ticked: the point of opening this is to act
                 // on them, and untangling a fully unticked list is busywork.
-                // Type conflicts do not: one side is a folder, and syncing over
-                // it would destroy a tree. Those are ticked by hand or not.
+                // Type conflicts cannot be ticked at all: one side is a folder,
+                // syncing over it would destroy a tree, and plan() refuses
+                // them — so an enabled checkbox would be a promise the copy
+                // silently breaks.
                 self.chosen = Set(result
                     .filter { $0.status.isDifference && $0.status != .typeConflict }
                     .map(\.relativePath))
@@ -232,20 +241,9 @@ final class FolderComparePanelController: NSWindowController {
 
     // MARK: - Rows
 
-    private var visibleEntries: [FolderCompare.Entry] {
-        differencesOnly.state == .on ? entries.filter { $0.status.isDifference } : entries
-    }
-
     private func refreshRows() {
-        for view in rowStack.arrangedSubviews {
-            rowStack.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-        for entry in visibleEntries {
-            let row = makeRow(for: entry)
-            rowStack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: rowStack.widthAnchor).isActive = true
-        }
+        visible = differencesOnly.state == .on ? entries.filter { $0.status.isDifference } : entries
+        table.reloadData()
         updateFooter()
     }
 
@@ -275,66 +273,6 @@ final class FolderComparePanelController: NSWindowController {
         if side.isDirectory { return "folder" }
         return Self.byteFormatter.string(fromByteCount: side.size)
             + "  " + Self.dateFormatter.string(from: side.modified)
-    }
-
-    private func makeRow(for entry: FolderCompare.Entry) -> NSView {
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-
-        let tick = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggleRow(_:)))
-        tick.state = chosen.contains(entry.relativePath) ? .on : .off
-        tick.identifier = NSUserInterfaceItemIdentifier(entry.relativePath)
-        tick.isEnabled = entry.status.isDifference
-        tick.translatesAutoresizingMaskIntoConstraints = false
-
-        let status = NSTextField(labelWithString: entry.status.label)
-        status.font = Theme.sectionLabel
-        status.textColor = statusColor(entry.status)
-        status.translatesAutoresizingMaskIntoConstraints = false
-
-        let path = NSTextField(labelWithString: entry.relativePath)
-        path.font = Theme.rowName
-        path.lineBreakMode = .byTruncatingMiddle
-        path.toolTip = entry.relativePath
-        path.translatesAutoresizingMaskIntoConstraints = false
-
-        let left = NSTextField(labelWithString: describe(entry.left))
-        left.font = Theme.rowNumeric
-        left.textColor = .secondaryLabelColor
-        left.alignment = .right
-        left.translatesAutoresizingMaskIntoConstraints = false
-
-        let right = NSTextField(labelWithString: describe(entry.right))
-        right.font = Theme.rowNumeric
-        right.textColor = .secondaryLabelColor
-        right.alignment = .right
-        right.translatesAutoresizingMaskIntoConstraints = false
-
-        for view in [tick, status, path, left, right] as [NSView] { container.addSubview(view) }
-
-        NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 24),
-
-            tick.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            tick.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-
-            status.leadingAnchor.constraint(equalTo: tick.trailingAnchor, constant: 6),
-            status.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            status.widthAnchor.constraint(equalToConstant: 86),
-
-            path.leadingAnchor.constraint(equalTo: status.trailingAnchor, constant: 8),
-            path.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            path.trailingAnchor.constraint(equalTo: left.leadingAnchor, constant: -10),
-
-            left.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            left.widthAnchor.constraint(equalToConstant: 150),
-            left.trailingAnchor.constraint(equalTo: right.leadingAnchor, constant: -14),
-
-            right.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            right.widthAnchor.constraint(equalToConstant: 150),
-            right.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
-        ])
-        return container
     }
 
     // MARK: - Selection
@@ -387,20 +325,100 @@ final class FolderComparePanelController: NSWindowController {
             self.footer.stringValue = "Copying \(plans.count)…"
             DispatchQueue.global(qos: .userInitiated).async {
                 var failure: Error?
+                // The first error aborts the batch and the throw discards the
+                // return value, so the completed count arrives through the
+                // progress callback instead.
                 var copied = 0
-                do { copied = try FolderCompare.apply(plans) } catch { failure = error }
+                do { try FolderCompare.apply(plans, progress: { copied = $0 }) } catch { failure = error }
                 DispatchQueue.main.async {
                     self.setActionsEnabled(true)
-                    if let failure {
-                        self.footer.stringValue = "Copied \(copied), then failed: \(failure.localizedDescription)"
-                    }
-                    // Rescanning is the honest confirmation that it worked.
+                    // Rescanning is the honest confirmation that it worked. It
+                    // also rewrites the footer straight away, so a failure has
+                    // to go in an alert — a footer line would be erased before
+                    // it was ever drawn.
                     self.rescan(nil)
+                    if let failure, let window = self.window {
+                        let stopped = NSAlert()
+                        stopped.messageText =
+                            "Copied \(copied) of \(plans.count), then stopped"
+                        stopped.informativeText = failure.localizedDescription
+                        stopped.alertStyle = .warning
+                        stopped.beginSheetModal(for: window)
+                    }
                 }
             }
         }
     }
 
+}
+
+extension FolderComparePanelController: NSTableViewDataSource, NSTableViewDelegate {
+    func numberOfRows(in tableView: NSTableView) -> Int { visible.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard visible.indices.contains(row) else { return nil }
+        let entry = visible[row]
+        let container = NSView()
+
+        let tick = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggleRow(_:)))
+        tick.state = chosen.contains(entry.relativePath) ? .on : .off
+        tick.identifier = NSUserInterfaceItemIdentifier(entry.relativePath)
+        // A type conflict can never be copied — plan() refuses to let a file
+        // replace a folder — so an enabled checkbox would promise a copy that
+        // silently never happens.
+        tick.isEnabled = entry.status.isDifference && entry.status != .typeConflict
+        if entry.status == .typeConflict {
+            tick.toolTip = "A file cannot replace a folder. Resolve this one by hand."
+        }
+        tick.translatesAutoresizingMaskIntoConstraints = false
+
+        let status = NSTextField(labelWithString: entry.status.label)
+        status.font = Theme.sectionLabel
+        status.textColor = statusColor(entry.status)
+        status.translatesAutoresizingMaskIntoConstraints = false
+
+        let path = NSTextField(labelWithString: entry.relativePath)
+        path.font = Theme.rowName
+        path.lineBreakMode = .byTruncatingMiddle
+        path.toolTip = entry.relativePath
+        path.translatesAutoresizingMaskIntoConstraints = false
+
+        let left = NSTextField(labelWithString: describe(entry.left))
+        left.font = Theme.rowNumeric
+        left.textColor = .secondaryLabelColor
+        left.alignment = .right
+        left.translatesAutoresizingMaskIntoConstraints = false
+
+        let right = NSTextField(labelWithString: describe(entry.right))
+        right.font = Theme.rowNumeric
+        right.textColor = .secondaryLabelColor
+        right.alignment = .right
+        right.translatesAutoresizingMaskIntoConstraints = false
+
+        for view in [tick, status, path, left, right] as [NSView] { container.addSubview(view) }
+
+        NSLayoutConstraint.activate([
+            tick.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            tick.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+
+            status.leadingAnchor.constraint(equalTo: tick.trailingAnchor, constant: 6),
+            status.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            status.widthAnchor.constraint(equalToConstant: 86),
+
+            path.leadingAnchor.constraint(equalTo: status.trailingAnchor, constant: 8),
+            path.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            path.trailingAnchor.constraint(equalTo: left.leadingAnchor, constant: -10),
+
+            left.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            left.widthAnchor.constraint(equalToConstant: 150),
+            left.trailingAnchor.constraint(equalTo: right.leadingAnchor, constant: -14),
+
+            right.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            right.widthAnchor.constraint(equalToConstant: 150),
+            right.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
+        ])
+        return container
+    }
 }
 
 extension FolderComparePanelController: NSWindowDelegate {

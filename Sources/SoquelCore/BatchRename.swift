@@ -79,6 +79,12 @@ enum BatchRename {
             } else if claimed.contains(proposed.lowercased()) {
                 preview.problem = "Two files would share this name"
             } else if proposed != original,
+                      // A case-only rename on a case-insensitive volume reports
+                      // the destination as existing — it is the file itself.
+                      // OperationEngine.rename allows that move, so the plan
+                      // must not block it here, or the change-case rule could
+                      // never run on a default APFS volume.
+                      proposed.lowercased() != original.lowercased(),
                       FileManager.default.fileExists(
                           atPath: url.deletingLastPathComponent().appendingPathComponent(proposed).path
                       ) {
@@ -101,6 +107,12 @@ enum BatchRename {
             if regex {
                 let options: NSRegularExpression.Options = caseSensitive ? [] : [.caseInsensitive]
                 guard let expression = try? NSRegularExpression(pattern: find, options: options) else {
+                    // A pattern that does not compile must not pass as "no
+                    // matches" — the preview would read "No changes", which is
+                    // indistinguishable from a valid pattern that matched
+                    // nothing. Blocking the entry surfaces it in the summary,
+                    // and the block clears as soon as the pattern compiles.
+                    if problem == nil { problem = "The pattern does not compile" }
                     return (stem, ext)
                 }
                 let range = NSRange(stem.startIndex..., in: stem)

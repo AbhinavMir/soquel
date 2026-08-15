@@ -221,8 +221,13 @@ enum FolderCompare {
 
     /// Runs a plan. Parent folders are created as needed; an existing file is
     /// replaced only where the plan said it would be.
+    ///
+    /// The first error aborts the batch, so the return value never reaches a
+    /// caller that needs it most. `progress` is called after each completed
+    /// copy with the running count, so a caller can still say how far the run
+    /// got before it stopped.
     @discardableResult
-    static func apply(_ plans: [Plan]) throws -> Int {
+    static func apply(_ plans: [Plan], progress: ((Int) -> Void)? = nil) throws -> Int {
         let manager = FileManager.default
         var copied = 0
         for plan in plans {
@@ -244,6 +249,7 @@ enum FolderCompare {
                 try manager.copyItem(at: plan.source, to: plan.destination)
             }
             copied += 1
+            progress?(copied)
         }
         return copied
     }
