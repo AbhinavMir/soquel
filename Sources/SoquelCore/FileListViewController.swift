@@ -1087,7 +1087,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// Zips the selection beside itself, without the macOS litter.
     @objc func compressSelection() {
         let urls = selectedURLs()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "Nothing selected to compress")
+            return
+        }
         delegate?.fileList(self, didReportStatus: "Compressing \(urls.count) item(s)…")
 
         Archiver.compress(urls) { [weak self] outcome in
@@ -1169,7 +1172,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// alias, which the shell cannot follow.
     @objc func makeSymlink() {
         let urls = selectedURLs()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "Nothing selected to link")
+            return
+        }
         var created: [URL] = []
         var failed: [String] = []
 
@@ -1524,7 +1530,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     @objc func duplicateSelection() {
         let urls = selectedURLs()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "Nothing selected to duplicate")
+            return
+        }
         do {
             let created = try OperationEngine.shared.duplicate(urls)
             UndoStack.shared.pushCreated(created, label: "Duplicate")
@@ -1536,7 +1545,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     @objc func trashSelection() {
         let urls = selectedURLs()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "Nothing selected to trash")
+            return
+        }
 
         // On a share there is no Trash, so ⌘⌫ deletes outright. Say so before
         // it happens rather than after.
@@ -1598,7 +1610,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     @objc func deleteSelectionPermanently() {
         let urls = selectedURLs()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "Nothing selected to delete")
+            return
+        }
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.messageText = urls.count == 1
@@ -1643,7 +1658,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     func copySelection(cut: Bool) {
         let urls = selectedURLs()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "Nothing selected to \(cut ? "cut" : "copy")")
+            return
+        }
         FileClipboard.write(urls, cut: cut)
         delegate?.fileList(self, didReportStatus: "\(urls.count) item\(urls.count == 1 ? "" : "s") \(cut ? "cut" : "copied")")
     }
@@ -1658,7 +1676,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     func pasteFiles() {
         let urls = FileClipboard.read()
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty else {
+            delegate?.fileList(self, didReportStatus: "The clipboard holds no files to paste")
+            return
+        }
         let move = FileClipboard.isCut
         receive(urls, move: move)
         if move { FileClipboard.clearCut() }

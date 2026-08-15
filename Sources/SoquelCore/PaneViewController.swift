@@ -9,7 +9,7 @@ protocol PaneDelegate: AnyObject {
 }
 
 /// A pane owns a stack of tabs, a breadcrumb path bar, and the visible file list.
-final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldDelegate {
+final class PaneViewController: NSViewController, FileListDelegate, NSSearchFieldDelegate {
     weak var delegate: PaneDelegate?
 
     private(set) var tabs: [FileListViewController] = []
@@ -105,6 +105,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         filterField.font = .systemFont(ofSize: 12)
         filterField.target = self
         filterField.action = #selector(paneFilterChanged)
+        filterField.delegate = self
         filterField.sendsSearchStringImmediately = true
         filterField.setAccessibilityLabel("Filter this folder")
         filterField.translatesAutoresizingMaskIntoConstraints = false
@@ -564,9 +565,19 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         endEditingPath()
     }
 
-    /// Escape abandons Go to Folder and puts the breadcrumbs back.
+    /// Escape abandons Go to Folder and puts the breadcrumbs back. In the
+    /// filter box it clears the filter and hands focus back to the list —
+    /// leaving focus in the emptied box meant the next letters typed filtered
+    /// again instead of type-selecting, and a command run right after acted
+    /// on no selection at all.
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        guard control === pathField, selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        if control === filterField {
+            clearSharedFilter()
+            activeList?.focusTable()
+            return true
+        }
+        guard control === pathField else { return false }
         endEditingPath()
         activeList?.focusTable()
         return true
