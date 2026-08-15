@@ -2,9 +2,11 @@
 
 Branch: `main`, clean and pushed. 833 tests pass in ~15s.
 
-**1.0.7 is shipped.** Signed, notarised, disk image on the GitHub release,
-landing page live at trysoquel.com — now carrying a Beta tag and the line
-"Version 2.0 will be the first alpha release."
+**2.0.0 is shipped — the first alpha.** Signed, notarised, stapled, disk image
+on the GitHub release, landing page live at trysoquel.com with the 2.0.0
+changelog entry. The release carries every fix from the August 2026 deep QA
+sweep plus two bugs found by driving the app live (filter Escape kept focus in
+the box; selection commands were silent with nothing selected).
 
 ## What this is
 
