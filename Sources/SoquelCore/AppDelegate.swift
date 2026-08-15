@@ -4,6 +4,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowControllers: [MainWindowController] = []
     private var settingsObserver: NSObjectProtocol?
     private var shortcutObserver: NSObjectProtocol?
+    // NSMenu holds its delegate weakly, so the app delegate keeps it alive.
+    private let workspaceMenuDelegate = WorkspaceMenuDelegate()
 
     public override init() { super.init() }
 
@@ -112,7 +114,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         Log.info(.app, "Soquel quitting")
-        for controller in windowControllers { controller.saveSession() }
+        // The session store holds one window, so exactly one may write it.
+        // Saving every controller had each overwrite the previous, keeping
+        // whichever window happened to be created last rather than the one
+        // the user was working in.
+        let front = NSApp.mainWindow?.windowController as? MainWindowController
+        (front ?? windowControllers.first)?.saveSession()
         // Writes are coalesced, so the last quarter second of changes — which
         // includes the session just saved above — is still only in memory.
         Settings.writeNow()
@@ -174,7 +181,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             // Open in Terminal / Editor also offer every installed app.
             if section.title == "Go" {
                 let workspaces = NSMenuItem(title: "Open Workspace", action: nil, keyEquivalent: "")
-                workspaces.submenu = MainWindowController.workspaceMenu()
+                let submenu = MainWindowController.workspaceMenu()
+                // The delegate refills the submenu on every open, so a
+                // workspace saved a moment ago is already listed and a
+                // removed one is gone, without a rebuild of the menu bar.
+                submenu.delegate = workspaceMenuDelegate
+                workspaces.submenu = submenu
                 menu.addItem(workspaces)
             }
             if section.title == "View" {
@@ -244,5 +256,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         item.target = target
         menu.addItem(item)
         return item
+    }
+}
+
+/// Refills the Open Workspace submenu each time it opens. The main menu is
+/// built once, so without this a workspace saved after launch would not
+/// appear until a relaunch, and a removed one would linger.
+private final class WorkspaceMenuDelegate: NSObject, NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let fresh = MainWindowController.workspaceMenu()
+        // An item can only belong to one menu, so each is detached from the
+        // freshly built menu before it moves into the one on screen.
+        for item in fresh.items {
+            fresh.removeItem(item)
+            menu.addItem(item)
+        }
     }
 }

@@ -43,17 +43,21 @@ enum FolderViewSettings {
     /// Finder comes second: a choice made here outranks one made there, but a
     /// folder Finder already knows should be in icon view should not open as a
     /// list just because this application has never been told.
+    ///
+    /// Finder is only consulted while per-folder memory is on. With it off,
+    /// nothing here can be recorded, so a `.DS_Store` style would outrank the
+    /// global setting forever and the View menu could not switch it.
     static func viewMode(for url: URL) -> ViewMode {
         if let stored = entry(for: url)?.viewMode, let mode = ViewMode(rawValue: stored) {
             return mode
         }
-        if let finder = finderSettings(for: url)?.viewMode { return finder }
+        if isEnabled, let finder = finderSettings(for: url)?.viewMode { return finder }
         return Prefs.viewMode
     }
 
     static func sortOrder(for url: URL) -> SortOrder {
         if let stored = entry(for: url)?.sortOrder { return stored }
-        if let finder = finderSettings(for: url), let column = finder.sortColumn,
+        if isEnabled, let finder = finderSettings(for: url), let column = finder.sortColumn,
            let key = sortKey(forFinder: column) {
             return SortOrder(descriptors: [
                 SortDescriptorSpec(key: key, ascending: finder.sortAscending ?? true),
@@ -117,7 +121,11 @@ enum FolderViewSettings {
         guard isEnabled else { return }
         var table = all()
         let id = identity(of: url)
-        table[id] = Entry(viewMode: viewMode.rawValue, sortOrder: sortOrder)
+        // A nil sort means "leave the sort alone". The view-mode commands pass
+        // nil, and replacing the entry wholesale erased a sort this folder had
+        // already been given.
+        table[id] = Entry(viewMode: viewMode.rawValue,
+                          sortOrder: sortOrder ?? table[id]?.sortOrder)
 
         var order = (Settings.stringArray(forKey: orderKey) ?? []).filter { $0 != id }
         order.append(id)

@@ -27,6 +27,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var hasPositionedSplits = false
     private var activityToken: UUID?
     private var themeObserver: NSObjectProtocol?
+    private var columnsObserver: NSObjectProtocol?
     private let searchController = SearchWindowController()
     private let serverController = ConnectToServerController()
     private let archiveViewer = ArchiveViewerController()
@@ -59,7 +60,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.alphaValue = Theme.windowOpacity
         build()
         restoreSession()
-        window.center()
+        // Centring unconditionally threw away the origin the autosave name
+        // restored, so the window forgot its place on every launch. Centre
+        // only when no frame has been saved yet.
+        if !window.setFrameUsingName("SoquelMainWindow") { window.center() }
     }
 
     // MARK: - Construction
@@ -152,6 +156,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             forName: .soquelThemeChanged, object: nil, queue: .main
         ) { [weak self] _ in
             self?.applyTheme()
+        }
+
+        // Column choices are global, so a toggle made in any window must reach
+        // the tables in this one.
+        columnsObserver = NotificationCenter.default.addObserver(
+            forName: .soquelColumnsChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            for pane in self.panes {
+                for tab in pane.tabs where tab.isViewLoaded { tab.rebuildMetadataColumns() }
+            }
         }
     }
 
@@ -381,13 +396,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     func windowWillClose(_ notification: Notification) {
         debugLog("windowWillClose")
-        saveSession()
+        // The session store holds one window. Only the last one to close may
+        // write it; a secondary window closing mid-run would otherwise replace
+        // the saved layout with its own.
+        let othersRemain = NSApp.windows.contains {
+            $0 !== window && $0.windowController is MainWindowController
+        }
+        if !othersRemain { saveSession() }
     }
 
     deinit {
         debugLog("MainWindowController deinit")
         if let activityToken { OperationEngine.shared.removeActivityObserver(activityToken) }
         if let themeObserver { NotificationCenter.default.removeObserver(themeObserver) }
+        if let columnsObserver { NotificationCenter.default.removeObserver(columnsObserver) }
     }
 
     // MARK: - Pane commands
@@ -623,6 +645,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private func zoomIcons(larger: Bool) {
         if (focusedList?.mode ?? Prefs.viewMode) != .icon {
             Prefs.viewMode = .icon
+            // The per-folder memory must hear about the switch too, or a
+            // folder remembered as a list snaps straight back and the zoom
+            // does nothing visible.
+            if let list = focusedList {
+                FolderViewSettings.record(list.url, viewMode: .icon, sortOrder: nil)
+            }
         }
         Prefs.iconSize = Prefs.zoomedIconSize(from: Prefs.iconSize, larger: larger)
         propagateViewSettings()
@@ -886,9 +914,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             for extra in tabs.dropFirst() {
                 pane.addTab(url: URL(fileURLWithPath: extra), activate: false)
             }
+            // activeTabs indexes the pane's full saved tab list, but this pane
+            // was rebuilt from only the surviving tabs, so the number must be
+            // mapped through the path. When the active tab itself is gone, the
+            // count of survivors before it lands on the nearest neighbour.
             let savedIndex = survivingWithIndices[position].index
             if workspace.activeTabs.indices.contains(savedIndex) {
-                pane.selectTab(at: min(workspace.activeTabs[savedIndex], tabs.count - 1))
+                let original = workspace.panes[savedIndex]
+                let activeIndex = workspace.activeTabs[savedIndex]
+                if original.indices.contains(activeIndex),
+                   let selected = tabs.firstIndex(of: original[activeIndex]) {
+                    pane.selectTab(at: selected)
+                } else {
+                    let before = original.prefix(max(activeIndex, 0))
+                        .filter { tabs.contains($0) }.count
+                    pane.selectTab(at: min(before, tabs.count - 1))
+                }
             }
         }
 
@@ -1056,16 +1097,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     @objc func menuToggleMetadataColumn(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let field = MetadataField(rawValue: raw) else { return }
+        // The toggle posts .soquelColumnsChanged, and every window — this one
+        // included — rebuilds its columns from that. Looping only this
+        // window's panes here left other windows on the old column set.
         MetadataColumns.toggle(field)
-        for pane in panes {
-            for tab in pane.tabs where tab.isViewLoaded { tab.rebuildMetadataColumns() }
-        }
         statusLeft.stringValue = MetadataColumns.enabled.isEmpty
             ? "No extra columns"
             : "Columns: " + MetadataColumns.enabled.map(\.title).joined(separator: ", ")
     }
 
-    /// Built fresh each time so the ticks reflect what is on.
+    /// Installed once with the menu bar; validateMenuItem refreshes the ticks
+    /// each time the menu opens.
     static func metadataColumnMenu() -> NSMenu {
         let menu = NSMenu()
         let enabled = Set(MetadataColumns.enabled)
@@ -1537,6 +1579,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return true
         case #selector(menuToggleFoldersFirst):
             item.state = Prefs.foldersFirst ? .on : .off
+            return true
+        case #selector(menuToggleMetadataColumn):
+            // The submenu is built once with the menu bar, so the tick must
+            // be re-read here or it reports the state at launch forever.
+            if let raw = item.representedObject as? String,
+               let field = MetadataField(rawValue: raw) {
+                item.state = MetadataColumns.enabled.contains(field) ? .on : .off
+            }
             return true
         case #selector(menuPasteFiles):
             return !FileClipboard.read().isEmpty
