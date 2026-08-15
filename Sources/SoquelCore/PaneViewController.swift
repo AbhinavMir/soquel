@@ -500,7 +500,13 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         // in columns adds levels without moving the pane's URL, so the deepest
         // differs from it after one descend, and comparing there tore down
         // the drill-down on every settings change.
-        guard columns, let url = currentURL else { return }
+        guard columns else {
+            // Leaving columns: the keyboard was in a column table the list
+            // cannot see, so it lands back on the visible view.
+            if isFocused { activeList?.focusTable() }
+            return
+        }
+        guard let url = currentURL else { return }
         if columnBrowser.rootURL?.standardizedFileURL != url.standardizedFileURL {
             columnBrowser.show(url)
         } else {
@@ -510,6 +516,13 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
             // drill-down that the root comparison exists to protect.
             columnBrowser.refreshColumns()
         }
+        // The file picked in the list is the file picked here, and the
+        // keyboard goes with it — otherwise the first Down arrow moved the
+        // sidebar and navigated the pane away.
+        if let list = activeList {
+            columnBrowser.select(list.selectedURLsCache)
+        }
+        if isFocused { columnBrowser.focusDeepestColumn() }
     }
 
     /// Only an empty stretch of the bar starts editing; a click that landed on

@@ -330,6 +330,41 @@ final class ColumnBrowserView: NSView {
     /// screen, carrying the selection over by URL across the reload. The
     /// failure is shown in the column itself: swallowing it drew a permission
     /// error exactly like a truly empty folder.
+    /// URLs to select in the root column once its listing lands. Set by
+    /// select(_:), which the pane calls when it brings the browser to the
+    /// front, so the file picked in list view is the file picked here.
+    private var pendingRootSelection: [URL] = []
+
+    /// Selects `urls` in the root column, now if it has rows and otherwise
+    /// as soon as its listing arrives, and reports the result to the pane.
+    /// Without this the browser came to the front empty and its own stale
+    /// selection was what the list saw on the way back.
+    func select(_ urls: [URL]) {
+        pendingRootSelection = urls
+        guard let root = levels.first, !root.items.isEmpty else { return }
+        applyPendingRootSelection()
+    }
+
+    private func applyPendingRootSelection() {
+        guard !pendingRootSelection.isEmpty, let root = levels.first else { return }
+        let wanted = pendingRootSelection
+        pendingRootSelection = []
+        let rows = items(at: 0)
+        let indexes = IndexSet(wanted.compactMap { url in rows.firstIndex { $0.url == url } })
+        guard !indexes.isEmpty else { return }
+        // A single folder would open its column through the ordinary
+        // selection path; the report goes through it deliberately, so the
+        // pane's mirror, the inspector and the drill-down all follow.
+        root.table.selectRowIndexes(indexes, byExtendingSelection: false)
+        if let first = indexes.first { root.table.scrollRowToVisible(first) }
+    }
+
+    /// Puts the keyboard in the deepest column, so arrows move its rows.
+    func focusDeepestColumn() {
+        guard let level = levels.last else { return }
+        window?.makeFirstResponder(level.table)
+    }
+
     private func loadColumn(at index: Int) {
         guard levels.indices.contains(index) else { return }
         let url = levels[index].url
@@ -339,6 +374,7 @@ final class ColumnBrowserView: NSView {
             DispatchQueue.main.async {
                 guard let self, self.levels.indices.contains(index),
                       self.levels[index].url == url else { return }
+                defer { if index == 0 { self.applyPendingRootSelection() } }
                 let level = self.levels[index]
                 let before = self.items(at: index)
                 let previous = level.table.selectedRowIndexes.compactMap {

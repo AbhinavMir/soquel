@@ -511,11 +511,18 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     // MARK: - Navigation
 
-    func navigate(to newURL: URL, recordHistory: Bool = true) {
+    /// - Parameter selecting: a file to select once the new folder is on
+    ///   screen. Callers used to navigate and then call reload(selecting:)
+    ///   themselves; the navigation's own load superseded that second one and
+    ///   the selection was lost, so it rides on the same load here.
+    func navigate(to newURL: URL, recordHistory: Bool = true, selecting: URL? = nil) {
         // Resolve symlinks so the pane's URL matches the paths that directory
         // enumeration returns; /tmp and /private/tmp must not read as two places.
         let standardized = newURL.resolvingSymlinksInPath().standardizedFileURL
-        guard standardized != url || allItems.isEmpty else { return }
+        guard standardized != url || allItems.isEmpty else {
+            if let selecting { reload(selecting: selecting) }
+            return
+        }
         if recordHistory {
             back.append(url)
             forward.removeAll()
@@ -529,7 +536,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             applyViewMode()
         }
         delegate?.fileList(self, didNavigateTo: url)
-        reload(selecting: nil, resetScroll: true)
+        reload(selecting: selecting, resetScroll: true)
     }
 
     /// State tied to the folder being left: the filter, and the mirror of the
@@ -1170,7 +1177,18 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
 
         let folders = selected.filter(\.opensAsFolder)
-        let files = selected.filter { !$0.opensAsFolder }.map(\.url)
+        var files: [URL] = []
+        for item in selected where !item.opensAsFolder {
+            // A link whose target is gone opens nothing, and NSWorkspace says
+            // nothing about it. Better to say where it pointed.
+            if item.isSymlink,
+               let target = try? FileManager.default.destinationOfSymbolicLink(atPath: item.url.path),
+               !FileManager.default.fileExists(atPath: URL(fileURLWithPath: target, relativeTo: item.url.deletingLastPathComponent()).path) {
+                delegate?.fileList(self, didReportStatus: "“\(item.name)” points to \(target), which does not exist")
+                continue
+            }
+            files.append(item.url)
+        }
         for folder in folders {
             delegate?.fileList(self, openInNewTab: folder.url.resolvingSymlinksInPath())
         }
@@ -1178,8 +1196,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
         // Asked once for the whole selection rather than once per file, and
         // only when the application is one of the slow ones.
-        AppLaunchGuard.confirm(opening: files, with: nil, in: view.window) {
-            for file in files { NSWorkspace.shared.open(file) }
+        AppLaunchGuard.confirm(opening: files, with: nil, in: view.window) { [weak self] in
+            for file in files where !NSWorkspace.shared.open(file) {
+                guard let self else { return }
+                self.delegate?.fileList(self, didReportStatus: "Could not open “\(file.lastPathComponent)”")
+            }
         }
     }
 

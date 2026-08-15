@@ -1014,9 +1014,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
         let alert = NSAlert()
         alert.messageText = "Workspaces"
-        alert.informativeText = WorkspaceStore.all
-            .map { "\($0.name) — \($0.summary)" }
-            .joined(separator: "\n")
+        alert.informativeText = "Select a workspace to rename or delete it."
+        alert.accessoryView = WorkspaceManagerView()
         alert.addButton(withTitle: "Done")
         alert.addButton(withTitle: "Reveal workspaces.json")
         if alert.runModal() == .alertSecondButtonReturn {
@@ -1142,7 +1141,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func menuOpenArchive(_ sender: Any?) {
-        guard let url = focusedList?.selectedURLs().first ?? focusedList?.url else { return }
+        guard let list = focusedList else { return }
+        // The folder itself is never the archive; falling back to it made an
+        // empty selection read as "Not an archive", which blames the wrong
+        // thing.
+        guard let url = list.selectedURLs().first else {
+            statusLeft.stringValue = "Nothing selected to look inside"
+            NSSound.beep()
+            return
+        }
         guard Archive.isArchive(url) else {
             statusLeft.stringValue = "Not an archive"
             NSSound.beep()
@@ -1230,9 +1237,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         panel.onReveal = { [weak self] target in
             var isDirectory: ObjCBool = false
             FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory)
-            let folder = isDirectory.boolValue ? target : target.deletingLastPathComponent()
-            self?.focusedList?.navigate(to: folder)
-            if !isDirectory.boolValue { self?.focusedList?.reload(selecting: target) }
+            if isDirectory.boolValue {
+                self?.focusedList?.navigate(to: target)
+            } else {
+                self?.reveal(target)
+            }
             self?.window?.makeKeyAndOrderFront(nil)
         }
         panel.show(url)
@@ -1406,8 +1415,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     func reveal(_ url: URL) {
         guard let list = focusedList else { return }
-        list.navigate(to: url.deletingLastPathComponent())
-        list.reload(selecting: url)
+        list.navigate(to: url.deletingLastPathComponent(), selecting: url)
         list.focusTable()
     }
 
