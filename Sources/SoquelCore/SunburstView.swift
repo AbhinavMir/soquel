@@ -54,7 +54,12 @@ final class SunburstView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         Theme.chrome.setFill()
-        context.fill(dirtyRect)
+        // Fill the bounds, never the dirty rect. Views no longer clip their
+        // drawing by default, and on the window's first display the dirty rect
+        // handed in here is the whole content area, so filling it painted
+        // chrome over the "◀ Out" button, the path and Rescan above the rings.
+        // They stayed hittable but invisible.
+        context.fill(bounds)
         guard !segments.isEmpty else { return }
 
         for segment in segments where segment.ring > 0 && segment.ring <= Self.ringCount {

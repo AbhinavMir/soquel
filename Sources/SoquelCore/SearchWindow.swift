@@ -72,7 +72,7 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
         panel.title = "Find"
         panel.minSize = NSSize(width: 640, height: 420)
 
-        build(in: panel, mode: mode)
+        build(in: panel, mode: mode, hostWidth: host.frame.width)
         self.panel = panel
 
         // The index loads and rebuilds in the background and posts when the
@@ -145,7 +145,10 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
-    private func build(in panel: NSPanel, mode: FileSearch.Mode) {
+    /// Lays the panel out and sizes it to its widest row. `hostWidth` caps
+    /// that: a sheet wider than the window it hangs from is clipped by the
+    /// window, so past the cap the rows compress instead.
+    private func build(in panel: NSPanel, mode: FileSearch.Mode, hostWidth: CGFloat) {
         field = NSSearchField()
         field.placeholderString = "Search"
         field.font = .systemFont(ofSize: 15)
@@ -201,6 +204,13 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
         controlRow.spacing = 10
         controlRow.translatesAutoresizingMaskIntoConstraints = false
 
+        // Both rows are pinned to the right edge below. When the panel is
+        // narrower than a row — a small host window caps its width — the row
+        // must compress to honour the pin; at the default required priority a
+        // stack view refuses and the two constraints conflict.
+        controlRow.setClippingResistancePriority(.defaultHigh, for: .horizontal)
+        optionsRow.setClippingResistancePriority(.defaultHigh, for: .horizontal)
+
         table = NSTableView()
         table.headerView = nil
         table.dataSource = self
@@ -237,9 +247,11 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
 
             controlRow.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 10),
             controlRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            controlRow.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -16),
 
             optionsRow.topAnchor.constraint(equalTo: controlRow.bottomAnchor, constant: 8),
             optionsRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            optionsRow.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -16),
 
             scroll.topAnchor.constraint(equalTo: optionsRow.bottomAnchor, constant: 10),
             scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -251,6 +263,17 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
             summaryLabel.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
         ])
         panel.contentView = content
+
+        // The rows hold every option the engine has, and laid out they are
+        // wider than the 780 pt the panel used to open at, so the tail of
+        // each row — "Save Search…", the "levels" label — sat past the right
+        // edge and was clipped. The panel opens at whatever the widest row
+        // needs and cannot be resized narrower than that; only a host window
+        // too small to hold the sheet forces the rows to compress.
+        let widestRow = max(controlRow.fittingSize.width, optionsRow.fittingSize.width)
+        let width = min(max(ceil(widestRow) + 32, 780), hostWidth)
+        panel.setContentSize(NSSize(width: width, height: 560))
+        panel.minSize = NSSize(width: width, height: 420)
     }
 
     private func checkbox(_ title: String, on: Bool) -> NSButton {

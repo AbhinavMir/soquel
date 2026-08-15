@@ -194,3 +194,183 @@ enum WorkspaceStore {
 extension Notification.Name {
     static let soquelWorkspacesChanged = Notification.Name("app.soquel.workspacesChanged")
 }
+
+/// The body of Go > Manage Workspaces…: every saved workspace in a table,
+/// with a button to rename the selected one in place and one to delete it.
+///
+/// The alert that hosts this used to list the names as plain text with a
+/// Done button, so the only way to be rid of a workspace, or to fix its name,
+/// was to open workspaces.json and edit it by hand. The store already had
+/// `remove` and `rename`; nothing on screen called them.
+///
+/// The outer size is a frame, not constraints, because NSAlert takes an
+/// accessory view's frame as the space to give it.
+final class WorkspaceManagerView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+    private var table: NSTableView!
+    private var status: NSTextField!
+    private var renameButton: NSButton!
+    private var deleteButton: NSButton!
+    private var workspaces: [Workspace] = WorkspaceStore.all
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 440, height: 194))
+        build()
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    private func build() {
+        table = NSTableView()
+        table.dataSource = self
+        table.delegate = self
+        table.rowHeight = 22
+        table.style = .inset
+        table.allowsMultipleSelection = false
+        table.usesAlternatingRowBackgroundColors = true
+
+        let name = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
+        name.title = "Name"
+        name.width = 270
+        let panes = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("panes"))
+        panes.title = "Panes"
+        panes.width = 110
+        table.addTableColumn(name)
+        table.addTableColumn(panes)
+
+        let scroll = NSScrollView()
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+
+        renameButton = NSButton(title: "Rename", target: self, action: #selector(renameSelected))
+        deleteButton = NSButton(title: "Delete", target: self, action: #selector(deleteSelected))
+        let buttons = NSStackView(views: [renameButton, deleteButton])
+        buttons.orientation = .horizontal
+        buttons.spacing = 8
+        buttons.translatesAutoresizingMaskIntoConstraints = false
+
+        status = NSTextField(labelWithString: "Select a workspace, then Rename or Delete.")
+        status.font = .systemFont(ofSize: 11)
+        status.textColor = .secondaryLabelColor
+        status.lineBreakMode = .byTruncatingTail
+        status.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(scroll)
+        addSubview(buttons)
+        addSubview(status)
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.heightAnchor.constraint(equalToConstant: 160),
+
+            buttons.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 8),
+            buttons.leadingAnchor.constraint(equalTo: leadingAnchor),
+
+            status.centerYAnchor.constraint(equalTo: buttons.centerYAnchor),
+            status.leadingAnchor.constraint(equalTo: buttons.trailingAnchor, constant: 10),
+            status.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+        updateButtons()
+    }
+
+    private func updateButtons() {
+        let hasSelection = workspaces.indices.contains(table.selectedRow)
+        renameButton.isEnabled = hasSelection
+        deleteButton.isEnabled = hasSelection
+    }
+
+    @objc private func renameSelected() {
+        let row = table.selectedRow
+        guard workspaces.indices.contains(row) else { return }
+        table.editColumn(0, row: row, with: nil, select: true)
+    }
+
+    @objc private func deleteSelected() {
+        let row = table.selectedRow
+        guard workspaces.indices.contains(row) else { return }
+        let workspace = workspaces[row]
+        WorkspaceStore.remove(id: workspace.id)
+        workspaces = WorkspaceStore.all
+        table.reloadData()
+        status.stringValue = "Deleted “\(workspace.name)”."
+        updateButtons()
+    }
+
+    // MARK: - Table
+
+    func numberOfRows(in tableView: NSTableView) -> Int { workspaces.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard workspaces.indices.contains(row), let tableColumn else { return nil }
+        let workspace = workspaces[row]
+        let isName = tableColumn.identifier.rawValue == "name"
+
+        let field = NSTextField(labelWithString: isName ? workspace.name : workspace.summary)
+        field.font = .systemFont(ofSize: 12)
+        field.lineBreakMode = .byTruncatingTail
+        field.translatesAutoresizingMaskIntoConstraints = false
+        if isName {
+            // Editable in place; the delegate commits the new name when
+            // editing ends.
+            field.isEditable = true
+            field.isSelectable = true
+            field.delegate = self
+        } else {
+            field.textColor = .secondaryLabelColor
+        }
+
+        let cell = NSTableCellView()
+        cell.addSubview(field)
+        cell.textField = field
+        NSLayoutConstraint.activate([
+            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+            field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateButtons()
+    }
+
+    // MARK: - Renaming
+
+    /// Return while editing commits the name and stays in the dialog. Left to
+    /// the field editor, Return would also press the alert's default button
+    /// and close the whole thing mid-rename.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+        window?.makeFirstResponder(table)
+        return true
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        let row = table.row(for: field)
+        guard workspaces.indices.contains(row) else { return }
+        let workspace = workspaces[row]
+        let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+
+        // An empty name is not a rename; the old one comes back.
+        guard !name.isEmpty, name != workspace.name else {
+            field.stringValue = workspace.name
+            return
+        }
+        // Names are how workspaces are opened, so two cannot share one.
+        if let other = WorkspaceStore.workspace(named: name), other.id != workspace.id {
+            field.stringValue = workspace.name
+            status.stringValue = "There is already a workspace called “\(name)”."
+            NSSound.beep()
+            return
+        }
+
+        WorkspaceStore.rename(id: workspace.id, to: name)
+        // The row already shows the new name; a reload here would tear down
+        // the field whose editing is still being wound up.
+        workspaces[row].name = name
+        status.stringValue = "Renamed to “\(name)”."
+    }
+}

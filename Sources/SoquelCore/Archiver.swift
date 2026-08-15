@@ -57,8 +57,14 @@ enum Archiver {
     /// `__MACOSX` folder, and each exclusion is matched both at the top level
     /// and at any depth — `-x .DS_Store` alone would only catch the one beside
     /// the items being compressed.
+    ///
+    /// `-y` stores a symlink as a link instead of following it. Without it zip
+    /// follows every link, so a link whose target is gone is dropped from a
+    /// folder without a word, and compressing one on its own exits 12
+    /// "Nothing to do!" with no archive at all. Finder's Compress keeps links
+    /// as links too.
     static func arguments(archive: URL, items: [String]) -> [String] {
-        var args = ["-r", "-X", "-q", archive.path]
+        var args = ["-r", "-X", "-y", "-q", archive.path]
         // "./" keeps a name like "-m" from being read as one of zip's own
         // options ("-m" deletes the files it archives). zip strips the prefix
         // when it stores the name, so the archive contents do not change.

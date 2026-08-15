@@ -7,6 +7,14 @@ final class FileIconItem: NSCollectionViewItem {
     private var label: NSTextField!
     private var thumbnail: NSImageView!
     private var badge: NSTextField!
+    /// Sized from the icon setting, not from the tile: the tile is widened
+    /// past small icons so the label has room for a word, and an icon that
+    /// followed the tile would not have got smaller at all.
+    private var thumbnailWidth: NSLayoutConstraint!
+
+    /// The share of the icon setting the thumbnail takes; the rest of the
+    /// tile is margin and label.
+    static let thumbnailShare: CGFloat = 0.62
 
     override func loadView() {
         let container = NSView()
@@ -15,13 +23,20 @@ final class FileIconItem: NSCollectionViewItem {
         thumbnail = NSImageView()
         thumbnail.imageScaling = .scaleProportionallyUpOrDown
         thumbnail.translatesAutoresizingMaskIntoConstraints = false
+        thumbnailWidth = thumbnail.widthAnchor.constraint(
+            equalToConstant: CGFloat(Prefs.iconSize) * Self.thumbnailShare
+        )
 
         label = NSTextField(labelWithString: "")
         label.font = Theme.rowName
         label.alignment = .center
-        label.lineBreakMode = .byTruncatingMiddle
+        // Two lines, broken between words, and an ellipsis when even two are
+        // not enough. `wraps` sets word wrapping itself, so a truncating line
+        // break mode set beside it was overwritten and a name that ran past
+        // the second line was cut off mid-word with no sign of it.
         label.maximumNumberOfLines = 2
         label.cell?.wraps = true
+        label.cell?.truncatesLastVisibleLine = true
         label.translatesAutoresizingMaskIntoConstraints = false
 
         badge = NSTextField(labelWithString: "")
@@ -37,7 +52,7 @@ final class FileIconItem: NSCollectionViewItem {
         NSLayoutConstraint.activate([
             thumbnail.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
             thumbnail.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            thumbnail.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.62),
+            thumbnailWidth,
             thumbnail.heightAnchor.constraint(equalTo: thumbnail.widthAnchor),
 
             label.topAnchor.constraint(equalTo: thumbnail.bottomAnchor, constant: 5),
@@ -55,8 +70,19 @@ final class FileIconItem: NSCollectionViewItem {
     /// The thumbnail request this cell is waiting on, dropped when it is reused.
     private var thumbnailToken: ThumbnailCache.Token?
 
+    /// The label's frame in `view`'s coordinates, for the rename editor to
+    /// sit exactly over the name.
+    func labelFrame(in view: NSView) -> NSRect {
+        _ = self.view
+        self.view.layoutSubtreeIfNeeded()
+        return label.convert(label.bounds, to: view)
+    }
+
     func configure(with item: FileItem, gitState: GitState) {
         _ = view  // force the view to load; loadViewIfNeeded() needs macOS 14
+        // A zoom changes the setting after the tile was built.
+        let side = CGFloat(Prefs.iconSize)
+        thumbnailWidth.constant = side * Self.thumbnailShare
         label.stringValue = item.name
         restingLabelColor = item.isHidden ? .secondaryLabelColor : .labelColor
         badge.stringValue = gitState.badge
@@ -74,7 +100,6 @@ final class FileIconItem: NSCollectionViewItem {
         representedURL = url
         guard ThumbnailCache.wantsThumbnail(item) else { return }
 
-        let side = CGFloat(Prefs.iconSize)
         let scale = view.window?.backingScaleFactor ?? 2
         thumbnailToken = ThumbnailCache.shared.thumbnail(
             for: url, size: side, modified: item.modified, scale: scale

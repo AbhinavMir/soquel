@@ -193,6 +193,12 @@ final class SemanticIndex {
 
     private static let embedding: NLEmbedding? = NLEmbedding.sentenceEmbedding(for: .english)
 
+    /// Apple's word embedding, used to widen a query's words to their near
+    /// synonyms for the literal half of the score. Same family as the
+    /// sentence model, so it is treated as equally unsafe to share across
+    /// threads and sits behind the same lock.
+    private static let wordEmbedding: NLEmbedding? = NLEmbedding.wordEmbedding(for: .english)
+
     /// The shared model deadlocks under concurrent use (see workerCount), and
     /// this instance is reached from both the indexing queue — small batches
     /// skip the per-worker models — and the main thread's search-as-you-type.
@@ -244,6 +250,49 @@ final class SemanticIndex {
         return words(in: text).filter { $0.count > 2 && !stop.contains($0) }
     }
 
+    /// How many near words each query term is widened to, and how far off a
+    /// neighbour can be — cosine distance, 0 for the word itself — before it
+    /// stops standing in for the term. "cooking" reaches "cook" at 0.77 and
+    /// "recipe" at 0.88; past 0.95 the list is loosely themed noise.
+    static let neighbourCount = 40
+    static let neighbourDistance = 0.95
+
+    /// Each query term with the words that stand in for it: the term itself,
+    /// its plural or singular, and its nearest neighbours in the word model.
+    ///
+    /// The sentence model alone puts a short concept query — "cooking dinner"
+    /// against a recipe — below the floor, and the literal quarter of the
+    /// score saw nothing because "cooking" is not "cook", nor "recipe". With
+    /// each term widened to the words that mean nearly the same, that quarter
+    /// registers the concept and the passage clears the floor. One neighbour
+    /// lookup per term, which is a millisecond.
+    static func expandedTerms(of text: String) -> [Set<String>] {
+        terms(of: text).map { term in
+            var group: Set<String> = [term]
+            if let wordEmbedding {
+                embeddingLock.lock()
+                let neighbours = wordEmbedding.neighbors(for: term, maximumCount: neighbourCount)
+                embeddingLock.unlock()
+                for (word, distance) in neighbours where distance <= neighbourDistance {
+                    group.insert(word.lowercased())
+                }
+            }
+            for word in Array(group) { group.formUnion(inflections(of: word)) }
+            return group
+        }
+    }
+
+    /// The plural or singular of a word, so "tomato" in a query meets
+    /// "tomatoes" in a passage. English is not this regular, but the common
+    /// endings cover most of what a search hits, and a wrong guess only adds
+    /// a word no passage contains.
+    private static func inflections(of word: String) -> [String] {
+        var forms = [word + "s", word + "es"]
+        if word.hasSuffix("es"), word.count > 4 { forms.append(String(word.dropLast(2))) }
+        if word.hasSuffix("s"), word.count > 3 { forms.append(String(word.dropLast())) }
+        return forms
+    }
+
     /// Whether `path` is `folder` itself or something inside it.
     ///
     /// `hasPrefix` on the bare path is not this test: ~/Notes-archive/a.md
@@ -264,13 +313,20 @@ final class SemanticIndex {
     /// and "art" against "start"; a quarter of a point of invented score is
     /// enough to lift such a passage above one that genuinely matches.
     static func literalScore(terms: [String], passage: String, path: String) -> Float {
-        guard !terms.isEmpty else { return 0 }
+        literalScore(termGroups: terms.map { [$0] }, passage: passage, path: path)
+    }
+
+    /// The same fraction where each term is a group of words that stand for
+    /// it (see `expandedTerms`): a term counts when any word of its group is
+    /// there. A group of one is the plain exact-word test above.
+    static func literalScore(termGroups: [Set<String>], passage: String, path: String) -> Float {
+        guard !termGroups.isEmpty else { return 0 }
         // The name is cut on the same boundaries, so berlin-revenue.txt offers
         // "berlin" and "revenue" as words of their own.
         var vocabulary = Set(words(in: passage))
         vocabulary.formUnion(words(in: (path as NSString).lastPathComponent))
-        let hits = terms.filter { vocabulary.contains($0) }.count
-        return Float(hits) / Float(terms.count)
+        let hits = termGroups.filter { !$0.isDisjoint(with: vocabulary) }.count
+        return Float(hits) / Float(termGroups.count)
     }
 
     func search(_ text: String, within folder: URL? = nil, limit: Int = 40, minimumScore: Float = 0.25) -> [Hit] {
@@ -304,7 +360,7 @@ final class SemanticIndex {
 
         // Blend in the literal match, so a document that actually says the
         // words is not ranked below one that merely resembles them.
-        let queryTerms = Self.terms(of: text)
+        let queryTerms = Self.expandedTerms(of: text)
         let semanticWeight = 1 - Self.literalWeight
         // Every entry is blended, not just the promising ones. Skipping the
         // weak ones left two scales in the same array: an unblended 0.050 beat
@@ -313,7 +369,7 @@ final class SemanticIndex {
         // and never surfaced.
         for index in scores.indices {
             let entry = entries[index]
-            let literal = Self.literalScore(terms: queryTerms, passage: entry.passage, path: entry.path)
+            let literal = Self.literalScore(termGroups: queryTerms, passage: entry.passage, path: entry.path)
             scores[index] = scores[index] * semanticWeight + literal * Self.literalWeight
         }
 

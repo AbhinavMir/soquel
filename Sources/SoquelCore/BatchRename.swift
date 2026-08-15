@@ -76,9 +76,13 @@ enum BatchRename {
                 preview.problem = "Name would be empty"
             } else if validateFileName(proposed) != nil {
                 preview.problem = "Not a valid name"
-            } else if claimed.contains(proposed.lowercased()) {
-                preview.problem = "Two files would share this name"
             } else if proposed != original {
+                // Only a name that changes can collide. A file the rules leave
+                // alone goes nowhere, so it is never blocked — it used to be,
+                // when another entry was renamed onto its name and the claimed
+                // set then caught the unchanged file too, counting one
+                // collision as two.
+                //
                 // An existing destination is only a collision when it is a
                 // different file. A case-only rename on a case-insensitive
                 // volume reports the destination as existing — it is the file
@@ -93,6 +97,8 @@ enum BatchRename {
                 if FileManager.default.fileExists(atPath: destination.path),
                    !(caseOnly && sameFile(url, destination)) {
                     preview.problem = "A file with this name already exists"
+                } else if claimed.contains(proposed.lowercased()) {
+                    preview.problem = "Two files would share this name"
                 }
             }
 

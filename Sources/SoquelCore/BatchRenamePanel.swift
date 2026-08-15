@@ -95,6 +95,11 @@ final class BatchRenameController: NSObject, NSTableViewDataSource, NSTableViewD
         table.headerView = nil
         table.rowHeight = 26
         table.style = .inset
+        // The rows are a preview and nothing acts on one, so a selection
+        // would only promise something. Without a filled selection the
+        // labels keep their own colours and none needs to be the cell's
+        // text field to be inverted.
+        table.selectionHighlightStyle = .none
         table.dataSource = self
         table.delegate = self
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("row"))
@@ -279,7 +284,12 @@ final class BatchRenameController: NSObject, NSTableViewDataSource, NSTableViewD
         guard previews.indices.contains(row) else { return nil }
         let preview = previews[row]
 
-        let cell = FileCellView()
+        // A plain cell view. FileCellView lays its text field out by hand,
+        // from the leading edge across the whole width, so making the new
+        // name its text field drew it on top of the old one and left the
+        // slot after the arrow empty. With no text field set, the three
+        // labels sit where the constraints below put them.
+        let cell = NSTableCellView()
         let before = NSTextField(labelWithString: preview.original)
         before.font = Theme.rowNumeric
         before.textColor = .secondaryLabelColor
@@ -301,7 +311,6 @@ final class BatchRenameController: NSObject, NSTableViewDataSource, NSTableViewD
         cell.addSubview(before)
         cell.addSubview(arrow)
         cell.addSubview(after)
-        cell.textField = after
 
         NSLayoutConstraint.activate([
             before.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 10),

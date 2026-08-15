@@ -137,14 +137,18 @@ struct SortOrder: Codable, Equatable {
     }
 }
 
-private func compare(_ a: FileItem, _ b: FileItem, by key: SortKey) -> ComparisonResult {
+private func compare(
+    _ a: FileItem, _ b: FileItem, by key: SortKey, folderSizes: [URL: Int64]
+) -> ComparisonResult {
     switch key {
     case .name:
         return a.name.localizedStandardCompare(b.name)
     case .ext:
         return a.url.pathExtension.localizedStandardCompare(b.url.pathExtension)
     case .size:
-        return a.size == b.size ? .orderedSame : (a.size < b.size ? .orderedAscending : .orderedDescending)
+        let left = sortableSize(of: a, folderSizes: folderSizes)
+        let right = sortableSize(of: b, folderSizes: folderSizes)
+        return left == right ? .orderedSame : (left < right ? .orderedAscending : .orderedDescending)
     case .kind:
         return a.kind.localizedStandardCompare(b.kind)
     case .modified:
@@ -154,12 +158,27 @@ private func compare(_ a: FileItem, _ b: FileItem, by key: SortKey) -> Compariso
     }
 }
 
-func sortItems(_ items: [FileItem], order: SortOrder, foldersFirst: Bool) -> [FileItem] {
+/// The bytes an item sorts by. A file's own size; for a folder the measured
+/// size when one is known, otherwise -1, which keeps unmeasured folders in
+/// one group as before. The listing does not carry folder sizes because they
+/// arrive later, one at a time, and only a sort by size has any use for them.
+private func sortableSize(of item: FileItem, folderSizes: [URL: Int64]) -> Int64 {
+    guard item.isDirectory else { return item.size }
+    guard let measured = folderSizes[item.url] else { return item.size }
+    return measured
+}
+
+/// - Parameter folderSizes: measured folder sizes by URL, consulted only by a
+///   sort on size. Passed in rather than read here so the sort can run on any
+///   thread without touching the calculator's cache.
+func sortItems(
+    _ items: [FileItem], order: SortOrder, foldersFirst: Bool, folderSizes: [URL: Int64] = [:]
+) -> [FileItem] {
     items.sorted { a, b in
         if foldersFirst && a.opensAsFolder != b.opensAsFolder { return a.opensAsFolder }
 
         for descriptor in order.descriptors {
-            let result = compare(a, b, by: descriptor.key)
+            let result = compare(a, b, by: descriptor.key, folderSizes: folderSizes)
             guard result != .orderedSame else { continue }
             return descriptor.ascending ? result == .orderedAscending : result == .orderedDescending
         }

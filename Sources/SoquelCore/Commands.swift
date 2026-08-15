@@ -201,7 +201,9 @@ enum CommandRegistry {
         .separator,
         .command(Command("file.rename", "Rename", #selector(M.menuRename(_:)))),
         .command(Command("file.batchRename", "Rename Many…", #selector(M.menuBatchRename(_:)), Shortcut("r", [.command, .control]))),
-        .command(Command("file.duplicate", "Duplicate", #selector(M.menuDuplicate(_:)), Shortcut("d", [.command, .control]))),
+        // Not ⌃⌘D: macOS takes that for looking a word up in the dictionary
+        // before any application sees it, so the item's key never fired.
+        .command(Command("file.duplicate", "Duplicate", #selector(M.menuDuplicate(_:)), Shortcut("d", [.command, .control, .shift]))),
         .command(Command("file.symlink", "Make Symlink", #selector(M.menuMakeSymlink(_:)))),
         .command(Command("file.compress", "Compress", #selector(M.menuCompress(_:)))),
         .command(Command("file.trash", "Move to Trash", #selector(M.menuTrash(_:)), Shortcut("\u{8}"))),
@@ -318,7 +320,9 @@ enum CommandRegistry {
         .command(Command("pane.focus3", "Focus Pane 3", #selector(M.menuFocusPaneByIndex(_:)), Shortcut("3"), representedObject: "2")),
         .command(Command("pane.focus4", "Focus Pane 4", #selector(M.menuFocusPaneByIndex(_:)), Shortcut("4"), representedObject: "3")),
         .separator,
-        .command(Command("pane.rotate", "Rotate Split", #selector(M.menuRotatePaneSplit(_:)), Shortcut("d", [.command, .option]))),
+        // Not ⌥⌘D: macOS takes that for hiding the Dock before any
+        // application sees it.
+        .command(Command("pane.rotate", "Rotate Split", #selector(M.menuRotatePaneSplit(_:)), Shortcut("d", [.command, .option, .shift]))),
         .command(Command("pane.swap", "Swap Panes", #selector(M.menuSwapPanes(_:)))),
         .command(Command("pane.compare", "Compare Folders…", #selector(M.menuCompareFolders(_:)), Shortcut("k", [.command, .shift]))),
         .command(Command("pane.moveToOpposite", "Move Selection to Opposite Pane", #selector(M.menuMoveToOppositePane(_:)))),

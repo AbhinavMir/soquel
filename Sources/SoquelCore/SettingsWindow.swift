@@ -2,8 +2,62 @@ import AppKit
 
 /// A view whose origin is the top-left corner, so a form laid out inside a
 /// scroll view starts at the top the way a reader expects.
-final class FlippedView: NSView {
+class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// The document view behind a settings pane. Besides putting the origin at
+/// the top, it keeps the pane's wrapping labels wrapping at the width layout
+/// gives them instead of the width of their whole text.
+///
+/// A label that wraps still reports its entire text on one line as its
+/// intrinsic width, and its default resistance to being squeezed (750) beats
+/// the priority a window uses to hold its size (500). Every constraint
+/// between the label and the window frame is required, so the label won:
+/// selecting Themes pushed the window from 660pt to 906pt, Updates to 1039pt,
+/// and nothing brought it back. A pane can pin `preferredMaxLayoutWidth` to
+/// a number, but that number does not follow the window. Here every wrapping
+/// label the pane built yields to the window instead, and its
+/// `preferredMaxLayoutWidth` tracks the width it is laid out at, so the
+/// height follows the wrap rather than staying at one line.
+final class SettingsPaneHost: FlippedView {
+    private var observers: [NSObjectProtocol] = []
+
+    /// Labels that already carry a `preferredMaxLayoutWidth` are left as
+    /// their pane set them; they have a finite width and cannot push.
+    func adopt(wrappingLabelsIn pane: NSView) {
+        for label in Self.wrappingLabels(in: pane) {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            label.postsFrameChangedNotifications = true
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: label, queue: nil
+            ) { [weak label] _ in
+                guard let label else { return }
+                // The width is fixed by the label's own pins, so once it is
+                // recorded the frame only changes in height and this settles.
+                let width = label.frame.width
+                guard width > 0, abs(label.preferredMaxLayoutWidth - width) > 0.5 else { return }
+                label.preferredMaxLayoutWidth = width
+            })
+        }
+    }
+
+    deinit {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    private static func wrappingLabels(in view: NSView) -> [NSTextField] {
+        var found: [NSTextField] = []
+        for sub in view.subviews {
+            if let field = sub as? NSTextField, !field.isEditable,
+               field.preferredMaxLayoutWidth == 0,
+               field.lineBreakMode == .byWordWrapping || field.lineBreakMode == .byCharWrapping {
+                found.append(field)
+            }
+            found += wrappingLabels(in: sub)
+        }
+        return found
+    }
 }
 
 /// A window that closes on Escape and on ⌘W.
@@ -64,6 +118,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
     private var search: NSSearchField!
     private var results: NSTableView!
     private var resultsScroll: NSScrollView!
+    /// Sits over the empty results list when a search finds nothing. Without
+    /// it the list vanished and the pane underneath showed, which read as the
+    /// search having done nothing at all.
+    private var noMatches: NSTextField!
     private var matches: [SettingsIndex.Entry] = []
 
     fileprivate var matchCount: Int { matches.count }
@@ -72,10 +130,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
     }
 
     @objc private func searchChanged() {
+        let term = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         matches = SettingsIndex.search(search.stringValue)
-        // The list only covers the tabs while it has something in it, so an
-        // empty box leaves the pane you were on exactly where it was.
-        resultsScroll.isHidden = matches.isEmpty
+        // The list only covers the tabs while something has been typed, so
+        // an empty box leaves the pane you were on exactly where it was. A
+        // term that matches nothing keeps the list up, empty, with the
+        // message on top of it.
+        resultsScroll.isHidden = term.isEmpty
+        noMatches.isHidden = term.isEmpty || !matches.isEmpty
+        noMatches.stringValue = "Nothing matched “\(term)”"
         results.reloadData()
     }
 
@@ -161,11 +224,29 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         resultsScroll.isHidden = true
         resultsScroll.translatesAutoresizingMaskIntoConstraints = false
 
+        noMatches = NSTextField(labelWithString: "")
+        noMatches.font = .systemFont(ofSize: 12)
+        noMatches.textColor = .secondaryLabelColor
+        noMatches.alignment = .center
+        noMatches.lineBreakMode = .byTruncatingMiddle
+        // A long term is truncated in the middle rather than allowed to push
+        // the window wider than the list it sits in.
+        noMatches.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        noMatches.isHidden = true
+        noMatches.translatesAutoresizingMaskIntoConstraints = false
+
         let root = NSView()
         root.addSubview(search)
         root.addSubview(tabs)
         root.addSubview(resultsScroll)
+        // Added after the list so it draws on top of it.
+        root.addSubview(noMatches)
         NSLayoutConstraint.activate([
+            noMatches.centerXAnchor.constraint(equalTo: resultsScroll.centerXAnchor),
+            noMatches.centerYAnchor.constraint(equalTo: resultsScroll.centerYAnchor),
+            noMatches.leadingAnchor.constraint(greaterThanOrEqualTo: resultsScroll.leadingAnchor, constant: 12),
+            noMatches.trailingAnchor.constraint(lessThanOrEqualTo: resultsScroll.trailingAnchor, constant: -12),
+
             search.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
             search.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
             search.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
@@ -188,8 +269,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
     /// A tab view takes its width from the widest pane in it, so one label
     /// that wraps without a width to wrap inside pushed the whole window out
     /// every time the Themes tab was selected. Pinning the pane to the scroll
-    /// view's width gives every label something finite to lay out against, and
-    /// a pane taller than the window scrolls rather than being cut off.
+    /// view's width gives every label something finite to lay out against,
+    /// the host makes the labels accept that width (see `SettingsPaneHost`),
+    /// and a pane taller than the window scrolls rather than being cut off.
     static func paneContainer(_ pane: NSView) -> NSView {
         pane.translatesAutoresizingMaskIntoConstraints = false
 
@@ -200,8 +282,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         // on screen, so every pane except the tallest drew below the visible
         // area and could not be scrolled to. Flipping the host puts y=0 at
         // the top, where a settings form starts.
-        let host = FlippedView()
+        let host = SettingsPaneHost()
         host.translatesAutoresizingMaskIntoConstraints = false
+        host.adopt(wrappingLabelsIn: pane)
         host.addSubview(pane)
 
         let scroll = NSScrollView()

@@ -88,6 +88,11 @@ final class FileSearch {
         var skippedTooLarge = 0
         /// Files that were not valid UTF-8, so could not be searched as text.
         var skippedUnreadable = 0
+        /// Files that could not be opened at all, usually a permissions
+        /// refusal. Kept apart from `skippedUnreadable`: a file the search was
+        /// not allowed to read is a different fact from one that holds no text,
+        /// and the summary used to fold the two together as "not text".
+        var skippedDenied = 0
         /// Directories that could not be entered, usually a permissions refusal.
         var skippedUnreachable = 0
         /// Paths excluded by a .gitignore, when that option is on.
@@ -104,6 +109,7 @@ final class FileSearch {
             if hitLimit { notes.append("stopped at \(found) results") }
             if skippedTooLarge > 0 { notes.append("\(skippedTooLarge) too large to read") }
             if skippedUnreadable > 0 { notes.append("\(skippedUnreadable) not text") }
+            if skippedDenied > 0 { notes.append("\(skippedDenied) unreadable") }
             if skippedUnreachable > 0 { notes.append("\(skippedUnreachable) unreadable folders") }
             if skippedIgnored > 0 { notes.append("\(skippedIgnored) ignored by .gitignore") }
             notes.append(contentsOf: self.notes)
@@ -465,6 +471,8 @@ final class FileSearch {
                             summary.found += 1
                         case .notText:
                             summary.skippedUnreadable += 1
+                        case .unreadable:
+                            summary.skippedDenied += 1
                         case .noMatch:
                             break
                         }
@@ -505,11 +513,16 @@ final class FileSearch {
         case noMatch
         /// Not valid UTF-8, so it cannot be searched as text. Counted, not hidden.
         case notText
+        /// Could not be opened at all, usually because the search has no
+        /// permission to read it. A read refusal used to come back as
+        /// `notText`, so a chmod 000 file was reported as binary when the
+        /// truth is that nobody looked inside it.
+        case unreadable
     }
 
     /// Reads a file as UTF-8 and returns the first line that matches.
     static func firstMatchingLine(in url: URL, matcher: Matcher, caseSensitive: Bool) -> ContentResult {
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return .notText }
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return .unreadable }
         guard let text = String(data: data, encoding: .utf8) else { return .notText }
 
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {

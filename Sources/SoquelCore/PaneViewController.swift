@@ -9,7 +9,8 @@ protocol PaneDelegate: AnyObject {
 }
 
 /// A pane owns a stack of tabs, a breadcrumb path bar, and the visible file list.
-final class PaneViewController: NSViewController, FileListDelegate, NSSearchFieldDelegate {
+final class PaneViewController: NSViewController, FileListDelegate, NSSearchFieldDelegate,
+                                NSGestureRecognizerDelegate {
     weak var delegate: PaneDelegate?
 
     private(set) var tabs: [FileListViewController] = []
@@ -116,12 +117,18 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         // the buttons act on the focused pane, so the pane takes focus before
         // the action is sent up the responder chain.
         toolbar.onActivate = { [weak self] in self?.activeList?.focusTable() }
+        // The view-mode pill reads the tab in front, not the global setting:
+        // with per-folder views on the two can differ.
+        toolbar.viewModeOnScreen = { [weak self] in self?.activeList?.mode }
 
         // Clicking the path bar switches it to a typable field. ⇧⌘G exists, but
         // the research is clear people expect to click and type, and judge the
         // modal go-to-folder a worse substitute rather than an equivalent.
         let pathClick = NSClickGestureRecognizer(target: self, action: #selector(beginEditingPathFromClick))
         pathClick.numberOfClicksRequired = 1
+        // A recognizer on the scroll view sees clicks on the crumb buttons
+        // inside it too; the delegate keeps it to the empty stretch of bar.
+        pathClick.delegate = self
 
         pathBarScroll = NSScrollView()
         pathBarScroll.documentView = pathBar
@@ -388,6 +395,19 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
             }
             tabBar.addArrangedSubview(tab)
         }
+        // On the next turn: the stack lays the new tab out on the next pass,
+        // and scrolling before that aims at a frame that is still empty.
+        DispatchQueue.main.async { [weak self] in self?.scrollActiveTabIntoView() }
+    }
+
+    /// Brings the active tab into the visible part of the strip. The strip
+    /// scrolls but shows no scroller, so a tab opened past its right edge —
+    /// the seventh or eighth ⌘T — was active and invisible at once.
+    private func scrollActiveTabIntoView() {
+        guard isViewLoaded, tabBar.arrangedSubviews.indices.contains(activeIndex) else { return }
+        let tab = tabBar.arrangedSubviews[activeIndex]
+        view.layoutSubtreeIfNeeded()
+        tab.scrollToVisible(tab.bounds)
     }
 
     /// Opens the folder the active tab is showing, which is what a new tab in
@@ -472,6 +492,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         let columns = (activeList?.mode ?? Prefs.viewMode) == .column
         columnBrowser.isHidden = !columns
         contentView.isHidden = columns
+        // The pill reports which view is on screen, so it follows every
+        // change of it: a navigation into a folder with its own view, a tab
+        // switch, or a view command.
+        refreshToolbar()
         // Staleness is judged by the root column, not the deepest: descending
         // in columns adds levels without moving the pane's URL, so the deepest
         // differs from it after one descend, and comparing there tore down
@@ -492,6 +516,25 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
     /// a breadcrumb button never reaches here.
     @objc private func beginEditingPathFromClick() {
         beginEditingPath()
+    }
+
+    /// Whether the click recognizer on the path bar may act on `event`.
+    ///
+    /// A recognizer attached to the scroll view is offered every click inside
+    /// it, the crumb buttons included, and recognizing one of those cancelled
+    /// the button's own tracking: the crumb never navigated and the editor
+    /// opened instead. A click whose hit view is a button, or sits inside
+    /// one, is left to the button.
+    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer,
+                           shouldAttemptToRecognizeWith event: NSEvent) -> Bool {
+        guard let host = pathBarScroll.superview else { return true }
+        let point = host.convert(event.locationInWindow, from: nil)
+        var hit = pathBarScroll.hitTest(point)
+        while let view = hit, view !== pathBarScroll {
+            if view is NSButton { return false }
+            hit = view.superview
+        }
+        return true
     }
 
     @objc private func breadcrumbClicked(_ sender: NSButton) {
@@ -535,12 +578,23 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         if typed.count > 1, typed.hasPrefix("'"), typed.hasSuffix("'") { typed = String(typed.dropFirst().dropLast()) }
         if typed.count > 1, typed.hasPrefix("\""), typed.hasSuffix("\"") { typed = String(typed.dropFirst().dropLast()) }
         let expanded = (typed as NSString).expandingTildeInPath
-        endEditingPath()
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) else {
-            NSSound.beep()
+        // Nothing typed is nothing to go to; the bar simply comes back.
+        guard !typed.isEmpty else {
+            endEditingPath()
+            activeList?.focusTable()
             return
         }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) else {
+            // The field stays up with the path in it. Closing it here threw
+            // the typed path away with nothing but a beep to say why, and
+            // hiding the field while it held the keyboard left no view
+            // focused at all.
+            NSSound.beep()
+            delegate?.pane(self, didReportStatus: "No such folder: \(typed)")
+            return
+        }
+        endEditingPath()
         let target = URL(fileURLWithPath: expanded)
         if isDir.boolValue {
             activeList?.navigate(to: target)
@@ -562,6 +616,14 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
     /// it and no path bar until the user clicked back in and pressed Return.
     func controlTextDidEndEditing(_ obj: Notification) {
         guard obj.object as? NSTextField === pathField, !pathField.isHidden else { return }
+        // Return ends editing as well, and the field's action decides what
+        // follows it: a path that exists closes the field, one that does not
+        // keeps it up for correction. Closing it here as well took the
+        // second case away.
+        if let raw = obj.userInfo?[NSText.movementUserInfoKey] as? Int,
+           raw == NSTextMovement.return.rawValue {
+            return
+        }
         endEditingPath()
     }
 
@@ -569,8 +631,14 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
     /// filter box it clears the filter and hands focus back to the list —
     /// leaving focus in the emptied box meant the next letters typed filtered
     /// again instead of type-selecting, and a command run right after acted
-    /// on no selection at all.
+    /// on no selection at all. Return in the filter box keeps the filter and
+    /// hands focus to the list, so the arrow keys move through what is left;
+    /// the field's own Return only selected the text typed in it.
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if selector == #selector(NSResponder.insertNewline(_:)), control === filterField {
+            activeList?.focusTable()
+            return true
+        }
         guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
         if control === filterField {
             clearSharedFilter()
@@ -612,7 +680,16 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         // box and the column browser have to empty with it, or they keep a
         // needle that no longer filters anything on screen.
         clearSharedFilter()
-        if (activeList?.mode ?? Prefs.viewMode) == .column { columnBrowser.show(url) }
+        // Every route into a folder ends here — navigate, Back, Forward and
+        // Enclosing Folder — so this is where the folder's own remembered
+        // view goes on screen. The list decides its mode from the folder and
+        // shows its table or its icons; the pane decides between that and
+        // the column browser. Doing only the list half, as navigate(to:) did,
+        // left both the browser and the table hidden when a folder remembered
+        // as columns was entered, and Back or Enclosing Folder never asked the
+        // folder at all.
+        if FolderViewSettings.isEnabled { list.applyViewMode() }
+        applyViewMode()
         rebuildPathBar()
         rebuildTabBar()
         delegate?.paneDidChangeTabs(self)

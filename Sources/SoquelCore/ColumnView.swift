@@ -127,6 +127,7 @@ final class ColumnBrowserView: NSView {
         var x: CGFloat = 0
         for level in levels {
             level.container.frame = NSRect(x: x, y: 0, width: Self.columnWidth, height: height)
+            fitTable(level.table, in: level.container)
             if !level.message.isHidden {
                 let inset: CGFloat = 12
                 let width = Self.columnWidth - inset * 2
@@ -145,6 +146,22 @@ final class ColumnBrowserView: NSView {
         documentView.frame = NSRect(x: 0, y: 0, width: max(x, scroll.contentSize.width), height: height)
     }
 
+    /// Sizes a column's one table column to the clip view it scrolls in.
+    ///
+    /// Left to its own autoresizing, the table came out of the first layout
+    /// wider than its clip view, and the chevrons that hang off the trailing
+    /// edge sat under the vertical scroller until a divider drag changed the
+    /// clip's size and the table with it. That autoresizing only reacts to a
+    /// change in the clip's size, so every later layout that set the same
+    /// frame again left the table as it was. The width is set outright here,
+    /// from the clip view's real size, on the first pass and on every one
+    /// after it.
+    private func fitTable(_ table: NSTableView, in container: NSScrollView) {
+        guard let column = table.tableColumns.first else { return }
+        let width = container.contentSize.width - table.intercellSpacing.width
+        if column.width != width { column.width = width }
+    }
+
     /// Shows `url` as the leftmost column, discarding anything to the right.
     func show(_ url: URL) {
         clearLevels()
@@ -153,6 +170,48 @@ final class ColumnBrowserView: NSView {
         // files that are no longer on screen.
         onSelectMany?([])
         appendColumn(for: url)
+    }
+
+    /// The pane hides the browser when another view takes the pane, and shows
+    /// it again on the way back. While it is hidden the pane navigates without
+    /// telling it, so the columns drilled into before the hide describe a
+    /// visit the pane may since have left; the pane compares only the root on
+    /// the way back, and a matching root kept the stale descendants on screen,
+    /// scrolled to the far right. Coming back therefore starts at the root
+    /// column, the same as a fresh show(), and the pane's mirror hears that
+    /// nothing is selected. Watched here rather than in viewDidUnhide so that
+    /// only the pane's own switch counts, not a collapsed ancestor.
+    override var isHidden: Bool {
+        didSet {
+            guard oldValue, !isHidden else { return }
+            collapseToRoot()
+        }
+    }
+
+    /// Drops every column but the first and clears what the first had
+    /// selected. The filter is kept: the pane keeps its box in step across
+    /// the switch, and the root is now the deepest column, so the filter
+    /// applies to it the same way it applied to the list.
+    private func collapseToRoot() {
+        guard let root = levels.first else { return }
+        while levels.count > 1 {
+            let level = levels.removeLast()
+            level.container.removeFromSuperview()
+            level.divider.removeFromSuperview()
+            level.message.removeFromSuperview()
+        }
+        // The deselect and the reload both post selection changes; suppressed,
+        // or the descend logic would run on a browser that is being torn down.
+        isRemappingSelection = true
+        root.table.deselectAll(nil)
+        root.table.reloadData()
+        isRemappingSelection = false
+        layoutColumns()
+        // The stale columns had scrolled the view to the far right, and a
+        // document that shrinks back leaves the clip wherever it was.
+        scroll.contentView.scroll(to: .zero)
+        scroll.reflectScrolledClipView(scroll.contentView)
+        onSelectMany?([])
     }
 
     /// The folder the rightmost column is listing.

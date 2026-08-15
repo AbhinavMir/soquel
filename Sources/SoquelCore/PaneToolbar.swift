@@ -45,6 +45,14 @@ struct ToolbarAction {
         return titleWhenOn
     }
 
+    /// The same action with its state read from somewhere else. The catalogue's
+    /// toggles read the global settings, and a bar that knows better — a pane
+    /// whose folder is in a view of its own — swaps that reading in.
+    func withState(_ isOn: @escaping () -> Bool) -> ToolbarAction {
+        ToolbarAction(id, title, symbol, selector, isOn: isOn, symbolWhenOff: symbolWhenOff,
+                      titleWhenOn: titleWhenOn, group: group)
+    }
+
     /// What the tooltip says: the title, then the key that does the same thing.
     ///
     /// A toolbar that never mentions the shortcut is a toolbar people keep
@@ -108,6 +116,11 @@ enum ToolbarCatalogue {
 
     static func action(id: String) -> ToolbarAction? { all.first { $0.id == id } }
 
+    /// The view each segment of the view-mode pill stands for.
+    static let viewModes: [String: ViewMode] = [
+        "listView": .list, "iconView": .icon, "columnView": .column,
+    ]
+
     /// The key bound to whatever command shares this selector, written the way
     /// a menu writes it.
     static func shortcutDisplay(for selector: Selector) -> String? {
@@ -162,6 +175,13 @@ final class PaneToolbarView: NSView {
     /// Called before a button's command is dispatched, so the pane that owns
     /// this toolbar can take focus first.
     var onActivate: (() -> Void)?
+
+    /// The view the pane behind this bar is showing right now. The catalogue's
+    /// view-mode segments read the global setting, and with per-folder views
+    /// on the folder on screen can be in another one; the pill followed the
+    /// setting and disagreed with the rows under it. Nil while the pane has
+    /// nothing on screen, in which case no segment is on.
+    var viewModeOnScreen: (() -> ViewMode?)?
 
     private var stack: NSStackView!
     private var observers: [NSObjectProtocol] = []
@@ -223,7 +243,7 @@ final class PaneToolbarView: NSView {
                 var members: [ToolbarAction] = []
                 while index < ids.count,
                       let next = ToolbarCatalogue.action(id: ids[index]), next.group == group {
-                    members.append(next)
+                    members.append(readingTheScreen(next))
                     index += 1
                 }
                 let pill = ToolbarPillView(actions: members)
@@ -259,6 +279,15 @@ final class PaneToolbarView: NSView {
             stack.addArrangedSubview(button)
         }
         needsDisplay = true
+    }
+
+    /// A view-mode segment that lights for the view on screen rather than the
+    /// global setting, when the pane has said which that is.
+    private func readingTheScreen(_ action: ToolbarAction) -> ToolbarAction {
+        guard let viewModeOnScreen, let mode = ToolbarCatalogue.viewModes[action.id] else {
+            return action
+        }
+        return action.withState { viewModeOnScreen() == mode }
     }
 
     /// Focuses the pane, then sends the button's real command up the

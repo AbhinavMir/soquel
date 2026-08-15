@@ -55,6 +55,13 @@ final class FileTableView: NSTableView {
         return ok
     }
 
+    /// In column view this table is hidden but still takes the keyboard, so
+    /// NSTableView's own selectAll would select rows nobody can see. The
+    /// controller knows which view is on screen and selects there.
+    override func selectAll(_ sender: Any?) {
+        commandTarget?.selectAllItems()
+    }
+
     /// A table refuses to hand first responder to a control unless a double
     /// click asked for it, and `editColumn(_:row:with:select:)` passes no event
     /// at all. Return renamed nothing for exactly that reason: the editor was
@@ -147,6 +154,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             guard let self, self.isViewLoaded, Prefs.calculateFolderSizes,
                   let url = note.object as? URL,
                   let row = self.items.firstIndex(where: { $0.url == url }) else { return }
+            // Under a sort by size the answer moves the folder to its place
+            // among the files; the sort ran before the size was known.
+            if self.sortOrder.descriptors.contains(where: { $0.key == .size }) {
+                self.applyFilterAndSort(preservingSelection: true)
+                return
+            }
             let column = self.tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("size"))
             guard column >= 0 else { return }
             self.tableView.reloadData(forRowIndexes: [row], columnIndexes: [column])
@@ -216,6 +229,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         scrollView = NSScrollView()
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
+        // Without a horizontal scroller, columns that outgrow the pane are cut
+        // off, and a divider drag on such a table makes AppKit squeeze the
+        // table into the clip view first: the dragged column and the last one
+        // both collapse to their minimum, whichever way the pointer went.
+        // With the scroller the table keeps its width and the drag is honoured.
+        scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         // A sunken well around the list, which is how a nineties file pane was
         // set into the window rather than floating on it.
@@ -319,34 +338,79 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// browser while the list hid its own table, and the pane drew nothing at
     /// all.
     func refreshMode() {
+        // Noted here and not in applyViewMode: the pane hides this list's
+        // container before applyViewMode runs, and hiding the view that holds
+        // first responder hands the keyboard to the next key view — the
+        // sidebar, whose arrows then navigate the pane away. By the time the
+        // views are swapped the focus is already gone, so it is recorded on
+        // the way in and given back on the way out.
+        if viewHoldsFocus { focusReturnsAfterSwitch = true }
         mode = FolderViewSettings.viewMode(for: url)
     }
+
+    /// True while a view switch is under way that started with the keyboard
+    /// in this list. Consumed by applyViewMode.
+    private var focusReturnsAfterSwitch = false
+
+    /// The mode the views were last arranged for, so applyViewMode can tell a
+    /// switch out of column view from a repeat call. `mode` cannot: it is
+    /// brought up to date before the pane asks, so by then it already reads
+    /// as the new mode.
+    private var shownMode: ViewMode = Prefs.viewMode
+
+    /// Whether one of this list's own views is the window's first responder.
+    private var viewHoldsFocus: Bool {
+        guard isViewLoaded, let responder = view.window?.firstResponder as? NSView else { return false }
+        return responder === tableView || responder === collectionView
+    }
+
+    /// Tiles narrower than this cannot hold a readable name: at the smallest
+    /// icon sizes a tile as wide as its icon wrapped labels mid-word, three
+    /// letters to a line. The icon keeps its size; only the tile grows.
+    static let minimumTileWidth: CGFloat = 96
 
     func applyViewMode() {
         refreshMode()
         guard isViewLoaded else { return }
         scrollView.isHidden = mode != .list
         collectionScroll.isHidden = mode != .icon
-        if mode == .column { return }
+        // Coming back from the column browser, its selection is the current
+        // one — the user picked it there while the table and grid were
+        // hidden with their stale rows. An empty mirror is left alone: the
+        // browser reports nothing selected when it is rebuilt, and that must
+        // not wipe out what the list had before the round trip.
+        if shownMode == .column, mode != .column, !columnSelection.isEmpty {
+            selectedURLsCache = columnSelection
+        }
+        shownMode = mode
+        let returnFocus = focusReturnsAfterSwitch
+        focusReturnsAfterSwitch = false
+        // In column view the table stays the keyboard's home even though it
+        // is hidden: its key handler routes Return, Delete, Space, ⌘A and
+        // typing to the columns, and without it the sidebar takes the keys.
+        if mode == .column {
+            if returnFocus { focusTable() }
+            return
+        }
 
         if isIconMode {
             let side = CGFloat(Prefs.iconSize)
             if let layout = collectionView.collectionViewLayout as? NSCollectionViewFlowLayout {
-                layout.itemSize = NSSize(width: side, height: side + 34)
+                layout.itemSize = NSSize(width: max(side, Self.minimumTileWidth), height: side + 34)
             }
             collectionView.reloadData()
             restoreCollectionSelection(selectedURLsCache)
         } else {
             tableView.reloadData()
             // The cache carries the selection across the switch. reloadData
-            // keeps old row indexes, so the rows are replaced wholesale with
-            // whatever the cache still names — a cached URL that is gone (the
-            // folder just entered, a trashed file, a filtered-out item) must
-            // not leave the table asserting rows the user never picked. One
-            // replace, and only when something differs: a deselect-then-
-            // restore pair posted two selection events for an unchanged
-            // selection, and each reset the inspector, dropping a computed
-            // SHA-256 mid-hash.
+            // on a view-based table drops the selection, so the rows are
+            // replaced wholesale with whatever the cache still names — a
+            // cached URL that is gone (the folder just entered, a trashed
+            // file, a filtered-out item) must not leave the table asserting
+            // rows the user never picked. One replace, and only when something
+            // differs: a deselect-then-restore pair posted two selection
+            // events for an unchanged selection, and each reset the
+            // inspector, dropping a computed SHA-256 mid-hash.
             let wanted = Set(selectedURLsCache)
             var target = IndexSet()
             for (i, item) in items.enumerated() where wanted.contains(item.url) {
@@ -357,11 +421,13 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 if let first = target.first { tableView.scrollRowToVisible(first) }
             }
         }
+        if returnFocus { focusTable() }
     }
 
     /// Selection is held as URLs so it survives switching view modes, where the
-    /// index of an item means nothing to the other view.
-    private var selectedURLsCache: [URL] = []
+    /// index of an item means nothing to the other view. Readable so the pane
+    /// can hand it to the column browser when that view comes to the front.
+    private(set) var selectedURLsCache: [URL] = []
 
     /// The columns a list starts with, in the order they are added.
     ///
@@ -386,7 +452,13 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // Without userResizingMask a column only ever resizes with the table,
         // so the divider between headers does nothing when dragged.
         column.resizingMask = [.userResizingMask, .autoresizingMask]
-        column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
+        // No sortDescriptorPrototype on purpose. With one, a header click
+        // makes NSTableView keep a sort of its own — always ascending first,
+        // toggled on repeat — and draw the chevron for it after the delegate
+        // has drawn the real one, so the header contradicted the status bar
+        // and never followed a keyboard sort. The sort lives in `sortOrder`;
+        // updateSortIndicators draws it, and the accessibility sort direction
+        // follows the drawn image.
         if let saved = Self.savedWidth(for: id) {
             column.width = Swift.max(Swift.min(saved, column.maxWidth), column.minWidth)
         }
@@ -516,6 +588,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // their contents when they first appear.
         guard isViewLoaded else { completion?(); return }
         let previousSelection = selecting.map { [$0] } ?? selectedURLs()
+        // Set once at load time, the labels went on naming the first folder
+        // after every navigation.
+        tableView.setAccessibilityLabel("Files in \(url.lastPathComponent)")
+        collectionView.setAccessibilityLabel("Files in \(url.lastPathComponent)")
         let watchedURL = url
         DirectoryWatcher.make(url: watchedURL) { [weak self] in
             self?.scheduleRefresh()
@@ -530,8 +606,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             switch result {
             case .success(let loaded):
                 self.allItems = loaded
-                self.applyFilterAndSort(preservingSelection: false)
-                self.restoreSelection(previousSelection)
+                self.applyFilterAndSort(restoring: previousSelection)
                 self.delegate?.fileListDidReload(self)
                 if resetScroll {
                     if self.isIconMode {
@@ -618,21 +693,48 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     }
 
     private func applyFilterAndSort(preservingSelection: Bool) {
-        let previous = preservingSelection ? selectedURLs() : []
+        applyFilterAndSort(restoring: preservingSelection ? selectedURLs() : [])
+    }
+
+    /// Rebuilds the rows and selects `urls` again once they are in place.
+    ///
+    /// A view-based table drops its selection on reloadData, so the rows have
+    /// to be reselected here, before the status is reported: reporting first
+    /// told the inspector the selection was empty and then that it was back,
+    /// and the first message threw away a checksum it was computing.
+    private func applyFilterAndSort(restoring urls: [URL]) {
         var visible = allItems
         if !filterText.isEmpty {
             let needle = filterText.lowercased()
             visible = visible.filter { $0.name.lowercased().contains(needle) }
         }
-        items = sortItems(visible, order: sortOrder, foldersFirst: Prefs.foldersFirst)
+        items = sortItems(
+            visible, order: sortOrder, foldersFirst: Prefs.foldersFirst, folderSizes: knownFolderSizes(visible)
+        )
         tableView.reloadData()
         if isIconMode { collectionView.reloadData() }
-        if preservingSelection { restoreSelection(previous) }
+        restoreSelection(urls)
         emptyLabel.isHidden = !items.isEmpty
         if items.isEmpty && !allItems.isEmpty {
             emptyLabel.stringValue = "No items match the filter"
         }
         reportStatus()
+    }
+
+    /// The folder sizes already measured, for a sort by size. Read on the main
+    /// thread here rather than inside the comparator, because the calculator's
+    /// cache is not safe to read from wherever a sort happens to run, and a
+    /// sort by another key has no use for them.
+    private func knownFolderSizes(_ candidates: [FileItem]) -> [URL: Int64] {
+        guard Prefs.calculateFolderSizes,
+              sortOrder.descriptors.contains(where: { $0.key == .size }) else { return [:] }
+        var sizes: [URL: Int64] = [:]
+        for item in candidates where item.isDirectory {
+            if let measured = FolderSizeCalculator.shared.cached(for: item.url) {
+                sizes[item.url] = measured.bytes
+            }
+        }
+        return sizes
     }
 
     private func restoreSelection(_ urls: [URL]) {
@@ -717,7 +819,17 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             self.gitStatuses = statuses
             self.gitRootURL = root
             guard self.isViewLoaded else { return }
-            self.tableView.reloadData()
+            // Only the badge column. A full reloadData on a view-based table
+            // drops the selection, and this answer lands right after every
+            // reload — synchronously for a folder outside any repository —
+            // so the row a rename or a duplicate had just selected was gone
+            // again before anyone saw it.
+            let column = self.tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("git"))
+            if column >= 0, self.tableView.numberOfRows > 0 {
+                self.tableView.reloadData(
+                    forRowIndexes: IndexSet(0..<self.tableView.numberOfRows), columnIndexes: [column]
+                )
+            }
             // The icon tiles carry the badge too; only reloading the table
             // left them stale in icon view.
             if self.isIconMode {
@@ -778,6 +890,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         return selected.isEmpty ? [url] : selected
     }
 
+    /// Puts the keyboard in the view that is showing the folder. In column
+    /// view that is still the (hidden) table: its key handler forwards to the
+    /// columns, and a hidden view can hold first responder.
     func focusTable() {
         view.window?.makeFirstResponder(isIconMode ? collectionView : tableView)
     }
@@ -1288,7 +1403,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     func beginRename() {
         guard let target = selectedURLs().first else {
-            Log.debug(.ui, "rename: nothing selected")
+            // The palette and the menu offer Rename with nothing selected;
+            // every other selection command says why it did nothing.
+            delegate?.fileList(self, didReportStatus: "Nothing selected to rename")
             return
         }
         switch mode {
@@ -1328,16 +1445,15 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// Over the tile's label, which is centred under the thumbnail.
     private func beginRenameInIcons(_ target: URL) {
         guard let path = collectionView.selectionIndexPaths.first,
-              let item = collectionView.item(at: path) else {
+              let tile = collectionView.item(at: path) as? FileIconItem else {
             Log.debug(.ui, "rename: no tile for the selection")
             return
         }
-        let tile = item.view
-        var rect = tile.convert(tile.bounds, to: collectionView)
-        // The label sits under the thumbnail, which takes 62% of the width.
-        let labelTop = rect.height * 0.62 + 11
-        rect = NSRect(x: rect.minX + 2, y: rect.minY + labelTop,
-                      width: rect.width - 4, height: 20)
+        // The label's own frame, asked of the tile. Working it out from the
+        // tile's height put the editor a line below the label — the
+        // thumbnail is sized from the tile's width, not its height — and the
+        // old name stayed on show above the field.
+        let rect = tile.labelFrame(in: collectionView).insetBy(dx: -2, dy: -1)
         present(target, in: collectionView, rect: rect, alignment: .center)
     }
 
@@ -1364,9 +1480,14 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         do {
             let newURL = try OperationEngine.shared.rename(original, to: newName)
             UndoStack.shared.pushRename(from: original, to: newURL)
-            setColumnSelection([newURL])
-            reload(selecting: newURL)
-            delegate?.fileList(self, didChangeSelection: [newURL])
+            // The commit runs a turn after the editor closed, and the click
+            // that closed it may have selected another file. Only a selection
+            // still on the old name follows the file to its new one; a click
+            // elsewhere keeps what it clicked.
+            let follows = selectedURLs().contains(original)
+            if follows { setColumnSelection([newURL]) }
+            reload(selecting: follows ? newURL : nil)
+            if follows { delegate?.fileList(self, didChangeSelection: [newURL]) }
         } catch {
             showError(error)
         }
@@ -1692,8 +1813,30 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// Shared entry point for paste and drag-and-drop.
     func receive(_ urls: [URL], move: Bool) {
         let destination = url
+        // A file landing in the folder it already sits in. The engine's
+        // transfer skips a same-path pair outright, so ⌘C ⌘V in one folder
+        // did nothing and said nothing. A copy makes "name copy" beside the
+        // original, as Finder does; a move has nowhere to go and says so.
+        let alreadyHere = urls.filter { samePath($0.deletingLastPathComponent(), destination) }
+        let incoming = urls.filter { !samePath($0.deletingLastPathComponent(), destination) }
+        if !alreadyHere.isEmpty {
+            if move {
+                delegate?.fileList(self, didReportStatus: alreadyHere.count == 1
+                    ? "“\(alreadyHere[0].lastPathComponent)” is already in this folder"
+                    : "\(alreadyHere.count) items are already in this folder")
+            } else {
+                do {
+                    let created = try OperationEngine.shared.duplicate(alreadyHere)
+                    UndoStack.shared.pushCreated(created, label: "Paste")
+                    if incoming.isEmpty { reload(selecting: created.first) }
+                } catch {
+                    showError(error)
+                }
+            }
+        }
+        guard !incoming.isEmpty else { return }
         OperationEngine.shared.transfer(
-            urls,
+            incoming,
             to: destination,
             move: move,
             resolveConflict: { [weak self] source, existing in
@@ -1745,7 +1888,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         case .column:
             delegate?.fileListDidRequestSelectAllInColumns(self)
         case .list:
-            tableView.selectAll(nil)
+            // Not tableView.selectAll(nil): the table's override comes back
+            // here, so it would loop.
+            tableView.selectRowIndexes(IndexSet(0..<items.count), byExtendingSelection: false)
         }
     }
 
@@ -1839,9 +1984,8 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 let text = displayText(for: item, column: key)
                 guard !text.isEmpty else { continue }
                 let font = key == "name" ? Theme.rowName : Theme.rowNumeric
-                let width = (text as NSString).size(withAttributes: [.font: font]).width
-                // The name column also carries a 16pt icon and its gap.
-                widest = max(widest, width + (key == "name" ? 26 : 10))
+                let width = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+                widest = max(widest, width + Self.cellAllowance(forColumn: key))
             }
             // A name column that grows to fit the longest name is a name column
             // that pushes Size and Date off the right-hand edge in any folder
@@ -1850,6 +1994,21 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             column.width = min(max(widest, column.minWidth), ceiling)
             if persistWidths { Self.saveWidth(column.width, for: key) }
         }
+    }
+
+    /// What a column needs around its text to show all of it.
+    ///
+    /// The text field's cell insets the title by two points on each side, and
+    /// `size(withAttributes:)` measures the bare string, so a column fitted to
+    /// the string alone drew its longest value with an ellipsis. The name
+    /// column also carries the icon, its gap and the trailing inset that
+    /// FileCellView lays out.
+    static func cellAllowance(forColumn key: String) -> CGFloat {
+        let cellTitleInset: CGFloat = 4
+        if key == "name" {
+            return FileCellView.iconSide + FileCellView.iconGap + FileCellView.trailingInset + cellTitleInset
+        }
+        return FileCellView.trailingInset + cellTitleInset + 4
     }
 
     /// The string a column shows for an item, shared by drawing and measuring so
@@ -1873,13 +2032,19 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     /// Reloads the sort from preferences, for when another pane changed it.
     func adoptGlobalViewSettings() {
-        sortOrder = FolderViewSettings.sortOrder(for: url)
+        let order = FolderViewSettings.sortOrder(for: url)
+        let sortChanged = order != sortOrder
+        sortOrder = order
         updateSortIndicators()
         applyColumnVisibility()
         rebuildMetadataColumns()
         applyViewMode()
         applyBackground()
-        applyFilterAndSort(preservingSelection: true)
+        // Only a changed sort re-sorts. This runs on the list that just
+        // committed a sort as well as on every other tab, and re-sorting an
+        // unchanged order posted the item count over the "Sorted by" line
+        // the commit had just put in the status bar.
+        if sortChanged { applyFilterAndSort(preservingSelection: true) }
     }
 
     private func updateSortIndicators() {
@@ -1917,7 +2082,11 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
 
         if !wanted.isEmpty { requestMetadata() }
+        // reloadData drops the selection on a view-based table; the rows
+        // are the same rows, so it goes straight back.
+        let selected = tableView.selectedRowIndexes
         tableView.reloadData()
+        tableView.selectRowIndexes(selected, byExtendingSelection: false)
     }
 
     /// Reads metadata for what is on screen. Files are read one at a time in the
@@ -2036,7 +2205,30 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     func showError(_ error: Error) {
         let alert = NSAlert(error: error)
+        // "Not a valid name" on its own left the user to guess which
+        // character was refused.
+        if let refused = error as? SoquelError, case .invalidName(let name) = refused,
+           let reason = Self.invalidNameReason(name) {
+            alert.informativeText = reason
+        }
         alert.runModal()
+    }
+
+    /// Why validateFileName refused `name`, in the order it checks. Nil for a
+    /// name it does not refuse.
+    static func invalidNameReason(_ name: String) -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return "A name cannot be empty." }
+        if trimmed.contains("/") {
+            return "A name cannot contain a slash (/): macOS uses it to separate folders."
+        }
+        if trimmed.contains(":") {
+            return "A name cannot contain a colon (:): the Finder shows it as a slash."
+        }
+        if trimmed == "." || trimmed == ".." {
+            return "“\(trimmed)” is reserved for the folder itself and its parent."
+        }
+        return nil
     }
 
     // MARK: - Context menu

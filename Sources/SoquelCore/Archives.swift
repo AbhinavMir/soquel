@@ -85,8 +85,13 @@ enum Archive {
         }
     }
 
-    /// Extracts the whole archive beside itself, into a folder named after it.
-    static func extract(_ url: URL, completion: @escaping (URL?, String?) -> Void) {
+    /// Extracts the archive beside itself, into a folder named after it. With
+    /// `entry` given, only that entry comes out — for a folder, everything
+    /// under it — at its own path inside that folder, so a file three levels
+    /// deep lands three levels deep and nothing else is unpacked.
+    static func extract(
+        _ url: URL, entry: Entry? = nil, completion: @escaping (URL?, String?) -> Void
+    ) {
         let destination = OperationEngine.uniqueURL(
             for: url.deletingPathExtension(),
             fileManager: .default
@@ -94,11 +99,17 @@ enum Archive {
 
         let tool: (String, [String])?
         switch url.pathExtension.lowercased() {
-        case "zip", "jar", "ipa": tool = ("/usr/bin/unzip", ["-q", url.path, "-d", destination.path])
+        case "zip", "jar", "ipa":
+            // Members go between the archive and -d; unzip reads them as
+            // patterns, so the name is escaped first.
+            tool = ("/usr/bin/unzip", ["-q", url.path] + unzipMembers(for: entry) + ["-d", destination.path])
         case "tar", "tgz", "gz", "bz2", "tbz", "xz":
-            tool = ("/usr/bin/tar", ["-xf", url.path, "-C", destination.path])
-        case "7z": tool = sevenZip().map { ($0, ["x", url.path, "-o" + destination.path]) }
-        case "rar": tool = which("unrar").map { ($0, ["x", url.path, destination.path + "/"]) }
+            // "--" ends the options, so a member whose name starts with a
+            // dash is still a member. tar extracts a named folder with
+            // everything under it, and matches names as patterns like unzip.
+            tool = ("/usr/bin/tar", ["-xf", url.path, "-C", destination.path] + tarMembers(for: entry))
+        case "7z": tool = sevenZip().map { ($0, ["x", url.path, "-o" + destination.path] + plainMembers(for: entry)) }
+        case "rar": tool = which("unrar").map { ($0, ["x", url.path] + plainMembers(for: entry) + [destination.path + "/"]) }
         default: tool = nil
         }
 
@@ -120,22 +131,24 @@ enum Archive {
             // successfully anyway", 7z's says "Warning (Non fatal error(s))".
             // tar has no such convention; from it, and for every status above
             // 1 from any tool, the extraction stopped early.
+            //
+            // unzip's 11 is "a name matched nothing". A folder entry is asked
+            // for as both "folder/" and "folder/*", and for an empty folder
+            // the second matches nothing while the folder itself still came
+            // out, so 11 with something landed is that and not a failure.
             let toolName = (tool.0 as NSString).lastPathComponent
-            let failed = result.status != 0
-                && !(result.status == 1
-                    && ["unzip", "7z", "7zz", "unrar"].contains(toolName))
             let landed = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
+            let warned = (result.status == 1
+                    && ["unzip", "7z", "7zz", "unrar"].contains(toolName))
+                || (result.status == 11 && toolName == "unzip" && !landed.isEmpty)
+            let failed = result.status != 0 && !warned
             DispatchQueue.main.async {
                 if failed {
                     // Whatever landed before the tool died is incomplete, so
                     // remove it rather than reveal a partial folder as though
                     // it were the archive's contents.
                     try? FileManager.default.removeItem(at: destination)
-                    let reason = result.stderr
-                        .split(separator: "\n")
-                        .map { $0.trimmingCharacters(in: .whitespaces) }
-                        .first { !$0.isEmpty }
-                    completion(nil, reason ?? "Extraction failed")
+                    completion(nil, failureReason(result.stderr, archive: url) ?? "Extraction failed")
                 } else if landed.isEmpty {
                     try? FileManager.default.removeItem(at: destination)
                     completion(nil, "Nothing was extracted")
@@ -144,6 +157,78 @@ enum Archive {
                 }
             }
         }
+    }
+
+    /// The line of a tool's stderr worth showing when extraction fails.
+    ///
+    /// unzip leads with the archive's name in brackets and then wraps its
+    /// message over indented lines, so the first non-empty line on its own was
+    /// "[/path/to/corrupt.zip]" — the reason ("End-of-central-directory
+    /// signature not found") sat on the line after. This drops the banner
+    /// and reads through the indented continuation up to the end of the
+    /// first sentence.
+    static func failureReason(_ stderr: String, archive: URL) -> String? {
+        let lines = stderr.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var rest = lines.drop(while: { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.isEmpty
+                || trimmed == "[\(archive.path)]"
+                || trimmed.hasPrefix("Archive:")
+        })
+        guard let first = rest.first else { return nil }
+        var message = first.trimmingCharacters(in: .whitespaces)
+        rest = rest.dropFirst()
+        while !message.hasSuffix("."),
+              let next = rest.first, next.hasPrefix(" ") || next.hasPrefix("\t") {
+            message += " " + next.trimmingCharacters(in: .whitespaces)
+            rest = rest.dropFirst()
+        }
+        if let sentenceEnd = message.range(of: ". ") {
+            message = String(message[..<sentenceEnd.lowerBound]) + "."
+        }
+        return message.isEmpty ? nil : message
+    }
+
+    /// Escapes the characters unzip and tar read as pattern syntax, so an
+    /// entry called "shot [1].png" is matched by name and not as a set.
+    static func escapePattern(_ path: String) -> String {
+        var escaped = ""
+        for character in path {
+            if "\\*?[]".contains(character) { escaped.append("\\") }
+            escaped.append(character)
+        }
+        return escaped
+    }
+
+    /// unzip takes members between the archive and -d. A folder entry is
+    /// listed as "folder/", which on its own only makes the folder; with
+    /// "folder/*" beside it, what is inside comes too.
+    static func unzipMembers(for entry: Entry?) -> [String] {
+        guard let entry else { return [] }
+        let escaped = escapePattern(entry.path)
+        return entry.isDirectory ? [escaped, escaped + "*"] : [escaped]
+    }
+
+    /// tar members follow "--". tar extracts a named folder with its
+    /// contents, so the folder's own path is enough.
+    static func tarMembers(for entry: Entry?) -> [String] {
+        guard let entry else { return [] }
+        return ["--", escapePattern(entry.path)]
+    }
+
+    /// 7z and unrar take the name as listed, with no escaping to offer.
+    static func plainMembers(for entry: Entry?) -> [String] {
+        guard let entry else { return [] }
+        return [entry.path]
+    }
+
+    /// Where an entry lands under the extraction folder: its listed path,
+    /// without tar's leading "./" and without a folder's trailing slash.
+    static func relativePath(of entry: Entry) -> String {
+        var path = entry.path
+        while path.hasPrefix("./") { path.removeFirst(2) }
+        while path.hasSuffix("/") { path.removeLast() }
+        return path
     }
 
     /// Arguments are passed as an array, never through a shell, so a filename
@@ -263,7 +348,8 @@ enum Archive {
     }
 }
 
-/// Lists an archive's contents in a sheet, with a button to extract it.
+/// Lists an archive's contents in a sheet, with a button to extract it — the
+/// whole thing, or only the row that is selected.
 final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     private var panel: NSPanel?
     private weak var owner: MainWindowController?
@@ -271,6 +357,7 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
     private var entries: [Archive.Entry] = []
     private var table: NSTableView!
     private var summary: NSTextField!
+    private var extractButton: NSButton!
 
     private static let byteFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
@@ -314,9 +401,9 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
         summary.textColor = .secondaryLabelColor
         summary.translatesAutoresizingMaskIntoConstraints = false
 
-        let extract = NSButton(title: "Extract", target: self, action: #selector(extractArchive))
+        extractButton = NSButton(title: "Extract", target: self, action: #selector(extractArchive))
         let close = NSButton(title: "Close", target: self, action: #selector(dismiss))
-        let buttons = NSStackView(views: [close, extract])
+        let buttons = NSStackView(views: [close, extractButton])
         buttons.orientation = .horizontal
         buttons.spacing = 8
         buttons.translatesAutoresizingMaskIntoConstraints = false
@@ -366,11 +453,20 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
         host.endSheet(panel)
     }
 
+    /// The row the user picked, or nil for the whole archive. Clicking a row
+    /// used to change nothing: Extract unpacked everything regardless.
+    private var selectedEntry: Archive.Entry? {
+        let row = table.selectedRow
+        return entries.indices.contains(row) ? entries[row] : nil
+    }
+
     @objc private func extractArchive() {
         let controller = owner
         let source = url!
-        summary.stringValue = "Extracting…"
-        Archive.extract(source) { [weak self] destination, error in
+        let entry = selectedEntry
+        summary.stringValue = entry.map { "Extracting \($0.name)…" } ?? "Extracting…"
+        summary.textColor = .secondaryLabelColor
+        Archive.extract(source, entry: entry) { [weak self] destination, error in
             guard let self else { return }
             if let error {
                 self.summary.stringValue = error
@@ -378,8 +474,24 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
                 return
             }
             self.dismiss()
-            if let destination { controller?.reveal(destination) }
+            guard let destination else { return }
+            // Land on the entry itself when one was asked for. The path is
+            // where the tool puts it; a tool that laid it out differently
+            // still gets the folder it made shown.
+            if let entry {
+                let extracted = destination.appendingPathComponent(Archive.relativePath(of: entry))
+                if FileManager.default.fileExists(atPath: extracted.path) {
+                    controller?.reveal(extracted)
+                    return
+                }
+            }
+            controller?.reveal(destination)
         }
+    }
+
+    /// The button says what it will do, so a selection is not a surprise.
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        extractButton.title = selectedEntry == nil ? "Extract" : "Extract Selected"
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
@@ -390,9 +502,14 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
         guard entries.indices.contains(row) else { return nil }
         let entry = entries[row]
 
-        let cell = FileCellView()
+        // A plain cell view, not FileCellView: that one lays its text field
+        // out by hand across the whole width, which put the name under the
+        // size. Here the row view sets the background style, and both
+        // labels follow it onto a selection.
+        let cell = EntryCellView()
         let name = NSTextField(labelWithString: entry.path)
         name.font = Theme.rowName
+        name.textColor = entry.isDirectory ? .secondaryLabelColor : .labelColor
         name.lineBreakMode = .byTruncatingMiddle
         name.translatesAutoresizingMaskIntoConstraints = false
 
@@ -404,7 +521,7 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
         cell.addSubview(name)
         cell.addSubview(size)
         cell.textField = name
-        cell.restingTextColor = entry.isDirectory ? .secondaryLabelColor : .labelColor
+        cell.sizeField = size
 
         NSLayoutConstraint.activate([
             name.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
@@ -415,5 +532,16 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
             size.widthAnchor.constraint(equalToConstant: 80),
         ])
         return cell
+    }
+}
+
+/// An archive row: the name is the cell's text field, so the row view turns it
+/// white on a filled selection; the size is passed the same style by hand,
+/// since a cell view only forwards it to its one text field.
+private final class EntryCellView: NSTableCellView {
+    var sizeField: NSTextField?
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { sizeField?.cell?.backgroundStyle = backgroundStyle }
     }
 }

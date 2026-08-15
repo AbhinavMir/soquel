@@ -1,5 +1,48 @@
 import AppKit
 
+/// The main window, which decides what Edit > Undo means.
+///
+/// NSWindow answers `undo:` itself, and it sits ahead of its controller in
+/// the responder chain, so the controller's `undo(_:)` was never asked. The
+/// window validated the item against the undo manager for typing, which
+/// holds nothing while the file list has focus, and Edit > Undo stayed
+/// disabled after every rename, trash and move even though the command
+/// palette could undo them. Typing in a field editor keeps its own undo; with
+/// no editor up, the file-operation stack is what the item means.
+final class MainWindow: NSWindow {
+    /// The manager a text field's typing goes into, while one is being edited.
+    private var typingUndoManager: UndoManager? {
+        (firstResponder as? NSTextView)?.undoManager
+    }
+
+    private var fileOperations: MainWindowController? {
+        windowController as? MainWindowController
+    }
+
+    @objc func undo(_ sender: Any?) {
+        if let typing = typingUndoManager {
+            // An editor with nothing to take back does not reach through to
+            // the files: undoing a move under a rename in progress is not
+            // what ⌘Z in a text field means.
+            if typing.canUndo { typing.undo() } else { NSSound.beep() }
+            return
+        }
+        fileOperations?.menuUndo(sender)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(undo(_:)) else {
+            return super.validateMenuItem(menuItem)
+        }
+        if let typing = typingUndoManager {
+            menuItem.title = typing.undoMenuItemTitle
+            return typing.canUndo
+        }
+        guard let fileOperations else { return false }
+        return fileOperations.validateMenuItem(menuItem)
+    }
+}
+
 /// Owns the sidebar, the pane split view, the status bar, and all menu command
 /// routing for one window.
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation, NSSplitViewDelegate {
@@ -42,7 +85,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var focusedList: FileListViewController? { focusedPane?.activeList }
 
     convenience init() {
-        let window = NSWindow(
+        let window = MainWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1080, height: 680),
             // No .fullSizeContentView. The title bar is opaque, so extending the
             // content behind it does not buy a look — it just hides the top 28
@@ -258,8 +301,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         ])
 
         // Positions can only be set once the split views have a size.
-        DispatchQueue.main.async { [weak self] in self?.applySplitFractions() }
+        rebuildsSettling += 1
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.applySplitFractions()
+            self.rebuildsSettling -= 1
+            if let id = self.paneToFocusAfterRebuild { self.focusPane(id: id) }
+            if self.rebuildsSettling == 0 { self.paneToFocusAfterRebuild = nil }
+        }
     }
+
+    /// The pane a caller focused while a rebuild was still settling.
+    ///
+    /// Every list takes the keyboard as its view appears, and the appearances
+    /// are delivered after the rebuild returns, so the last pane in reading
+    /// order ended up focused whatever the caller asked for — and, since a
+    /// list reports the focus it takes, the focused index followed it. The
+    /// pane asked for is noted and put back once the appearances have run;
+    /// a run of rebuilds re-asserts it after each, and forgets it after the
+    /// last.
+    private var paneToFocusAfterRebuild: UUID?
+    private var rebuildsSettling = 0
 
     private func makeView(for node: PaneNode) -> NSView {
         switch node {
@@ -353,6 +415,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     func focusPane(at index: Int) {
         guard panes.indices.contains(index) else { return }
         focusedIndex = index
+        if rebuildsSettling > 0 { paneToFocusAfterRebuild = panes[index].id }
         for (i, pane) in panes.enumerated() {
             pane.setFocused(i == index, amongMany: panes.count > 1)
         }
@@ -482,10 +545,53 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Flips the split holding the focused pane, so a side-by-side pair becomes
     /// stacked without closing and reopening anything.
     @objc func menuRotatePaneSplit(_ sender: Any?) {
-        guard let tree, let focused = focusedPane else { NSSound.beep(); return }
+        guard let tree, let focused = focusedPane,
+              let container = Self.container(of: focused.id, in: tree)
+        else { NSSound.beep(); return }
+        // The turned panes share the split's other dimension, and each still
+        // has to reach its minimum there. Turning a stacked pair inside a
+        // narrow column put them side by side anyway: the divider was held
+        // at the first pane's minimum width and the second was left a sliver.
+        let willBeVertical = !container.vertical
+        if let split = liveSplitViews().first(where: {
+            $0.identifier?.rawValue == container.id.uuidString
+        }) {
+            let across = willBeVertical ? split.bounds.width : split.bounds.height
+            if across > 1, !Self.canRotate(childCount: container.childCount,
+                                            across: across,
+                                            dividerThickness: split.dividerThickness,
+                                            willBeVertical: willBeVertical) {
+                statusLeft.stringValue = willBeVertical
+                    ? "Not enough width to put these panes side by side"
+                    : "Not enough height to stack these panes"
+                NSSound.beep()
+                return
+            }
+        }
         self.tree = tree.rotatingContainer(of: focused.id)
         rebuildPaneViews()
         focusPane(id: focused.id)
+    }
+
+    /// The split directly holding `leaf`: its identity, its orientation, and
+    /// how many panes it holds. Nil for a lone pane, which has nothing to turn.
+    static func container(of leaf: UUID, in node: PaneNode)
+        -> (id: UUID, vertical: Bool, childCount: Int)? {
+        guard case .split(let id, let vertical, let children) = node else { return nil }
+        if children.contains(.leaf(leaf)) { return (id, vertical, children.count) }
+        for child in children {
+            if let found = container(of: leaf, in: child) { return found }
+        }
+        return nil
+    }
+
+    /// Whether `childCount` panes fit along the axis a rotation would lay
+    /// them on, each at its minimum, with a divider between neighbours.
+    static func canRotate(childCount: Int, across: CGFloat, dividerThickness: CGFloat,
+                          willBeVertical: Bool) -> Bool {
+        let minimum = willBeVertical ? minimumPaneWidth : minimumPaneHeight
+        let dividers = CGFloat(max(childCount - 1, 0)) * dividerThickness
+        return CGFloat(childCount) * minimum + dividers <= across
     }
 
     @objc func menuClosePane(_ sender: Any?) {
@@ -737,12 +843,31 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func menuToggleSidebar(_ sender: Any?) {
+        rememberColumnWidths()
         let hidden = sidebar.view.isHidden
         sidebar.view.isHidden = !hidden
         outerSplit.adjustSubviews()
         // adjustSubviews alone left the divider where it was, so hiding the
         // sidebar blanked its column instead of giving the width to the panes.
         applyDefaultSplitPositions()
+    }
+
+    /// The width each outer column comes back at once it has been dragged.
+    /// Nil until then, which means the default.
+    private var rememberedSidebarWidth: CGFloat?
+    private var rememberedInspectorWidth: CGFloat?
+
+    /// Notes the widths the columns have right now, before one of them is
+    /// hidden or shown. Placing them afresh used the defaults every time, so
+    /// hiding and showing the preview threw away the width it had been dragged
+    /// to, and toggling the sidebar reset the preview as well.
+    private func rememberColumnWidths() {
+        if !sidebar.view.isHidden, sidebar.view.frame.width > 0 {
+            rememberedSidebarWidth = sidebar.view.frame.width
+        }
+        if !inspector.isHidden, inspector.frame.width > 0 {
+            rememberedInspectorWidth = inspector.frame.width
+        }
     }
 
     /// What the favourite button acts on: the selected folder, or failing that
@@ -1027,6 +1152,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func menuToggleInspector(_ sender: Any?) {
+        rememberColumnWidths()
         Prefs.showInspector.toggle()
         inspector.isHidden = !Prefs.showInspector
         outerSplit.adjustSubviews()
@@ -1041,12 +1167,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     ///
     /// A column that is off gets none of the width: its divider sits on its own
     /// edge — 0 for the sidebar, the trailing edge for the inspector — so the
-    /// panes take the space rather than it being left blank.
+    /// panes take the space rather than it being left blank. A column that is
+    /// on gets the width asked for, which is the default until it is dragged.
     static func outerDividerPositions(
-        total: CGFloat, sidebarShown: Bool, inspectorShown: Bool
+        total: CGFloat, sidebarShown: Bool, inspectorShown: Bool,
+        sidebarWidth: CGFloat = defaultSidebarWidth,
+        inspectorWidth: CGFloat = defaultInspectorWidth
     ) -> (sidebar: CGFloat, inspector: CGFloat) {
-        (sidebarShown ? defaultSidebarWidth : 0,
-         inspectorShown ? total - defaultInspectorWidth : total)
+        (sidebarShown ? sidebarWidth : 0,
+         inspectorShown ? total - inspectorWidth : total)
     }
 
     /// Puts the sidebar and the inspector at their default widths, gives a
@@ -1063,7 +1192,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let positions = Self.outerDividerPositions(
             total: total,
             sidebarShown: !sidebar.view.isHidden,
-            inspectorShown: !inspector.isHidden
+            inspectorShown: !inspector.isHidden,
+            sidebarWidth: rememberedSidebarWidth ?? Self.defaultSidebarWidth,
+            inspectorWidth: rememberedInspectorWidth ?? Self.defaultInspectorWidth
         )
         // Divider 1 used to be skipped whenever the inspector was off, and no
         // other code path moved it, so the inspector's 280pt stayed reserved
@@ -1188,7 +1319,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             for tab in pane.tabs { tab.refreshMode() }
         }
         for pane in panes {
-            pane.refreshToolbar()
+            // applyViewMode refreshes the pane's toolbar as well: the pill
+            // reports which view is on screen, and this is where that changes.
             pane.applyViewMode()
             for tab in pane.tabs where tab.isViewLoaded { tab.adoptGlobalViewSettings() }
         }
@@ -1608,6 +1740,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return true
         case #selector(menuToggleFoldersFirst):
             item.state = Prefs.foldersFirst ? .on : .off
+            return true
+        case #selector(menuToggleSyncBrowsing):
+            item.state = Prefs.syncBrowsing ? .on : .off
+            return true
+        case #selector(menuTogglePerFolderViews):
+            item.state = FolderViewSettings.isEnabled ? .on : .off
+            return true
+        case #selector(menuToggleGitStatus):
+            item.state = Prefs.showGitStatus ? .on : .off
+            return true
+        case #selector(menuToggleVerifyCopies):
+            item.state = VerifiedCopy.isEnabled ? .on : .off
             return true
         case #selector(menuToggleMetadataColumn):
             // The submenu is built once with the menu bar, so the tick must
