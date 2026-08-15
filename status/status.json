@@ -1,5 +1,5 @@
 {
-  "updated": "2026-08-14 16:30",
+  "updated": "2026-08-14 17:40",
   "status": "shipped",
   "statusLabel": "v1.0.7 released — beta",
   "stats": [
@@ -20,7 +20,7 @@
     },
     {
       "label": "Open bugs",
-      "value": "146 found, 146 fixed",
+      "value": "sweep clean, 197 fixed",
       "tone": "ok"
     },
     {

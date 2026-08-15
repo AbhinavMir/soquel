@@ -180,6 +180,15 @@ This sweep is the gate for 2.0, the first alpha release.
 - `ThemeSettings.swift` — Return key starts a second concurrent gist fetch
 - `ThemeSettings.swift` — Preset swatch strip always shows the dark palette
 
+## Verification of the fixes
+
+The fixes themselves were then reviewed the same way the code was: one hostile
+reviewer per fix commit, hunting for regressions the 833-test suite cannot
+see. Round one found 45 secondary defects (9 of them user-visible breakage);
+all were repaired with the original fix kept intact. Round two reviewed the
+repairs and found 6 residual defects; all repaired. The rounds converged
+45 → 6 → 0.
+
 ## Also in this pass
 
 - Drag and drop: the icon view accepted no drops and the column view had no
