@@ -90,7 +90,23 @@ enum Duplicates {
             }
         }
 
-        report.groups.append(contentsOf: folderGroups(folders, fileHashes: hashes, isCancelled: isCancelled))
+        let folderDupes = folderGroups(
+            folders, fileHashes: hashes, includeHidden: includeHidden, isCancelled: isCancelled
+        )
+        // A file group living entirely inside reported duplicate folders is
+        // the folder group restated one file at a time: it double-counts the
+        // reclaimable bytes, and ticking both means the file trashes fail
+        // after the folder has already moved. A group with any copy outside
+        // the folders stays, so a lone extra copy elsewhere is still shown.
+        let folderPrefixes = folderDupes.flatMap(\.urls).map { $0.path + "/" }
+        if !folderPrefixes.isEmpty {
+            report.groups.removeAll { group in
+                group.urls.allSatisfy { url in
+                    folderPrefixes.contains { url.path.hasPrefix($0) }
+                }
+            }
+        }
+        report.groups.append(contentsOf: folderDupes)
         report.groups.sort { $0.reclaimable > $1.reclaimable }
         return report
     }
@@ -100,14 +116,17 @@ enum Duplicates {
     /// separate file pairs otherwise, which is the same information in a form
     /// nobody can act on.
     static func folderGroups(
-        _ folders: [URL], fileHashes: [URL: String], isCancelled: () -> Bool = { false }
+        _ folders: [URL], fileHashes: [URL: String], includeHidden: Bool,
+        isCancelled: () -> Bool = { false }
     ) -> [Group] {
         var byFingerprint: [String: [URL]] = [:]
         var sizes: [URL: Int64] = [:]
 
         for folder in folders {
             if isCancelled() { return [] }
-            guard let (fingerprint, size) = fingerprint(of: folder, fileHashes: fileHashes) else { continue }
+            guard let (fingerprint, size) = fingerprint(
+                of: folder, fileHashes: fileHashes, includeHidden: includeHidden
+            ) else { continue }
             byFingerprint[fingerprint, default: []].append(folder)
             sizes[folder] = size
         }
@@ -135,10 +154,19 @@ enum Duplicates {
     /// when any file in it was never hashed — an unhashed file means the
     /// contents are not known, and guessing they match is how a duplicate
     /// finder deletes something it should not have.
-    static func fingerprint(of folder: URL, fileHashes: [URL: String]) -> (String, Int64)? {
+    ///
+    /// The walk here must skip the same hidden files the scan skipped:
+    /// otherwise a .DS_Store the scan never saw makes every real folder come
+    /// back nil. Zero-length files take part by name alone — the scan never
+    /// hashes them, and empty is empty.
+    static func fingerprint(
+        of folder: URL, fileHashes: [URL: String], includeHidden: Bool
+    ) -> (String, Int64)? {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey]
+        var options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
+        if !includeHidden { options.insert(.skipsHiddenFiles) }
         guard let walker = FileManager.default.enumerator(
-            at: folder, includingPropertiesForKeys: keys, options: [.skipsPackageDescendants]
+            at: folder, includingPropertiesForKeys: keys, options: options
         ) else { return nil }
 
         var entries: [String] = []
@@ -148,9 +176,15 @@ enum Duplicates {
             guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
             if values.isSymbolicLink == true { return nil }
             if values.isDirectory == true { continue }
-            guard let digest = fileHashes[url], let relative = relativePath(of: url, under: folder) else { return nil }
+            guard let relative = relativePath(of: url, under: folder),
+                  let size = values.fileSize else { return nil }
+            if size == 0 {
+                entries.append("\(relative):empty")
+                continue
+            }
+            guard let digest = fileHashes[url] else { return nil }
             entries.append("\(relative):\(digest)")
-            total += Int64(values.fileSize ?? 0)
+            total += Int64(size)
         }
 
         guard !entries.isEmpty else { return nil }

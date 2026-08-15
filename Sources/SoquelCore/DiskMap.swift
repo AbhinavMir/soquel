@@ -148,9 +148,11 @@ final class DiskMap {
             }
             var seenInodes = Set<UInt64>()
             var scanned = 0
+            var totalBytes: Int64 = 0
             var lastReport = 0
 
-            let node = self.walk(root, token: token, seenInodes: &seenInodes, scanned: &scanned) { count, bytes, path in
+            let node = self.walk(root, token: token, seenInodes: &seenInodes,
+                                 scanned: &scanned, totalBytes: &totalBytes) { count, bytes, path in
                 // Reporting every file would spend more time on the main queue
                 // than on the disk.
                 guard count - lastReport >= 500 else { return }
@@ -185,11 +187,16 @@ final class DiskMap {
     /// Anything that cannot be read still comes back as a node, carrying zero
     /// bytes and an unreadable count of one. It used to come back as nil, or as
     /// an empty folder, so the picture lost it without saying so.
+    ///
+    /// The bytes handed to `report` are the running total across the whole
+    /// walk. The panel shows the figure as "so far", so one file's size or one
+    /// subtree's subtotal there was simply the wrong number.
     private func walk(
         _ url: URL,
         token: Int,
         seenInodes: inout Set<UInt64>,
         scanned: inout Int,
+        totalBytes: inout Int64,
         report: (Int, Int64, String) -> Void
     ) -> Node? {
         if !isCurrent(token) { return nil }
@@ -228,7 +235,8 @@ final class DiskMap {
             }
             let bytes = Int64(allocated)
             scanned += 1
-            report(scanned, bytes, url.path)
+            totalBytes += bytes
+            report(scanned, totalBytes, url.path)
             return Node(url: url, name: name, isDirectory: false, bytes: bytes, fileCount: 1)
         }
 
@@ -251,7 +259,8 @@ final class DiskMap {
         var files = 0
         for child in contents {
             if !isCurrent(token) { return nil }
-            guard let node = walk(child, token: token, seenInodes: &seenInodes, scanned: &scanned, report: report)
+            guard let node = walk(child, token: token, seenInodes: &seenInodes,
+                                  scanned: &scanned, totalBytes: &totalBytes, report: report)
             else { continue }
             total += node.bytes
             files += node.fileCount
@@ -260,7 +269,7 @@ final class DiskMap {
         }
 
         children.sort { $0.bytes > $1.bytes }
-        report(scanned, total, url.path)
+        report(scanned, totalBytes, url.path)
         return Node(url: url, name: name, isDirectory: true, bytes: total,
                     fileCount: files, unreadableCount: unreadable, children: children)
     }

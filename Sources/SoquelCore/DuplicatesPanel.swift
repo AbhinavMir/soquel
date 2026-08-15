@@ -16,6 +16,7 @@ final class DuplicatesPanelController: NSWindowController {
         window.title = "Duplicates"
         window.setFrameAutosaveName("SoquelDuplicates")
         let controller = DuplicatesPanelController(window: window)
+        window.delegate = controller
         controller.build()
         return controller
     }()
@@ -112,12 +113,20 @@ final class DuplicatesPanelController: NSWindowController {
 
         let targets = roots
         let includeHidden = Prefs.showHiddenFiles
+        // The closures must watch the work item they belong to. Reading
+        // `self.scan` looked equivalent, but rescan() points it at the newest
+        // item and cancel() does not stop one already running, so a superseded
+        // scan polled the new item's flag, kept hashing, and could deliver the
+        // old folder's groups under the new title. The reference is weak so
+        // the item does not retain itself; the queue holds it while it runs.
+        weak var weakWork: DispatchWorkItem?
         let work = DispatchWorkItem { [weak self] in
+            guard let work = weakWork else { return }
             let found = Duplicates.scan(roots: targets, includeHidden: includeHidden) {
-                self?.scan?.isCancelled ?? true
+                work.isCancelled
             }
             DispatchQueue.main.async {
-                guard let self, self.scan?.isCancelled == false else { return }
+                guard let self, self.scan === work, !work.isCancelled else { return }
                 self.report = found
                 for group in found.groups {
                     self.keepers[group.hash] = Duplicates.suggestedKeep(group)
@@ -127,6 +136,7 @@ final class DuplicatesPanelController: NSWindowController {
                 self.updateFooter()
             }
         }
+        weakWork = work
         scan = work
         DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
@@ -191,14 +201,33 @@ final class DuplicatesPanelController: NSWindowController {
         OperationEngine.shared.trash(urls) { [weak self] result in
             guard let self else { return }
             UndoStack.shared.pushTrash(result.trashedPairs)
+            // A failed trash looks exactly like a successful one from here —
+            // the rescan lists the same rows again — so the failures have to
+            // be said out loud, as the file list does for the same operation.
+            if !result.failures.isEmpty {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Could not move \(result.failures.count) "
+                    + "item\(result.failures.count == 1 ? "" : "s") to the Trash"
+                alert.informativeText = result.failures.prefix(8)
+                    .map { "\($0.url.lastPathComponent): \($0.error.localizedDescription)" }
+                    .joined(separator: "\n")
+                alert.runModal()
+            }
             self.onChanged?()
             self.rescan()
         }
     }
+}
 
-    override func close() {
+extension DuplicatesPanelController: NSWindowDelegate {
+    /// Closing mid-scan stops the hashing rather than leaving it churning
+    /// through a tree nobody is watching. The titlebar close button never
+    /// calls the controller's `close()`, so this must live on the window
+    /// delegate to see that path at all.
+    func windowWillClose(_ notification: Notification) {
         scan?.cancel()
-        super.close()
+        scan = nil
     }
 }
 
