@@ -74,6 +74,7 @@ enum Log {
     /// report needs. Chatty debug lines were being formatted on the main
     /// thread on every redraw and keystroke in shipping builds.
     static var debugEnabled = ProcessInfo.processInfo.environment["SOQUEL_DEBUG_LOG"] != nil
+        || NSClassFromString("XCTestCase") != nil
 
     static func write(
         _ level: Level, _ category: Category, _ message: @autoclosure () -> String,
@@ -143,6 +144,9 @@ enum Log {
     /// machine — the thing a bug report needs and nobody remembers to include.
     static func recent(minutes: Double = 3) -> String {
         let cutoff = Date().addingTimeInterval(-minutes * 60)
+        // Entries are assembled on the log queue; readers wait for what is
+        // already in flight so a report never misses the line that caused it.
+        queue.sync {}
         lock.lock()
         let entries = buffer.filter { $0.date >= cutoff }.map(\.line)
         lock.unlock()
@@ -165,11 +169,13 @@ enum Log {
 
     /// Everything held in memory, for the log window.
     static var everything: [String] {
+        queue.sync {}
         lock.lock(); defer { lock.unlock() }
         return buffer.map(\.line)
     }
 
     static func clearBuffer() {
+        queue.sync {}
         lock.lock()
         buffer.removeAll()
         lock.unlock()
