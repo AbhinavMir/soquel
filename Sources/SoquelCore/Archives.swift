@@ -23,8 +23,9 @@ enum Archive {
     static func isArchive(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         if ext == "gz" || ext == "bz2" || ext == "xz" {
-            // .tar.gz and friends are archives; a bare .gz is one compressed file.
-            return url.deletingPathExtension().pathExtension.lowercased() == "tar" || readableExtensions.contains(ext)
+            // .tar.gz and friends are archives; a bare .gz is one compressed
+            // file, which tar cannot list, so it gets normal file handling.
+            return url.deletingPathExtension().pathExtension.lowercased() == "tar"
         }
         return readableExtensions.contains(ext)
     }
@@ -107,10 +108,24 @@ enum Archive {
                 DispatchQueue.main.async { completion(nil, error.localizedDescription) }
                 return
             }
-            _ = run(tool.0, tool.1)
+            let result = runCapturing(tool.0, tool.1)
+            // unrar exits 1 for warnings on an extraction that completed;
+            // every other status, from any tool, means it stopped early.
+            let failed = result.status != 0
+                && !(tool.0.hasSuffix("unrar") && result.status == 1)
             let landed = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
             DispatchQueue.main.async {
-                if landed.isEmpty {
+                if failed {
+                    // Whatever landed before the tool died is incomplete, so
+                    // remove it rather than reveal a partial folder as though
+                    // it were the archive's contents.
+                    try? FileManager.default.removeItem(at: destination)
+                    let reason = result.stderr
+                        .split(separator: "\n")
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .first { !$0.isEmpty }
+                    completion(nil, reason ?? "Extraction failed")
+                } else if landed.isEmpty {
                     try? FileManager.default.removeItem(at: destination)
                     completion(nil, "Nothing was extracted")
                 } else {
@@ -123,17 +138,41 @@ enum Archive {
     /// Arguments are passed as an array, never through a shell, so a filename
     /// containing a space or a quote cannot be read as a command.
     static func run(_ tool: String, _ arguments: [String]) -> String {
+        runCapturing(tool, arguments).stdout
+    }
+
+    /// Like run, but keeps stderr and the exit status, which extraction needs:
+    /// a tool that dies halfway can still leave files behind, and only the
+    /// status tells the two cases apart.
+    static func runCapturing(
+        _ tool: String, _ arguments: [String]
+    ) -> (stdout: String, stderr: String, status: Int32) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: tool)
         process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+        let out = Pipe()
+        let err = Pipe()
+        process.standardOutput = out
+        process.standardError = err
 
-        do { try process.run() } catch { return "" }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        do { try process.run() } catch { return ("", error.localizedDescription, -1) }
+        // Drain stderr on another queue: reading the pipes one after the other
+        // deadlocks when the tool fills the second pipe's buffer while the
+        // first is still being read.
+        var errData = Data()
+        let drained = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            errData = err.fileHandleForReading.readDataToEndOfFile()
+            drained.signal()
+        }
+        let outData = out.fileHandleForReading.readDataToEndOfFile()
+        drained.wait()
         process.waitUntilExit()
-        return String(data: data, encoding: .utf8) ?? ""
+        return (
+            String(data: outData, encoding: .utf8) ?? "",
+            String(data: errData, encoding: .utf8) ?? "",
+            process.terminationStatus
+        )
     }
 
     /// Each tool prints a different shape, so parsing is per tool.
@@ -142,6 +181,7 @@ enum Archive {
         switch name {
         case "unzip": return parseUnzip(output)
         case "tar": return parseTar(output)
+        case "7z", "7zz": return parse7z(output)
         default: return parseNames(output)
         }
     }
@@ -154,8 +194,10 @@ enum Archive {
             let parts = line.split(separator: " ", omittingEmptySubsequences: true)
             guard parts.count >= 4, let size = Int64(parts[0]) else { return nil }
             let path = parts[3...].joined(separator: " ")
-            // The footer reads "12345  3 files"; it has no path component.
-            guard !path.isEmpty, !path.hasSuffix("files"), !path.hasSuffix("file") else { return nil }
+            // The footer ("12345  3 files") splits into only three fields, so
+            // the four-field minimum above already rejects it. No check on the
+            // path itself: an entry really can be named "3 files".
+            guard !path.isEmpty else { return nil }
             return Entry(path: path, size: size, isDirectory: path.hasSuffix("/"))
         }
     }
@@ -172,6 +214,31 @@ enum Archive {
             let path = parts[8...].joined(separator: " ")
             guard !path.isEmpty else { return nil }
             return Entry(path: path, size: size, isDirectory: line.hasPrefix("d") || path.hasSuffix("/"))
+        }
+    }
+
+    /// `7z l -ba` prints the table body without header or footer:
+    /// "date time attr size compressed name". The columns are fixed width —
+    /// date and time take 19 characters, attr 5, size and compressed 12 each —
+    /// and the name starts at column 53. Cutting at offsets rather than
+    /// splitting on spaces matters because the compressed column is blank for
+    /// some entries and names can contain spaces.
+    static func parse7z(_ output: String) -> [Entry] {
+        output.split(separator: "\n").compactMap { line in
+            guard line.count > 53 else { return nil }
+            let attrStart = line.index(line.startIndex, offsetBy: 20)
+            let attrEnd = line.index(line.startIndex, offsetBy: 25)
+            let sizeStart = line.index(line.startIndex, offsetBy: 26)
+            let sizeEnd = line.index(line.startIndex, offsetBy: 38)
+            let nameStart = line.index(line.startIndex, offsetBy: 53)
+
+            let path = String(line[nameStart...])
+            guard !path.isEmpty else { return nil }
+            let size = Int64(line[sizeStart..<sizeEnd].trimmingCharacters(in: .whitespaces)) ?? 0
+            return Entry(
+                path: path, size: size,
+                isDirectory: line[attrStart..<attrEnd].contains("D")
+            )
         }
     }
 
@@ -257,10 +324,15 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
         host.beginSheet(panel) { [weak self] _ in
             self?.panel = nil
             self?.owner = nil
+            self?.url = nil
         }
 
         Archive.list(url) { [weak self] entries, error in
-            guard let self else { return }
+            // The controller lives as long as its window, so a listing that
+            // was still running when the sheet closed can land here after a
+            // different archive was opened. Only the request that matches the
+            // current sheet may touch the table.
+            guard let self, self.url == url, self.panel != nil else { return }
             self.entries = entries
             self.table.reloadData()
             if let error {

@@ -127,6 +127,13 @@ final class PackageContentsController: NSWindowController {
     /// Set by the opener so "Open in Pane" has somewhere to send a folder.
     var onOpenInPane: ((URL) -> Void)?
 
+    /// Everything the window keeps pointing back at this controller — the data
+    /// source, the delegate, the button targets — is weak, so someone must own
+    /// it strongly or it deallocates the moment show() returns and the panel
+    /// goes dead. An array because several package windows can be open at
+    /// once. Released again in windowWillClose(_:).
+    private static var active: [PackageContentsController] = []
+
     static func show(_ url: URL, over parent: NSWindow?, onOpenInPane: ((URL) -> Void)? = nil) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
@@ -140,6 +147,8 @@ final class PackageContentsController: NSWindowController {
         let controller = PackageContentsController(window: window)
         controller.root = url
         controller.onOpenInPane = onOpenInPane
+        window.delegate = controller
+        active.append(controller)
         controller.build()
         controller.load()
 
@@ -247,6 +256,18 @@ final class PackageContentsController: NSWindowController {
         AppLaunchGuard.confirm(opening: [node.item.url], with: nil, in: window) {
             NSWorkspace.shared.open(node.item.url)
         }
+    }
+}
+
+extension PackageContentsController: NSWindowDelegate {
+    /// Fires for the titlebar close button too, which never goes through the
+    /// close() override; the walk must stop either way.
+    func windowWillClose(_ notification: Notification) {
+        summaryWork?.cancel()
+        // Released on the next turn, not here: dropping the last strong
+        // reference while the close is still being dispatched would
+        // deallocate the controller out from under AppKit.
+        DispatchQueue.main.async { Self.active.removeAll { $0 === self } }
     }
 }
 

@@ -147,8 +147,18 @@ final class UninstallPanelController: NSWindowController {
     private var footer: NSTextField!
     private var trashButton: NSButton!
     private var includeApp = true
+    /// A trash failure worth keeping on screen. The rescan that follows a
+    /// failure rewrites the footer, so the message must live here and be woven
+    /// back in until the user moves on by changing a tick.
+    private var notice: String?
 
     var onFinished: (() -> Void)?
+
+    /// Everything the window keeps pointing back at this controller — the data
+    /// source, the delegate, the button targets — is weak, so someone must own
+    /// it strongly or it deallocates the moment show() returns and the panel
+    /// goes dead. Released again in windowWillClose(_:).
+    private static var active: [UninstallPanelController] = []
 
     static func show(_ app: URL, over parent: NSWindow?, onFinished: (() -> Void)? = nil) {
         let window = NSWindow(
@@ -161,6 +171,8 @@ final class UninstallPanelController: NSWindowController {
         let controller = UninstallPanelController(window: window)
         controller.app = app
         controller.onFinished = onFinished
+        window.delegate = controller
+        active.append(controller)
         controller.build()
         controller.load()
         if let parent {
@@ -238,6 +250,9 @@ final class UninstallPanelController: NSWindowController {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.leftovers = found
+                // Ticks on items that no longer exist (typically because they
+                // were just trashed) would inflate the count forever.
+                self.ticked.formIntersection(found.map(\.url))
                 self.table.reloadData()
                 self.updateFooter()
             }
@@ -246,11 +261,13 @@ final class UninstallPanelController: NSWindowController {
 
     private func updateFooter() {
         let count = ticked.count + (includeApp ? 1 : 0)
-        footer.stringValue = "\(Uninstall.summary(leftovers)) · \(count) ticked"
+        let status = "\(Uninstall.summary(leftovers)) · \(count) ticked"
+        footer.stringValue = notice.map { "\($0) · \(status)" } ?? status
         trashButton.isEnabled = count > 0
     }
 
     @objc private func tickExact() {
+        notice = nil
         ticked = Set(leftovers.filter { $0.confidence == .exact }.map(\.url))
         table.reloadData()
         updateFooter()
@@ -258,6 +275,7 @@ final class UninstallPanelController: NSWindowController {
 
     @objc private func toggleRow(_ sender: NSButton) {
         guard let url = sender.cell?.representedObject as? URL else { return }
+        notice = nil
         if url == app {
             includeApp = sender.state == .on
         } else if sender.state == .on {
@@ -287,10 +305,19 @@ final class UninstallPanelController: NSWindowController {
             if result.failures.isEmpty {
                 self.close()
             } else {
-                self.footer.stringValue = "\(result.failures.count) item(s) could not be moved"
+                self.notice = "\(result.failures.count) item(s) could not be moved"
                 self.load()
             }
         }
+    }
+}
+
+extension UninstallPanelController: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        // Released on the next turn, not here: dropping the last strong
+        // reference while the close is still being dispatched would
+        // deallocate the controller out from under AppKit.
+        DispatchQueue.main.async { Self.active.removeAll { $0 === self } }
     }
 }
 
