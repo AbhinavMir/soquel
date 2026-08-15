@@ -93,6 +93,23 @@ protocol SidebarDelegate: AnyObject {
     func sidebar(_ sidebar: SidebarViewController, run search: SavedSearch)
 }
 
+/// The sidebar's outline. Return and keypad Enter act on the selected row.
+/// NSOutlineView ignores them, and they do not change the selection, so
+/// without this a row whose work is held back from arrow-key traversal could
+/// never be run from the keyboard at all.
+private final class SidebarOutline: NSOutlineView {
+    var onActivate: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        let key = event.charactersIgnoringModifiers?.unicodeScalars.first?.value
+        if key == UInt32(NSCarriageReturnCharacter) || key == UInt32(NSEnterCharacter) {
+            onActivate?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
 final class SidebarViewController: NSViewController {
     weak var delegate: SidebarDelegate?
 
@@ -113,6 +130,10 @@ final class SidebarViewController: NSViewController {
     /// The folders still to be reopened, shallowest first. Emptied as the
     /// levels arrive.
     private var pendingRestore: [String] = Prefs.expandedTreeFolders
+    /// How many tree listings are still being read. A restore pass must not
+    /// conclude that a folder it cannot find is gone while any of these could
+    /// still deliver the level that folder lives in.
+    private var treeLoadsInFlight = 0
     /// Set while a row the user clicked is navigating the pane. The pane
     /// reports back and the tree follows it, and that follow must not take the
     /// highlight off the row that was clicked.
@@ -128,7 +149,9 @@ final class SidebarViewController: NSViewController {
     private static let itemDragType = NSPasteboard.PasteboardType("app.soquel.sidebarItem")
 
     override func loadView() {
-        outline = NSOutlineView()
+        let sidebarOutline = SidebarOutline()
+        sidebarOutline.onActivate = { [weak self] in self?.activateSelectedRow() }
+        outline = sidebarOutline
         outline.headerView = nil
         outline.rowSizeStyle = .default
         outline.floatsGroupRows = false
@@ -232,7 +255,12 @@ final class SidebarViewController: NSViewController {
             outline.expandItem(root)
         }
         // Put the tree back the way it was left. The first pass opens the top
-        // level; each background load carries it one level deeper.
+        // level; each background load carries it one level deeper. The reload
+        // built all-new nodes and dropped every expansion the outline held, so
+        // the list of folders to reopen is re-read from the remembered paths;
+        // whatever an earlier restore had already worked through is open no
+        // longer.
+        pendingRestore = Prefs.expandedTreeFolders
         restoreExpandedFolders()
     }
 
@@ -574,14 +602,23 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     func report(selectionOf node: SidebarNode) {
         guard !isRevealingSelection else { return }
         if case .savedSearch(let search) = node.kind {
+            // Arrow keys land here once per row they pass over, and a saved
+            // search costs a sheet and a disk scan. Only a deliberate
+            // activation is allowed to spend that; a key that merely moves
+            // the selection is not.
+            guard Self.selectionActivates(NSApp?.currentEvent) else { return }
             delegate?.sidebar(self, run: search)
             return
         }
         if case .treeMore = node.kind {
+            // Expanding replaces the row and drops the selection, which would
+            // strand an arrow-key traversal in the middle of the list.
+            guard Self.selectionActivates(NSApp?.currentEvent) else { return }
             expand(more: node)
             return
         }
         if case .treeFile(let url) = node.kind {
+            guard Self.selectionActivates(NSApp?.currentEvent) else { return }
             // A file is not somewhere to navigate to. The pane opens the folder
             // holding it and puts the selection on it, which is what clicking a
             // file in a tree is asking for.
@@ -612,6 +649,32 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         switch origin {
         case .treeFolder, .treeFile, .treeMore: return true
         case .pinned, .volume, .savedSearch, .userGroup, .systemGroup: return false
+        }
+    }
+
+    /// Whether the gesture behind a selection change asks for the row to be
+    /// acted on, not merely stepped over.
+    ///
+    /// Arrow keys change the selection one row at a time, so a row that runs
+    /// work on selection would fire on every step of a keyboard traversal.
+    /// A key that only moves the selection is not a request to do anything;
+    /// Return and keypad Enter are, and so is any mouse gesture.
+    static func selectionActivates(_ event: NSEvent?) -> Bool {
+        guard let event, event.type == .keyDown else { return true }
+        let key = event.charactersIgnoringModifiers?.unicodeScalars.first?.value
+        return key == UInt32(NSCarriageReturnCharacter) || key == UInt32(NSEnterCharacter)
+    }
+
+    /// Return pressed in the outline: act on the selected row. Only the kinds
+    /// the selection gate holds back need this; the rest already navigated
+    /// when the selection landed on them.
+    private func activateSelectedRow() {
+        guard let node = outline.item(atRow: outline.selectedRow) as? SidebarNode else { return }
+        switch node.kind {
+        case .savedSearch, .treeMore, .treeFile:
+            report(selectionOf: node)
+        case .pinned, .volume, .treeFolder, .userGroup, .systemGroup:
+            break
         }
     }
 
@@ -687,8 +750,16 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         else { return true }
 
         node.childrenLoaded = true
+        treeLoadsInFlight += 1
         FolderTree.loadChildren(of: url, showHidden: Prefs.showHiddenFiles) { [weak self, weak node] level in
-            guard let self, let node else { return }
+            guard let self else { return }
+            // Counted down before anything else, so the restore pass below
+            // sees this load as finished rather than still pending.
+            self.treeLoadsInFlight -= 1
+            guard let node else { return }
+            // Read before the reload: whether this folder is still open, or
+            // the user collapsed it while the listing was being read.
+            let wasExpanded = self.outline.isItemExpanded(node)
             node.children = Self.nodes(for: level, in: url)
             self.outline.reloadItem(node, reloadChildren: true)
             // Carry on down to whatever was being revealed. Without this the
@@ -699,10 +770,13 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             // quit: each load reveals the next level down that has to open.
             self.restoreExpandedFolders()
             // A folder holding only files has nothing to show. Leaving it open
-            // draws a disclosure triangle pointing down at nothing.
+            // draws a disclosure triangle pointing down at nothing. A folder
+            // the user collapsed during the load stays collapsed: re-opening
+            // it would reverse the collapse and write the path straight back
+            // into the remembered list.
             if node.children.isEmpty {
                 self.outline.collapseItem(node)
-            } else {
+            } else if wasExpanded {
                 self.outline.expandItem(node)
             }
         }
@@ -759,9 +833,13 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         }) else { return }
 
         // A fresh walk starts from what was just clicked; a continuation keeps
-        // whatever the first step recorded.
+        // whatever the first step recorded. A load callback arrives with no
+        // navigationOrigin, so a non-nil one means a new click even while an
+        // earlier walk is still waiting on a load — that click's origin takes
+        // over rather than the interrupted walk's leaking onto it.
         revealOrigin = Self.carriedOrigin(
-            fresh: pendingReveal == nil, clicked: navigationOrigin, carried: revealOrigin
+            fresh: pendingReveal == nil || navigationOrigin != nil,
+            clicked: navigationOrigin, carried: revealOrigin
         )
         pendingReveal = url
         outline.expandItem(treeGroup)
@@ -865,8 +943,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         }
 
         // Nothing opened and nothing left to find: whatever remains is a
-        // folder that has been deleted or is no longer readable.
-        pendingRestore = opened ? stillMissing : []
+        // folder that has been deleted or is no longer readable. While any
+        // listing is still being read, a miss proves nothing — the level a
+        // missing folder lives in may simply not have arrived yet, so the
+        // list is kept for the pass that load's completion will run.
+        pendingRestore = (opened || treeLoadsInFlight > 0) ? stillMissing : []
     }
 
     /// The node standing for `path`, searched only through levels already
@@ -875,8 +956,12 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         for node in nodes {
             if case .treeFolder(let url) = node.kind {
                 if url.path == path { return node }
-                // Only descend where the answer could be.
-                if path.hasPrefix(url.path + "/"),
+                // Only descend where the answer could be. The boot volume's
+                // path is already "/", so appending a slash would ask for a
+                // "//" prefix that no absolute path has, and nothing under
+                // that root would ever be found.
+                let prefix = url.path == "/" ? "/" : url.path + "/"
+                if path.hasPrefix(prefix),
                    let found = treeNode(forPath: path, under: node.children) {
                     return found
                 }
@@ -892,8 +977,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         var paths = paths.filter { $0 != path }
         guard expanded else {
             // Closing a folder closes what is inside it; leaving descendants
-            // listed would reopen them the next time this one is opened.
-            return paths.filter { !$0.hasPrefix(path + "/") }
+            // listed would reopen them the next time this one is opened. The
+            // boot volume's path is already "/", so appending a slash would
+            // filter on a "//" prefix and leave every descendant behind.
+            let prefix = path == "/" ? "/" : path + "/"
+            return paths.filter { !$0.hasPrefix(prefix) }
         }
         paths.append(path)
         return paths.sorted { $0.components(separatedBy: "/").count < $1.components(separatedBy: "/").count }

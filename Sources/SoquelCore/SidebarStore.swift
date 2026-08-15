@@ -287,6 +287,13 @@ enum FolderTree {
     }
 
     /// The chain from a root down to `url`, for revealing the active folder.
+    ///
+    /// Every climb ends at "/", but the tree does not hang every folder off
+    /// "/": home and each mounted volume are roots of their own, and /Volumes
+    /// is hidden, so a walk that starts at "/" can never reach a volume and
+    /// reaches home only through a duplicate row. The chain starts at the
+    /// deepest ancestor that is itself a root, so a home or volume path walks
+    /// down from its own root node.
     static func chain(to url: URL) -> [URL] {
         var chain: [URL] = []
         var cursor: URL? = url.standardizedFileURL
@@ -294,7 +301,12 @@ enum FolderTree {
             chain.append(current)
             cursor = parentDirectoryURL(of: current)
         }
-        return chain.reversed()
+        var ordered = Array(chain.reversed())
+        let rootPaths = Set(roots.map { $0.standardizedFileURL.path })
+        if let start = ordered.lastIndex(where: { rootPaths.contains($0.standardizedFileURL.path) }) {
+            ordered.removeSubrange(..<start)
+        }
+        return ordered
     }
 }
 
