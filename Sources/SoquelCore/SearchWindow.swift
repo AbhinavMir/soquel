@@ -21,6 +21,16 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
 
     private var hits: [FileSearch.Hit] = []
     private var search = FileSearch()
+    /// Which startSearch the panel currently cares about. The engine lets a
+    /// cancelled run keep reporting — that is deliberate, so a stop can say it
+    /// stopped — but the panel clears its rows on every keystroke, and a
+    /// flush queued by the previous query must not land in the new query's
+    /// table. Deliveries carry the sequence they were started with and are
+    /// dropped when it is stale.
+    private var searchSequence = 0
+    /// Re-runs a meaning search when the index lands, live only while the
+    /// panel is open.
+    private var indexObserver: NSObjectProtocol?
 
     private static let byteFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
@@ -65,8 +75,25 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
         build(in: panel, mode: mode)
         self.panel = panel
 
+        // The index loads and rebuilds in the background and posts when the
+        // contents land. A meaning search run before that moment answered
+        // "nothing is indexed yet"; re-running it turns that into the real
+        // answer without the user typing again.
+        indexObserver = NotificationCenter.default.addObserver(
+            forName: .soquelIndexChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.panel != nil else { return }
+            if self.currentQuery().mode == .meaning, !self.field.stringValue.isEmpty {
+                self.startSearch()
+            }
+        }
+
         host.beginSheet(panel) { [weak self] _ in
             self?.search.cancel()
+            if let observer = self?.indexObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self?.indexObserver = nil
+            }
             self?.panel = nil
             self?.owner = nil
         }
@@ -265,7 +292,8 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
 
     private func startSearch() {
         search.cancel()
-        search = FileSearch()
+        searchSequence += 1
+        let sequence = searchSequence
         hits = []
         table.reloadData()
 
@@ -277,8 +305,10 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
         }
 
         // A regular expression that does not compile is reported rather than
-        // quietly matching nothing.
-        if case .failure(let error) = FileSearch.compile(query) {
+        // quietly matching nothing. Meaning mode never builds a matcher — the
+        // text is embedded, not compiled — so the matching setting cannot
+        // block it.
+        if query.mode != .meaning, case .failure(let error) = FileSearch.compile(query) {
             summaryLabel.textColor = Theme.danger
             summaryLabel.stringValue = "Pattern error: \(error.localizedDescription)"
             return
@@ -288,14 +318,14 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
         summaryLabel.stringValue = "Searching \(query.scope.title.lowercased())…"
 
         search.run(query) { [weak self] batch in
-            guard let self else { return }
+            guard let self, sequence == self.searchSequence else { return }
             self.hits.append(contentsOf: batch)
             // Keep the best matches on top as later batches arrive.
             self.hits.sort { $0.rank < $1.rank }
             self.table.reloadData()
             self.summaryLabel.stringValue = "\(self.hits.count) found, still searching…"
         } finished: { [weak self] summary in
-            guard let self, !summary.cancelled else { return }
+            guard let self, sequence == self.searchSequence, !summary.cancelled else { return }
             var text = summary.found == 0
                 ? "No matches in \(summary.examined) items"
                 : "\(summary.found) of \(summary.examined) items matched"

@@ -127,13 +127,20 @@ final class FileSearch {
 
         let index = SemanticIndex.shared
         guard index.entryCount > 0 else {
-            summary.notes.append("nothing is indexed yet — add a folder in Settings → Search")
+            summary.notes.append("nothing is indexed yet — use “Index This Folder for Meaning” on a folder")
             finished(summary)
             return
         }
 
-        // Scope narrows the same way it does for the walk.
-        let folder: URL? = query.scope == .folder ? query.root : nil
+        // Scope narrows the same way it does for the walk: home is the home
+        // folder, not everything indexed — a root outside home can be indexed,
+        // and its passages do not belong in a home-scoped search.
+        let folder: URL?
+        switch query.scope {
+        case .folder: folder = query.root
+        case .home: folder = FileManager.default.homeDirectoryForCurrentUser
+        case .everywhere: folder = nil
+        }
         let found = index.search(query.text, within: folder, limit: query.resultLimit)
 
         var hits: [Hit] = []
@@ -307,9 +314,25 @@ final class FileSearch {
 
         // Meaning does not walk anything: the passages were read and embedded
         // when the folder was indexed, so the answer is a comparison against
-        // what is already in memory.
+        // what is already in memory. It is still an embedding pass plus a
+        // multiply over every stored vector — and the first touch loads the
+        // model — which is too much for the main thread on a keystroke, so it
+        // runs on the search queue and delivers on main like the walks do.
         if query.mode == .meaning {
-            runSemantic(query, batch: batch, finished: finished)
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.runSemantic(query, batch: { hits in
+                    DispatchQueue.main.async {
+                        guard self.shouldDeliver(token) else { return }
+                        batch(hits)
+                    }
+                }, finished: { summary in
+                    DispatchQueue.main.async {
+                        guard self.shouldDeliver(token) else { return }
+                        finished(summary)
+                    }
+                })
+            }
             return
         }
 
@@ -358,6 +381,20 @@ final class FileSearch {
 
                 while let candidate = enumerator?.nextObject() as? URL {
                     if !self.isCurrent(token) { summary.cancelled = true; break outer }
+
+                    // On APFS the data volume is mounted twice: firmlinks graft
+                    // it into "/", and the same files appear again under
+                    // /System/Volumes/Data. A walk of "/" that descends into
+                    // the second mount reports every user file twice and burns
+                    // the result limit on duplicates. Nothing is skipped by
+                    // pruning it: every file there is reached through its
+                    // firmlinked path. Only the everywhere scope is pruned — a
+                    // search deliberately rooted inside /System/Volumes has no
+                    // other way to those files.
+                    if query.scope == .everywhere, candidate.path == "/System/Volumes/Data" {
+                        enumerator?.skipDescendants()
+                        continue
+                    }
 
                     let values = try? candidate.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
                     let isDirectory = values?.isDirectory ?? false

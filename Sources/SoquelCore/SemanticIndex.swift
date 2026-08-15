@@ -117,6 +117,12 @@ final class SemanticIndex {
     private var flat: [Float] = []
     private var cancelled = false
     private(set) var isIndexing = false
+    /// A rebuild asked for while one is running. The running pass read its
+    /// roots before the new request existed, so dropping the request would
+    /// leave a freshly added folder unindexed with no error and a status bar
+    /// that reports success. The request is kept — newest wins — and started
+    /// when the current pass lands, reading the roots afresh.
+    private var queuedRebuild: (progress: (Progress) -> Void, finished: (Int) -> Void)?
 
     private init() {
         // Off the main thread. This runs on whoever first touches `shared`,
@@ -342,7 +348,10 @@ final class SemanticIndex {
         finished: @escaping (Int) -> Void
     ) {
         guard Self.isAvailable else { finished(0); return }
-        guard !isIndexing else { return }
+        guard !isIndexing else {
+            queuedRebuild = (progress, finished)
+            return
+        }
         isIndexing = true
         cancelled = false
 
@@ -429,6 +438,13 @@ final class SemanticIndex {
                 NotificationCenter.default.post(name: .soquelIndexChanged, object: nil)
                 Log.info(.search, "Semantic index: \(all.count) passages across \(freshStamps.count) files")
                 finished(all.count)
+                // A request that arrived mid-pass starts now, with the default
+                // roots argument reading the list afresh so a root added since
+                // this pass began is walked.
+                if let queued = self.queuedRebuild {
+                    self.queuedRebuild = nil
+                    self.rebuild(progress: queued.progress, finished: queued.finished)
+                }
             }
         }
     }

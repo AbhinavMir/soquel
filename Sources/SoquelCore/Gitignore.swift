@@ -205,7 +205,13 @@ final class IgnoreStack {
 
         var ignored = false
         for level in levels {
-            guard path.hasPrefix(level.directory) else { continue }
+            // A bare prefix is not a containment test: "/repo/app" is a string
+            // prefix of "/repo/app-legacy/file.log", which is a different
+            // directory, and matching it here applied app's rules to its
+            // sibling. The level applies to its own directory and to paths
+            // below it, split on a component boundary, nothing else.
+            let base = level.directory.hasSuffix("/") ? level.directory : level.directory + "/"
+            guard path == level.directory || path.hasPrefix(base) else { continue }
             let relative = String(path.dropFirst(level.directory.count))
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             guard !relative.isEmpty else { continue }
