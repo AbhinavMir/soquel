@@ -155,4 +155,10 @@ final class FileCollectionView: NSCollectionView {
         if ok { commandTarget?.didBecomeFocused() }
         return ok
     }
+
+    /// NSCollectionView's own selectAll skips the controller, so the status
+    /// bar and inspector would not hear about the new selection.
+    override func selectAll(_ sender: Any?) {
+        commandTarget?.selectAllItems()
+    }
 }

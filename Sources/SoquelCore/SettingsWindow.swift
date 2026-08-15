@@ -29,7 +29,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let controller = SettingsWindowController(window: window)
         window.delegate = controller
         controller.build()
-        window.center()
+        // Centring unconditionally threw away the origin the autosave name
+        // restored; centre only when no frame has been saved yet.
+        if !window.setFrameUsingName("SoquelSettings") { window.center() }
         return controller
     }()
 

@@ -668,7 +668,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     @objc func menuCopyFiles(_ sender: Any?) { focusedList?.copySelection(cut: false) }
     @objc func menuCutFiles(_ sender: Any?) { focusedList?.copySelection(cut: true) }
     @objc func menuPasteFiles(_ sender: Any?) { focusedList?.pasteFiles() }
-    @objc func menuSelectAll(_ sender: Any?) { focusedList?.selectAllItems() }
+    /// The standard selector, not a private one: bound as `menuSelectAll`,
+    /// ⌘A skipped the field editor and selected every file while the user was
+    /// typing in a text field. As `selectAll:` the field editor claims it
+    /// first, the file views next, and this is the fallback for anything else.
+    override func selectAll(_ sender: Any?) { focusedList?.selectAllItems() }
     @objc func menuInvertSelection(_ sender: Any?) { focusedList?.invertSelection() }
     @objc func menuQuickLook(_ sender: Any?) { focusedList?.toggleQuickLook() }
     @objc func menuRevealInFinder(_ sender: Any?) { focusedList?.revealInFinder() }
