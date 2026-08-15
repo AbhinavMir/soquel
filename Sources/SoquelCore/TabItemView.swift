@@ -18,6 +18,7 @@ final class TabItemView: NSView {
     private let close = NSButton()
     private var isActive = false
     private var isHovered = false
+    private var isClosable = false
     private var tracking: NSTrackingArea?
 
     init(title: String, active: Bool, closable: Bool) {
@@ -50,9 +51,13 @@ final class TabItemView: NSView {
         close.action = #selector(closeClicked)
         close.toolTip = "Close “\(title)”  ⌘W"
         close.translatesAutoresizingMaskIntoConstraints = false
-        close.isHidden = !closable
+        isClosable = closable
         // Shown on hover and on the active tab, like Safari. A cross on every
-        // tab at all times is most of what made the row look busy.
+        // tab at all times is most of what made the row look busy. Hidden as
+        // well as transparent: hitTest ignores alphaValue, so a merely
+        // transparent cross still swallowed the click meant to select the
+        // tab — and closed it instead.
+        close.isHidden = !closable || !isActive
         close.alphaValue = isActive ? 1 : 0
 
         addSubview(label)
@@ -130,11 +135,18 @@ final class TabItemView: NSView {
     }
 
     private func animateClose(to alpha: CGFloat) {
-        guard !close.isHidden else { return }
-        NSAnimationContext.runAnimationGroup { context in
+        guard isClosable else { return }
+        if alpha > 0 { close.isHidden = false }
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.12
             close.animator().alphaValue = alpha
-        }
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            // animator() sets the model value up front, so a hover that has
+            // already begun fading the cross back in leaves it at 1 here and
+            // it stays on screen.
+            if self.close.alphaValue == 0 { self.close.isHidden = true }
+        })
     }
 
     override func mouseDown(with event: NSEvent) {

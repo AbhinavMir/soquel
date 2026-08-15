@@ -43,8 +43,11 @@ final class ColumnBrowserView: NSView {
 
     private var scroll: NSScrollView!
     /// One entry per visible column: the folder it lists and its contents.
+    /// `message` overlays the column when its listing failed, because an
+    /// unreadable folder drawn as an empty one tells the user the wrong thing.
     private var levels: [(url: URL, items: [FileItem], table: NSTableView,
-                          container: NSScrollView, divider: ColumnDivider)] = []
+                          container: NSScrollView, divider: ColumnDivider,
+                          message: NSTextField)] = []
 
     /// Narrows the deepest column. Only the deepest: the columns to its left
     /// are the path you took to get here, and hiding a folder you are standing
@@ -124,6 +127,17 @@ final class ColumnBrowserView: NSView {
         var x: CGFloat = 0
         for level in levels {
             level.container.frame = NSRect(x: x, y: 0, width: Self.columnWidth, height: height)
+            if !level.message.isHidden {
+                let inset: CGFloat = 12
+                let width = Self.columnWidth - inset * 2
+                let size = level.message.sizeThatFits(NSSize(width: width, height: height))
+                level.message.frame = NSRect(
+                    x: x + inset,
+                    y: max((height - size.height) / 2, 0),
+                    width: width,
+                    height: min(size.height, height)
+                )
+            }
             x += Self.columnWidth
             level.divider.frame = NSRect(x: x - 3, y: 0, width: 7, height: height)
             x += 1
@@ -144,10 +158,14 @@ final class ColumnBrowserView: NSView {
     /// The folder the rightmost column is listing.
     var deepestURL: URL? { levels.last?.url }
 
+    /// The folder the leftmost column is listing — the root of the drill-down.
+    var rootURL: URL? { levels.first?.url }
+
     private func clearLevels() {
         for level in levels {
             level.container.removeFromSuperview()
             level.divider.removeFromSuperview()
+            level.message.removeFromSuperview()
         }
         levels.removeAll()
     }
@@ -161,6 +179,7 @@ final class ColumnBrowserView: NSView {
             let level = levels.removeLast()
             level.container.removeFromSuperview()
             level.divider.removeFromSuperview()
+            level.message.removeFromSuperview()
         }
         layoutColumns()
     }
@@ -218,28 +237,87 @@ final class ColumnBrowserView: NSView {
         columnScroll.drawsBackground = false
 
         let divider = ColumnDivider()
-        divider.onDrag = { [weak self] delta in
-            guard let self else { return }
-            Self.columnWidth = Self.columnWidth + delta
+        divider.onDrag = { [weak self, weak divider] delta in
+            guard let self, let divider,
+                  let index = self.levels.firstIndex(where: { $0.divider === divider })
+            else { return }
+            // Divider N sits at the right edge of column N, so one point of
+            // width change moves it by N + 1 points. The pointer's travel is
+            // divided across the columns to its left, and the divider under
+            // the pointer tracks it exactly at every depth instead of
+            // overshooting and oscillating between the clamps.
+            Self.columnWidth = Self.columnWidth + delta / CGFloat(index + 1)
             self.needsLayout = true
             self.layoutColumns()
         }
 
+        let message = NSTextField(wrappingLabelWithString: "")
+        message.textColor = .secondaryLabelColor
+        message.font = .systemFont(ofSize: 11)
+        message.alignment = .center
+        message.isSelectable = false
+        message.isHidden = true
+
         documentView.addSubview(columnScroll)
         documentView.addSubview(divider)
-        levels.append((url, [], table, columnScroll, divider))
+        documentView.addSubview(message)
+        levels.append((url, [], table, columnScroll, divider, message))
         layoutColumns()
 
-        // Listings load off the main thread, as everywhere else.
-        let index = levels.count - 1
+        loadColumn(at: levels.count - 1)
+    }
+
+    /// Reads a level's folder off the main thread and puts the result on
+    /// screen, carrying the selection over by URL across the reload. The
+    /// failure is shown in the column itself: swallowing it drew a permission
+    /// error exactly like a truly empty folder.
+    private func loadColumn(at index: Int) {
+        guard levels.indices.contains(index) else { return }
+        let url = levels[index].url
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let items = (try? DirectoryLoader.read(url, showHidden: Prefs.showHiddenFiles)) ?? []
-            let sorted = sortItems(items, order: Prefs.sortOrder, foldersFirst: Prefs.foldersFirst)
+            let result = Result { try DirectoryLoader.read(url, showHidden: Prefs.showHiddenFiles) }
+                .map { sortItems($0, order: Prefs.sortOrder, foldersFirst: Prefs.foldersFirst) }
             DispatchQueue.main.async {
                 guard let self, self.levels.indices.contains(index),
                       self.levels[index].url == url else { return }
-                self.levels[index].items = sorted
-                self.levels[index].table.reloadData()
+                let level = self.levels[index]
+                let before = self.items(at: index)
+                let previous = level.table.selectedRowIndexes.compactMap {
+                    before.indices.contains($0) ? before[$0].url : nil
+                }
+                switch result {
+                case .success(let items):
+                    self.levels[index].items = items
+                    // macOS hands a sandboxed-out app an empty listing rather
+                    // than an error for the privacy-gated folders, so an
+                    // empty result there is ambiguous and has to say so.
+                    if items.isEmpty, FileListViewController.isPrivacyProtected(url) {
+                        level.message.stringValue = FileListViewController.emptyMessage(for: url)
+                        level.message.isHidden = false
+                    } else {
+                        level.message.isHidden = true
+                    }
+                case .failure(let error):
+                    self.levels[index].items = []
+                    level.message.stringValue = error.localizedDescription
+                    level.message.isHidden = false
+                }
+                // The reload moves the table's selection by row, which can
+                // land on different files or fire the descend logic mid-way,
+                // so reporting is off until the selection is restored by URL.
+                self.isRemappingSelection = true
+                level.table.reloadData()
+                self.layoutColumns()
+                let rows = self.items(at: index)
+                let restored = previous.compactMap { url in rows.firstIndex { $0.url == url } }
+                level.table.selectRowIndexes(IndexSet(restored), byExtendingSelection: false)
+                self.isRemappingSelection = false
+                // When files the selection held are gone, the pane's mirror
+                // is told, or Delete acts on files no longer on screen.
+                if !previous.isEmpty, restored.count != previous.count,
+                   index == self.levels.count - 1 {
+                    self.onSelectMany?(restored.map { rows[$0].url })
+                }
             }
         }
     }
@@ -482,10 +560,22 @@ extension ColumnBrowserView {
         return nil
     }
 
-    /// Re-reads the deepest column, for after a trash or a rename.
+    /// Re-reads the deepest column, for after a trash or a rename. In place:
+    /// rebuilding through show() collapsed the whole path to one column and
+    /// lost the drill-down on every reload the pane forwarded here.
     func refreshDeepest() {
-        guard let url = levels.last?.url else { return }
-        show(url)
+        // The folder being refreshed may itself be what was trashed or
+        // renamed; back out to the nearest ancestor column that still exists.
+        while levels.count > 1, let last = levels.last,
+              !FileManager.default.fileExists(atPath: last.url.path) {
+            let level = levels.removeLast()
+            level.container.removeFromSuperview()
+            level.divider.removeFromSuperview()
+            level.message.removeFromSuperview()
+        }
+        guard !levels.isEmpty else { return }
+        layoutColumns()
+        loadColumn(at: levels.count - 1)
     }
 }
 
@@ -508,14 +598,17 @@ final class ColumnDivider: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        lastX = convert(event.locationInWindow, from: nil).x
+        lastX = event.locationInWindow.x
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let previous = lastX else { return }
-        let now = convert(event.locationInWindow, from: nil).x
-        // The delta is reported against this view, which the drag itself moves,
-        // so the anchor is not updated: doing that would halve every movement.
+        // Measured in window coordinates, which do not move with the view. A
+        // delta measured against the divider's own coordinates counted the
+        // divider's movement as pointer travel and fed it back into the next
+        // event, which lurched every divider after the first.
+        let now = event.locationInWindow.x
+        lastX = now
         onDrag?(now - previous)
     }
 

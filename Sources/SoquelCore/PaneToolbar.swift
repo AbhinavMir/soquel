@@ -147,9 +147,22 @@ extension Notification.Name {
     static let soquelToolbarChanged = Notification.Name("app.soquel.toolbarChanged")
 }
 
+/// A toolbar button that remembers the command it stands for. The click goes
+/// through the toolbar first so the pane can take focus, and only then is the
+/// command sent up the responder chain — the handlers behind these selectors
+/// act on the focused pane, so a straight dispatch from an unfocused pane's
+/// toolbar drove the other pane.
+private final class ForwardingButton: NSButton {
+    var forwarded: Selector?
+}
+
 /// The strip of buttons under the filter field. Right-click it to choose what
 /// it shows.
 final class PaneToolbarView: NSView {
+    /// Called before a button's command is dispatched, so the pane that owns
+    /// this toolbar can take focus first.
+    var onActivate: (() -> Void)?
+
     private var stack: NSStackView!
     private var observers: [NSObjectProtocol] = []
 
@@ -213,20 +226,23 @@ final class PaneToolbarView: NSView {
                     members.append(next)
                     index += 1
                 }
-                stack.addArrangedSubview(ToolbarPillView(actions: members))
+                let pill = ToolbarPillView(actions: members)
+                pill.onActivate = { [weak self] in self?.onActivate?() }
+                stack.addArrangedSubview(pill)
                 continue
             }
             index += 1
 
-            let button = NSButton()
+            let button = ForwardingButton()
             button.image = NSImage(systemSymbolName: action.currentSymbol,
                                    accessibilityDescription: action.currentTitle)
             button.bezelStyle = .texturedRounded
             button.isBordered = false
             button.toolTip = action.tooltip
             button.setAccessibilityLabel(action.currentTitle)
-            button.target = nil          // travels the responder chain to the window
-            button.action = action.selector
+            button.target = self
+            button.action = #selector(forwardAction(_:))
+            button.forwarded = action.selector
             button.translatesAutoresizingMaskIntoConstraints = false
             button.widthAnchor.constraint(equalToConstant: 26).isActive = true
             button.heightAnchor.constraint(equalToConstant: 22).isActive = true
@@ -243,6 +259,15 @@ final class PaneToolbarView: NSView {
             stack.addArrangedSubview(button)
         }
         needsDisplay = true
+    }
+
+    /// Focuses the pane, then sends the button's real command up the
+    /// responder chain, where the window controller resolves it against the
+    /// now-correct focused pane.
+    @objc private func forwardAction(_ sender: Any?) {
+        guard let selector = (sender as? ForwardingButton)?.forwarded else { return }
+        onActivate?()
+        NSApp.sendAction(selector, to: nil, from: sender)
     }
 
     @objc private func toggleAction(_ sender: NSMenuItem) {
@@ -268,6 +293,10 @@ final class PaneToolbarView: NSView {
 /// view modes. The selected segment is filled rather than merely tinted, which
 /// is the same readability rule the file list follows.
 final class ToolbarPillView: NSView {
+    /// Called before a segment's command is dispatched, so the pane that owns
+    /// the toolbar can take focus first.
+    var onActivate: (() -> Void)?
+
     private let actions: [ToolbarAction]
     private var buttons: [NSButton] = []
     private let selection = NSView()
@@ -311,14 +340,15 @@ final class ToolbarPillView: NSView {
         addSubview(selection)
 
         for action in actions {
-            let button = NSButton()
+            let button = ForwardingButton()
             button.image = NSImage(systemSymbolName: action.currentSymbol,
                                    accessibilityDescription: action.currentTitle)
             button.isBordered = false
             button.toolTip = action.tooltip
             button.setAccessibilityLabel(action.currentTitle)
-            button.target = nil          // travels the responder chain to the window
-            button.action = action.selector
+            button.target = self
+            button.action = #selector(forwardAction(_:))
+            button.forwarded = action.selector
             addSubview(button)
             buttons.append(button)
         }
@@ -352,6 +382,15 @@ final class ToolbarPillView: NSView {
         }
         Log.debug(.ui, "Pill laid out: width=\(bounds.width) segments=\(buttons.count) "
             + "on=\(onIndex.map(String.init) ?? "none") fill=\(selection.frame) hidden=\(selection.isHidden)")
+    }
+
+    /// Focuses the pane, then sends the segment's real command up the
+    /// responder chain, where the window controller resolves it against the
+    /// now-correct focused pane.
+    @objc private func forwardAction(_ sender: Any?) {
+        guard let selector = (sender as? ForwardingButton)?.forwarded else { return }
+        onActivate?()
+        NSApp.sendAction(selector, to: nil, from: sender)
     }
 
     private func applyColors() {

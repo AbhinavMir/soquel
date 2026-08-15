@@ -111,6 +111,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
         toolbar = PaneToolbarView()
         toolbar.translatesAutoresizingMaskIntoConstraints = false
+        // A toolbar click acts on the pane it sits in. The handlers behind
+        // the buttons act on the focused pane, so the pane takes focus before
+        // the action is sent up the responder chain.
+        toolbar.onActivate = { [weak self] in self?.activeList?.focusTable() }
 
         // Clicking the path bar switches it to a typable field. ⇧⌘G exists, but
         // the research is clear people expect to click and type, and judge the
@@ -274,6 +278,8 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         tabs.append(list)
         if activate { activeIndex = tabs.count - 1 }
         showActiveTab()
+        if activate { clearSharedFilter() }
+        applyViewMode()
         rebuildTabBar()
         rebuildPathBar()
         delegate?.paneDidChangeTabs(self)
@@ -292,11 +298,14 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
     @discardableResult
     func closeTab(at index: Int) -> Bool {
         guard tabs.count > 1, tabs.indices.contains(index) else { return false }
+        let wasActive = activeList
         let closing = tabs.remove(at: index)
         closing.view.removeFromSuperview()
         closing.removeFromParent()
         activeIndex = Self.activeIndexAfterClosing(index, wasActive: activeIndex, remaining: tabs.count)
         showActiveTab()
+        if activeList !== wasActive { clearSharedFilter() }
+        applyViewMode()
         rebuildTabBar()
         rebuildPathBar()
         delegate?.paneDidChangeTabs(self)
@@ -323,6 +332,11 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         guard tabs.indices.contains(index), index != activeIndex else { return }
         activeIndex = index
         showActiveTab()
+        // The filter box, the column browser, and the view-mode visibility all
+        // describe the tab in front, so a switch has to bring each along —
+        // without this the browser kept listing the previous tab's folder.
+        clearSharedFilter()
+        applyViewMode()
         rebuildTabBar()
         rebuildPathBar()
     }
@@ -432,6 +446,16 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         columnBrowser.applyFilter(filterField.stringValue)
     }
 
+    /// One filter box serves every tab and both views. When the folder on
+    /// screen changes, all three stores must empty together, or one of them
+    /// filters the new folder with the old folder's text.
+    private func clearSharedFilter() {
+        guard isViewLoaded else { return }
+        filterField.stringValue = ""
+        activeList?.setFilter("")
+        columnBrowser.applyFilter("")
+    }
+
     /// Keeps the toolbar's toggle states honest after a command changes one.
     func refreshToolbar() {
         // Deferred by one turn of the runloop. A toolbar button's action is
@@ -447,7 +471,12 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         let columns = (activeList?.mode ?? Prefs.viewMode) == .column
         columnBrowser.isHidden = !columns
         contentView.isHidden = columns
-        if columns, let url = currentURL, columnBrowser.deepestURL?.standardizedFileURL != url.standardizedFileURL {
+        // Staleness is judged by the root column, not the deepest: descending
+        // in columns adds levels without moving the pane's URL, so the deepest
+        // differs from it after one descend, and comparing there tore down
+        // the drill-down on every settings change.
+        if columns, let url = currentURL,
+           columnBrowser.rootURL?.standardizedFileURL != url.standardizedFileURL {
             columnBrowser.show(url)
         }
     }
@@ -519,6 +548,16 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         pathBarScroll.isHidden = false
     }
 
+    /// Focus leaving the field by any route other than Return or Escape — a
+    /// click into the file list, a Tab out — must put the breadcrumbs back. A
+    /// programmatic field does not send its action when it merely loses focus,
+    /// so without this the pane kept the field on screen with no editor behind
+    /// it and no path bar until the user clicked back in and pressed Return.
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard obj.object as? NSTextField === pathField, !pathField.isHidden else { return }
+        endEditingPath()
+    }
+
     /// Escape abandons Go to Folder and puts the breadcrumbs back.
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard control === pathField, selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
@@ -552,6 +591,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
     func fileList(_ list: FileListViewController, didNavigateTo url: URL) {
         guard list === activeList else { return }
+        // The list clears its own filter when it leaves a folder; the shared
+        // box and the column browser have to empty with it, or they keep a
+        // needle that no longer filters anything on screen.
+        clearSharedFilter()
         if (activeList?.mode ?? Prefs.viewMode) == .column { columnBrowser.show(url) }
         rebuildPathBar()
         rebuildTabBar()
