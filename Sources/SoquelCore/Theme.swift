@@ -384,6 +384,34 @@ final class FileCellView: NSTableCellView {
     private func applyTextColor() {
         textField?.textColor = isOnFilledSelection ? .white : restingTextColor
     }
+
+    /// Laid out by hand. Every visible cell used to carry Auto Layout
+    /// constraints, and a table redraw resolved them through the window's
+    /// whole constraint engine — a hundred rows deep on the main thread for
+    /// each scroll tick. The cell is an icon and a label; two frames do it.
+    static let iconSide: CGFloat = 16
+    static let iconGap: CGFloat = 5
+    static let trailingInset: CGFloat = 2
+
+    override func layout() {
+        super.layout()
+        let bounds = self.bounds
+        var textX: CGFloat = 0
+        if let imageView {
+            imageView.frame = NSRect(
+                x: 0, y: (bounds.height - Self.iconSide) / 2,
+                width: Self.iconSide, height: Self.iconSide
+            )
+            textX = Self.iconSide + Self.iconGap
+        }
+        if let textField {
+            let height = textField.intrinsicContentSize.height
+            textField.frame = NSRect(
+                x: textX, y: (bounds.height - height) / 2,
+                width: max(0, bounds.width - textX - Self.trailingInset), height: height
+            )
+        }
+    }
 }
 
 /// The 3D edge that made a nineties interface look pressable.

@@ -363,7 +363,7 @@ extension ColumnBrowserView: NSTableViewDataSource, NSTableViewDelegate {
         field.translatesAutoresizingMaskIntoConstraints = false
 
         let icon = NSImageView()
-        icon.image = NSWorkspace.shared.icon(forFile: item.url.path)
+        icon.image = FileListViewController.icon(for: item)
         icon.translatesAutoresizingMaskIntoConstraints = false
 
         cell.addSubview(icon)

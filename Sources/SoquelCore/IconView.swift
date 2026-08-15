@@ -66,7 +66,7 @@ final class FileIconItem: NSCollectionViewItem {
         thumbnailToken = nil
         // The type icon is shown first and replaced when the real thumbnail
         // arrives, so scrolling never waits on a generator.
-        thumbnail.image = NSWorkspace.shared.icon(forFile: item.url.path)
+        thumbnail.image = FileListViewController.icon(for: item)
 
         let url = item.url
         // Set before requesting: a cache hit calls back synchronously, and the

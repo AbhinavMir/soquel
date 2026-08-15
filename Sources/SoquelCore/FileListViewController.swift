@@ -2199,7 +2199,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         case "name":
             cell.textField?.stringValue = item.name
             cell.textField?.font = Theme.rowName
-            cell.imageView?.image = NSWorkspace.shared.icon(forFile: item.url.path)
+            cell.imageView?.image = Self.icon(for: item)
             cell.restingTextColor = item.isHidden ? .secondaryLabelColor : .labelColor
         case "size":
             if item.isDirectory {
@@ -2256,10 +2256,10 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         let cell = FileCellView()
         cell.identifier = identifier
 
+        // Frames, not constraints: FileCellView.layout() places the two views.
         let field = NSTextField(labelWithString: "")
         field.lineBreakMode = .byTruncatingMiddle
         field.font = Theme.rowName
-        field.translatesAutoresizingMaskIntoConstraints = false
         field.isEditable = false
         field.isBordered = false
         field.drawsBackground = false
@@ -2269,26 +2269,29 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
 
         if showsIcon {
             let image = NSImageView()
-            image.translatesAutoresizingMaskIntoConstraints = false
             image.imageScaling = .scaleProportionallyDown
             cell.addSubview(image)
             cell.imageView = image
-            NSLayoutConstraint.activate([
-                image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 0),
-                image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                image.widthAnchor.constraint(equalToConstant: 16),
-                image.heightAnchor.constraint(equalToConstant: 16),
-                field.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
-            ])
-        } else {
-            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 0).isActive = true
         }
-
-        NSLayoutConstraint.activate([
-            field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-            field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
         return cell
+    }
+
+    /// Icons keyed by what decides them. `NSWorkspace.icon(forFile:)` asks
+    /// Launch Services every time, and it was being asked once per row per
+    /// redraw. Folders and packages are looked up per path — a custom folder
+    /// icon is per folder — but an ordinary file's icon is decided by its
+    /// extension, and one lookup per extension covers a folder of thousands.
+    private static var iconByExtension: [String: NSImage] = [:]
+
+    static func icon(for item: FileItem) -> NSImage {
+        if item.isDirectory || item.isPackage || item.isSymlink || item.url.pathExtension.isEmpty {
+            return NSWorkspace.shared.icon(forFile: item.url.path)
+        }
+        let key = item.url.pathExtension.lowercased()
+        if let cached = iconByExtension[key] { return cached }
+        let icon = NSWorkspace.shared.icon(forFile: item.url.path)
+        iconByExtension[key] = icon
+        return icon
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -2299,7 +2302,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             return fresh
         }()
         view.isAlternateRow = row % 2 == 1
-        view.tagTint = items.indices.contains(row) ? Tags.rowTint(for: Tags.read(items[row].url)) : nil
+        view.tagTint = items.indices.contains(row) ? Tags.rowTint(for: items[row].tags) : nil
         return view
     }
 

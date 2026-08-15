@@ -13,8 +13,27 @@ struct FileItem {
     let modified: Date
     let created: Date
     let kind: String
+    /// Finder tags, read with the listing. Reading them per row at draw time
+    /// was an xattr call for every visible row on every redraw.
+    let tags: [String]
 
     var opensAsFolder: Bool { isDirectory && !isPackage }
+
+    init(url: URL, name: String, isDirectory: Bool, isPackage: Bool, isSymlink: Bool,
+         isHidden: Bool, size: Int64, modified: Date, created: Date, kind: String,
+         tags: [String] = []) {
+        self.url = url
+        self.name = name
+        self.isDirectory = isDirectory
+        self.isPackage = isPackage
+        self.isSymlink = isSymlink
+        self.isHidden = isHidden
+        self.size = size
+        self.modified = modified
+        self.created = created
+        self.kind = kind
+        self.tags = tags
+    }
 }
 
 enum ViewMode: String, CaseIterable {
@@ -178,7 +197,7 @@ final class DirectoryLoader {
     static let resourceKeys: [URLResourceKey] = [
         .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey, .isHiddenKey,
         .fileSizeKey, .contentModificationDateKey, .creationDateKey,
-        .localizedTypeDescriptionKey,
+        .localizedTypeDescriptionKey, .tagNamesKey,
     ]
 
     static func read(_ url: URL, showHidden: Bool) throws -> [FileItem] {
@@ -204,7 +223,8 @@ final class DirectoryLoader {
                 size: isDir ? -1 : Int64(values?.fileSize ?? 0),
                 modified: values?.contentModificationDate ?? .distantPast,
                 created: values?.creationDate ?? .distantPast,
-                kind: values?.localizedTypeDescription ?? (isDir ? "Folder" : "Document")
+                kind: values?.localizedTypeDescription ?? (isDir ? "Folder" : "Document"),
+                tags: values?.tagNames ?? []
             )
         }
     }
