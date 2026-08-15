@@ -15,6 +15,12 @@ final class CommandRunner {
 
     private var process: Process?
     private let queue = DispatchQueue(label: "app.soquel.command")
+    /// Counts runs. A cancelled process can outlive its SIGINT, and its
+    /// handlers still hold the caller's onEvent; every event checks the
+    /// generation it was started under, so a superseded run cannot write its
+    /// output or its exit status into the run that replaced it. Only read and
+    /// written on the main thread.
+    private var generation = 0
 
     var isRunning: Bool { process?.isRunning == true }
 
@@ -22,6 +28,8 @@ final class CommandRunner {
     /// arrive here as noise. Anything that slips through is stripped below.
     func run(_ command: String, in directory: URL, onEvent: @escaping (Event) -> Void) {
         cancel()
+        generation += 1
+        let token = generation
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/zsh")
@@ -39,18 +47,22 @@ final class CommandRunner {
         task.standardError = pipe
         process = task
 
-        pipe.fileHandleForReading.readabilityHandler = { handle in
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
             let text = CommandRunner.strip(String(decoding: data, as: UTF8.self))
-            DispatchQueue.main.async { onEvent(.output(text)) }
+            DispatchQueue.main.async {
+                guard self?.generation == token else { return }
+                onEvent(.output(text))
+            }
         }
 
-        task.terminationHandler = { finished in
+        task.terminationHandler = { [weak self] finished in
             pipe.fileHandleForReading.readabilityHandler = nil
             // Whatever was buffered when the process exited.
             let rest = pipe.fileHandleForReading.availableData
             DispatchQueue.main.async {
+                guard self?.generation == token else { return }
                 if !rest.isEmpty {
                     onEvent(.output(CommandRunner.strip(String(decoding: rest, as: UTF8.self))))
                 }
@@ -58,11 +70,12 @@ final class CommandRunner {
             }
         }
 
-        queue.async {
+        queue.async { [weak self] in
             do {
                 try task.run()
             } catch {
                 DispatchQueue.main.async {
+                    guard self?.generation == token else { return }
                     onEvent(.output("Could not run: \(error.localizedDescription)\n"))
                     onEvent(.finished(status: -1))
                 }
@@ -71,9 +84,17 @@ final class CommandRunner {
     }
 
     /// SIGINT first, the same as ⌃C, so a well-behaved program can tidy up.
+    /// Some tools trap or outlive the interrupt; after a grace period the
+    /// process gets SIGTERM, so it does not run on unstoppable once the
+    /// reference here is dropped. The generation stays as it is: the exit
+    /// still reports "Interrupted" through the current run's events unless a
+    /// new run has started, in which case the token check drops them.
     func cancel() {
         guard let process, process.isRunning else { return }
         process.interrupt()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if process.isRunning { process.terminate() }
+        }
         self.process = nil
     }
 
@@ -103,7 +124,12 @@ final class CommandRunner {
                 while let byte = iterator.next() {
                     if byte == "\u{07}" { break }
                     if byte == "\u{1B}" {
-                        pending = iterator.next()
+                        // ST is ESC \. The backslash is part of the
+                        // terminator, so it is consumed here; anything else
+                        // means a new sequence began inside this one, and the
+                        // outer loop takes it from the top.
+                        let after = iterator.next()
+                        if after != "\\" { pending = after }
                         break
                     }
                 }

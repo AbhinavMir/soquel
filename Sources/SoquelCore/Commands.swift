@@ -119,7 +119,23 @@ enum CommandRegistry {
     private static let defaultsKey = "shortcutOverrides"
 
     /// id → shortcut. A stored entry with a nil value means "no shortcut".
-    private static var overrides: [String: Shortcut?] = load()
+    ///
+    /// settings.json can be edited by hand while the app runs, so the cache
+    /// follows outside edits. Without the reload the rebuilt menu would
+    /// reinstall the old shortcuts, and the next in-app remap would write the
+    /// stale set back over the user's edit. The observer posts the shortcuts
+    /// notification itself so the menu rebuild reads fresh values whatever
+    /// order the settings observers fire in.
+    private static var overrides: [String: Shortcut?] = {
+        // The token is never removed: the registry lives for the whole app.
+        _ = NotificationCenter.default.addObserver(
+            forName: .soquelSettingsChanged, object: nil, queue: .main
+        ) { _ in
+            overrides = load()
+            NotificationCenter.default.post(name: .soquelShortcutsChanged, object: nil)
+        }
+        return load()
+    }()
 
     private static func load() -> [String: Shortcut?] {
         guard let decoded = Settings.decode([String: Shortcut?].self, forKey: defaultsKey)

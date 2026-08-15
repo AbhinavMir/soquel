@@ -33,6 +33,12 @@ final class ShelfPanelController: NSWindowController {
     private var copyButton: NSButton!
     private var moveButton: NSButton!
     private var observer: NSObjectProtocol?
+    /// True from the click on Copy Here or Move Here until the transfer's
+    /// completion runs. Status reports from the destination pane arrive
+    /// throughout the transfer and refresh the footer; without the flag they
+    /// would re-enable the buttons and invite a second, concurrent delivery
+    /// of the same files.
+    private var deliveryInFlight = false
 
     private func build() {
         rowStack = NSStackView()
@@ -120,6 +126,12 @@ final class ShelfPanelController: NSWindowController {
 
     private func updateFooter() {
         guard footer != nil else { return }
+        if deliveryInFlight {
+            // The progress line stays until the completion writes the result.
+            copyButton?.isEnabled = false
+            moveButton?.isEnabled = false
+            return
+        }
         let empty = Shelf.isEmpty
         copyButton?.isEnabled = !empty && destination != nil
         moveButton?.isEnabled = !empty && destination != nil
@@ -203,8 +215,9 @@ final class ShelfPanelController: NSWindowController {
     /// Hands the shelf to the ordinary transfer engine, so conflicts, undo and
     /// the transfer queue all behave as they do for any other copy or move.
     private func deliver(moving: Bool) {
-        guard let destination, !Shelf.isEmpty else { return }
+        guard let destination, !Shelf.isEmpty, !deliveryInFlight else { return }
         let urls = Shelf.urls
+        deliveryInFlight = true
         copyButton.isEnabled = false
         moveButton.isEnabled = false
         footer.stringValue = "\(moving ? "Moving" : "Copying") \(urls.count) to \(destination.lastPathComponent)…"
@@ -218,11 +231,13 @@ final class ShelfPanelController: NSWindowController {
             },
             completion: { [weak self] result in
                 guard let self else { return }
+                self.deliveryInFlight = false
                 if moving {
                     UndoStack.shared.pushMove(result: result)
-                    // Moved files are gone from where the shelf pointed, so the
-                    // shelf empties rather than holding dead paths.
-                    Shelf.clear()
+                    // Only the files that actually moved are gone from where
+                    // the shelf pointed. Cancelled, skipped, and failed items
+                    // are still at their sources, so they stay on the shelf.
+                    for url in result.succeeded { Shelf.remove(url) }
                 } else {
                     UndoStack.shared.pushCopy(result: result)
                 }

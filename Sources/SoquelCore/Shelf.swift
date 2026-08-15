@@ -19,7 +19,11 @@ enum Shelf {
     /// worse than one that quietly shortens.
     static var urls: [URL] {
         let paths = Settings.stringArray(forKey: key) ?? []
-        let existing = paths.filter { FileManager.default.fileExists(atPath: $0) }
+        // attributesOfItem(atPath:) reports on the path itself, where
+        // fileExists(atPath:) follows symlinks and would prune a shelved link
+        // whose target is gone — a link that still exists and can still be
+        // copied or moved, since the transfer copies the link, not through it.
+        let existing = paths.filter { (try? FileManager.default.attributesOfItem(atPath: $0)) != nil }
         if existing.count != paths.count {
             Settings.set(existing, forKey: key)
         }

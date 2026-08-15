@@ -11,6 +11,7 @@ final class CommandPanelController: NSWindowController {
         )
         window.setFrameAutosaveName("SoquelCommand")
         let controller = CommandPanelController(window: window)
+        window.delegate = controller
         controller.build()
         return controller
     }()
@@ -137,6 +138,16 @@ final class CommandPanelController: NSWindowController {
     override func close() {
         runner.cancel()
         super.close()
+    }
+}
+
+extension CommandPanelController: NSWindowDelegate {
+    /// The red close button goes through NSWindow.performClose, which never
+    /// calls NSWindowController.close(), so the delegate callback is the only
+    /// place that hears about it. Without it the command keeps running with
+    /// its output streaming into a hidden view.
+    func windowWillClose(_ notification: Notification) {
+        runner.cancel()
     }
 }
 
