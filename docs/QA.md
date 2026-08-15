@@ -3,7 +3,7 @@
 A manual test pass for Soquel. Every line is one thing to do and one thing to check.
 Work top to bottom, or pick a section. Tick nothing you did not actually see happen.
 
-**Version under test:** 1.0.5
+**Version under test:** 1.0.7
 **Platform:** Apple silicon, macOS 13 or later
 
 ## How to report

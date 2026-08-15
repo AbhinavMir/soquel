@@ -1,5 +1,5 @@
 {
-  "updated": "2026-08-14 14:30",
+  "updated": "2026-08-14 16:30",
   "status": "shipped",
   "statusLabel": "v1.0.7 released — beta",
   "stats": [
@@ -20,8 +20,8 @@
     },
     {
       "label": "Open bugs",
-      "value": "sweep running",
-      "tone": "dim"
+      "value": "146 found, 146 fixed",
+      "tone": "ok"
     },
     {
       "label": "Architecture",

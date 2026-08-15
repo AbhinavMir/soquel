@@ -1,14 +1,23 @@
 # Working state
 
-Branch: `main`, clean and pushed. 805 tests pass in 15.5s.
+Branch: `main`, clean and pushed. 833 tests pass in ~15s.
 
-**1.0.5 is shipped.** Signed, notarised, disk image on the GitHub release,
-landing page live at trysoquel.com.
+**1.0.7 is shipped.** Signed, notarised, disk image on the GitHub release,
+landing page live at trysoquel.com — now carrying a Beta tag and the line
+"Version 2.0 will be the first alpha release."
 
 ## What this is
 
-Soquel, a file manager for macOS. The adversarial bug sweep this file used to track is
-finished: all 38 issues closed. Three feature issues remain, none started.
+Soquel, a file manager for macOS. The August 2026 deep QA sweep is finished:
+the whole of SoquelCore was read by subsystem plus wiring/hostile-input/
+concurrency passes, 146 distinct defects were confirmed and all 146 are fixed
+on main — see [docs/QA-SWEEP-2026-08.md](docs/QA-SWEEP-2026-08.md). Among
+them: drag and drop now works in all three views (it only worked list-to-list),
+double-click opens folders in icon view (#42, closed), a `-m`-named file no
+longer makes zip delete its neighbours, and a settings.json typo no longer
+erases every setting. The docs were audited against the code; 27 wrong claims
+corrected. Milestone "2.0 — first alpha" exists on GitHub; #44 (shortcut
+import/export) is queued in it.
 
 ## Open
 
