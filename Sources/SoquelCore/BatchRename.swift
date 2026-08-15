@@ -78,17 +78,18 @@ enum BatchRename {
                 preview.problem = "Not a valid name"
             } else if claimed.contains(proposed.lowercased()) {
                 preview.problem = "Two files would share this name"
-            } else if proposed != original,
-                      // A case-only rename on a case-insensitive volume reports
-                      // the destination as existing — it is the file itself.
-                      // OperationEngine.rename allows that move, so the plan
-                      // must not block it here, or the change-case rule could
-                      // never run on a default APFS volume.
-                      proposed.lowercased() != original.lowercased(),
-                      FileManager.default.fileExists(
-                          atPath: url.deletingLastPathComponent().appendingPathComponent(proposed).path
-                      ) {
-                preview.problem = "A file with this name already exists"
+            } else if proposed != original {
+                // An existing destination is only a collision when it is a
+                // different file. A case-only rename on a case-insensitive
+                // volume reports the destination as existing — it is the file
+                // itself, and OperationEngine.rename allows that move. On a
+                // case-sensitive volume the same spelling can be a second,
+                // distinct file, so the test is file identity, not name case.
+                let destination = url.deletingLastPathComponent().appendingPathComponent(proposed)
+                if FileManager.default.fileExists(atPath: destination.path),
+                   !sameFile(url, destination) {
+                    preview.problem = "A file with this name already exists"
+                }
             }
 
             claimed.insert(proposed.lowercased())

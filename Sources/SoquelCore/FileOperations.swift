@@ -174,14 +174,23 @@ final class OperationEngine {
                         // Merge is offered only when both sides are folders,
                         // but a standing "apply to all" answer taken at a
                         // folder conflict can land on a later file conflict.
-                        // Fall back to skip there, as the child-level switch
-                        // does, rather than let merge() fail on a file and the
-                        // pair still be recorded as succeeded and merged.
+                        // merge() must not run there — it would fail on a file
+                        // and the pair would still be recorded as succeeded
+                        // and merged. Dropping the source instead would end
+                        // the job as Done while the destination silently
+                        // keeps its stale file. So the source is copied
+                        // beside the existing item under a unique name: the
+                        // transfer delivers every file it promised, nothing
+                        // is replaced, and the ordinary copy path below
+                        // records and verifies the placement.
                         var sourceIsFolder: ObjCBool = false
                         var destinationIsFolder: ObjCBool = false
                         _ = fm.fileExists(atPath: source.path, isDirectory: &sourceIsFolder)
                         _ = fm.fileExists(atPath: destination.path, isDirectory: &destinationIsFolder)
-                        guard sourceIsFolder.boolValue, destinationIsFolder.boolValue else { continue }
+                        guard sourceIsFolder.boolValue, destinationIsFolder.boolValue else {
+                            destination = Self.uniqueURL(for: destination, fileManager: fm)
+                            break
+                        }
 
                         // Walk both trees and resolve child by child, instead of
                         // deleting the destination folder and everything under it.
@@ -521,10 +530,12 @@ final class OperationEngine {
         let destination = url.deletingLastPathComponent().appendingPathComponent(newName)
         guard destination != url else { return url }
         let fm = FileManager.default
-        // A case-only rename on a case-insensitive volume reports the destination
-        // as existing; the move itself handles it correctly.
-        if fm.fileExists(atPath: destination.path),
-           destination.path.lowercased() != url.path.lowercased() {
+        // A case-only rename on a case-insensitive volume reports the
+        // destination as existing — it is the file itself, and the move
+        // handles it correctly. On a case-sensitive volume the same spelling
+        // can be a second, distinct file, so the test is file identity, not
+        // how the two names compare lowercased.
+        if fm.fileExists(atPath: destination.path), !sameFile(url, destination) {
             throw SoquelError.nameInUse(newName)
         }
         try fm.moveItem(at: url, to: destination)
@@ -637,6 +648,20 @@ enum SoquelError: LocalizedError {
         case .appNotFound(let n): return "“\(n)” is not installed."
         }
     }
+}
+
+/// True when both URLs resolve to one file on disk, by identity rather than
+/// spelling. This is how a case-only rename is told apart from a collision:
+/// on a case-insensitive volume "README.txt" resolves to "readme.txt" itself,
+/// while on a case-sensitive volume the two names can be two distinct files.
+/// False when either side cannot report an identifier — a claim of sameness
+/// needs evidence from both ends.
+func sameFile(_ a: URL, _ b: URL) -> Bool {
+    let key: URLResourceKey = .fileResourceIdentifierKey
+    guard let idA = (try? a.resourceValues(forKeys: [key]))?.fileResourceIdentifier,
+          let idB = (try? b.resourceValues(forKeys: [key]))?.fileResourceIdentifier
+    else { return false }
+    return idA.isEqual(idB)
 }
 
 /// True when both URLs name the same file on disk. Compares resolved paths so a

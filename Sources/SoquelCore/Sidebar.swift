@@ -99,6 +99,12 @@ protocol SidebarDelegate: AnyObject {
 /// never be run from the keyboard at all.
 private final class SidebarOutline: NSOutlineView {
     var onActivate: (() -> Void)?
+    /// Called for a plain click that landed on the row that was already
+    /// selected. Such a click changes no selection, so AppKit posts no
+    /// selectionDidChange and the delegate never hears about it — yet for a
+    /// row the selection gate holds back it is the whole request: arrow onto
+    /// a saved search, then click it to run it.
+    var onReclickSelectedRow: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
         let key = event.charactersIgnoringModifiers?.unicodeScalars.first?.value
@@ -107,6 +113,20 @@ private final class SidebarOutline: NSOutlineView {
             return
         }
         super.keyDown(with: event)
+    }
+
+    /// NSOutlineView tracks the whole click inside mouseDown, so once super
+    /// returns the click is settled and the selection is final. Only then can
+    /// "the click landed on the row that was already selected, and it is
+    /// still the selected row" be read off. Modified clicks are selection
+    /// edits or the context menu, not a request to act on the row.
+    override func mouseDown(with event: NSEvent) {
+        let selectedBefore = selectedRow
+        super.mouseDown(with: event)
+        guard event.modifierFlags.intersection([.command, .shift, .control]).isEmpty,
+              clickedRow >= 0, clickedRow == selectedBefore, selectedRow == selectedBefore
+        else { return }
+        onReclickSelectedRow?()
     }
 }
 
@@ -151,6 +171,7 @@ final class SidebarViewController: NSViewController {
     override func loadView() {
         let sidebarOutline = SidebarOutline()
         sidebarOutline.onActivate = { [weak self] in self?.activateSelectedRow() }
+        sidebarOutline.onReclickSelectedRow = { [weak self] in self?.activateSelectedRow() }
         outline = sidebarOutline
         outline.headerView = nil
         outline.rowSizeStyle = .default
@@ -665,9 +686,9 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         return key == UInt32(NSCarriageReturnCharacter) || key == UInt32(NSEnterCharacter)
     }
 
-    /// Return pressed in the outline: act on the selected row. Only the kinds
-    /// the selection gate holds back need this; the rest already navigated
-    /// when the selection landed on them.
+    /// Acts on the selected row, for Return and for a click on a row that was
+    /// already selected. Only the kinds the selection gate holds back need
+    /// this; the rest already navigated when the selection landed on them.
     private func activateSelectedRow() {
         guard let node = outline.item(atRow: outline.selectedRow) as? SidebarNode else { return }
         switch node.kind {
@@ -765,7 +786,7 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             // Carry on down to whatever was being revealed. Without this the
             // tree opens one level per call and stops, so following the pane
             // into a deep folder never gets past the first step.
-            if let target = self.pendingReveal { self.reveal(target) }
+            if let target = self.pendingReveal { self.reveal(target, continuing: true) }
             // Same again for the folders that were open when the app last
             // quit: each load reveals the next level down that has to open.
             self.restoreExpandedFolders()
@@ -824,27 +845,41 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     }
 
     /// Opens the tree down to `url` and selects it, so the tree follows the
-    /// pane rather than drifting out of step with it.
-    func reveal(_ url: URL) {
+    /// pane rather than drifting out of step with it. `continuing` is set
+    /// only by the load completion that resumes a pending walk; every other
+    /// caller starts a fresh one.
+    func reveal(_ url: URL, continuing: Bool = false) {
         guard Prefs.showFolderTree else { return }
         guard let treeGroup = roots.first(where: {
             if case .systemGroup(let title) = $0.kind { return title == "Folders" }
             return false
         }) else { return }
 
-        // A fresh walk starts from what was just clicked; a continuation keeps
-        // whatever the first step recorded. A load callback arrives with no
-        // navigationOrigin, so a non-nil one means a new click even while an
-        // earlier walk is still waiting on a load — that click's origin takes
-        // over rather than the interrupted walk's leaking onto it.
+        // A fresh walk starts from what was just clicked; only the load
+        // callback that resumes a pending walk keeps what the first step
+        // recorded, and it says so itself. It cannot be inferred: pane-driven
+        // reveals — Back, the path bar, a tab switch — also arrive with no
+        // navigationOrigin, and reading "no origin while a walk is pending"
+        // as a continuation carried an abandoned tree click's origin onto
+        // them and moved a selection the pane never asked to move.
         revealOrigin = Self.carriedOrigin(
-            fresh: pendingReveal == nil || navigationOrigin != nil,
+            fresh: !continuing,
             clicked: navigationOrigin, carried: revealOrigin
         )
         pendingReveal = url
         outline.expandItem(treeGroup)
 
-        let walk = Self.revealWalk(chain: FolderTree.chain(to: url), from: treeGroup.children)
+        // The chain is trimmed against the roots this tree was built with.
+        // Asking FolderTree for a fresh mount list here would stat every
+        // volume on the main thread once per navigation, and a dead network
+        // mount turns that into a beachball on every folder click.
+        let rootURLs = treeGroup.children.compactMap { node -> URL? in
+            if case .treeFolder(let root) = node.kind { return root }
+            return nil
+        }
+        let walk = Self.revealWalk(
+            chain: FolderTree.chain(to: url, roots: rootURLs), from: treeGroup.children
+        )
         for node in walk.open { outline.expandItem(node) }
 
         // Expanding started that node's load; the completion calls back into
@@ -895,7 +930,8 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             // way it was would otherwise rewrite the very list being read.
             guard !isRestoringTree else { return }
             Prefs.expandedTreeFolders = Self.remembering(
-                url.path, expanded: !collapsed, in: Prefs.expandedTreeFolders
+                url.path, expanded: !collapsed, in: Prefs.expandedTreeFolders,
+                roots: treeRootPaths()
             )
             return
         }
@@ -950,6 +986,21 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         pendingRestore = (opened || treeLoadsInFlight > 0) ? stillMissing : []
     }
 
+    /// The tree's root rows, read from the nodes the sidebar already built.
+    /// Enumerating mounted volumes afresh would touch the filesystem, which
+    /// can stall on a dead network mount; the built nodes are what the tree
+    /// shows, so they are also the honest answer.
+    private func treeRootPaths() -> [String] {
+        guard let treeGroup = roots.first(where: {
+            if case .systemGroup(let title) = $0.kind { return title == "Folders" }
+            return false
+        }) else { return [] }
+        return treeGroup.children.compactMap { node -> String? in
+            if case .treeFolder(let url) = node.kind { return url.path }
+            return nil
+        }
+    }
+
     /// The node standing for `path`, searched only through levels already
     /// loaded. Nothing here reads the disk.
     func treeNode(forPath path: String, under nodes: [SidebarNode]) -> SidebarNode? {
@@ -972,8 +1023,13 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     /// Adds or removes one path, keeping the rest in the order they were
     /// opened. Shallow folders come first, so replaying the list opens a parent
-    /// before the child that needs it.
-    static func remembering(_ path: String, expanded: Bool, in paths: [String]) -> [String] {
+    /// before the child that needs it. `roots` is the tree's root rows: a
+    /// collapse never forgets what is open under a root nested inside the
+    /// collapsed folder, because that root keeps its own row and its own
+    /// open state.
+    static func remembering(
+        _ path: String, expanded: Bool, in paths: [String], roots: [String] = []
+    ) -> [String] {
         var paths = paths.filter { $0 != path }
         guard expanded else {
             // Closing a folder closes what is inside it; leaving descendants
@@ -981,7 +1037,16 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             // boot volume's path is already "/", so appending a slash would
             // filter on a "//" prefix and leave every descendant behind.
             let prefix = path == "/" ? "/" : path + "/"
-            return paths.filter { !$0.hasPrefix(prefix) }
+            // The list does not record which root a path was opened under,
+            // and home and every mounted volume sit somewhere under "/". A
+            // plain prefix wipe for "/" therefore matched every stored path
+            // and erased the open state of every other root in one stroke.
+            // A root inside the closed folder shields its own subtree.
+            let shielded = roots.filter { $0 != path && $0.hasPrefix(prefix) }
+            return paths.filter { stored in
+                guard stored.hasPrefix(prefix) else { return true }
+                return shielded.contains { stored == $0 || stored.hasPrefix($0 + "/") }
+            }
         }
         paths.append(path)
         return paths.sorted { $0.components(separatedBy: "/").count < $1.components(separatedBy: "/").count }

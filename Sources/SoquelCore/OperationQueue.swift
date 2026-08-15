@@ -141,6 +141,15 @@ final class TransferJob {
             failures.append((entry.source, "Checksum did not match after copying"))
             filesFailed += 1
         }
+        // An unreadable entry proves nothing about the copy — a read that
+        // errored mid-stream on a flaky disk is precisely the event verified
+        // copy exists to catch — and nothing else in the app surfaces the
+        // manifest. Left uncounted, the job would finish as Done. It is a
+        // failure here so the panel shows it and offers the retry.
+        for entry in manifest.unreadable {
+            failures.append((entry.source, "Could not be read back to verify"))
+            filesFailed += 1
+        }
     }
 
     func pause() { if state == .running { state = .paused } }

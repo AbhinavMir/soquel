@@ -12,6 +12,9 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
     private var pathLabel: NSTextField!
     private var status: NSTextField!
     private var session: SFTPSession?
+    /// The typed address, held until the connection succeeds so it can be
+    /// recorded in recents at that moment and not before.
+    private var address: RemoteLocations.Address?
 
     private var entries: [SFTPSession.Entry] = []
     private var path = "."
@@ -30,15 +33,26 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
 
     /// Opens a window on `location`, asking for a password only if the server
     /// wants one. A host already in the SSH agent connects without a prompt.
-    static func open(_ location: SFTPSession.Location, over host: NSWindow?) {
+    /// `address` is what the user typed; it enters the recents list only
+    /// after the server accepts the connection, like every mounted scheme.
+    static func open(
+        _ location: SFTPSession.Location,
+        remembering address: RemoteLocations.Address,
+        over host: NSWindow?
+    ) {
         let controller = SFTPBrowserController()
         live.insert(controller)
-        controller.begin(location, over: host)
+        controller.begin(location, remembering: address, over: host)
     }
 
-    private func begin(_ location: SFTPSession.Location, over host: NSWindow?) {
+    private func begin(
+        _ location: SFTPSession.Location,
+        remembering address: RemoteLocations.Address,
+        over host: NSWindow?
+    ) {
         let session = SFTPSession(location: location)
         self.session = session
+        self.address = address
         self.path = location.path
 
         build(title: "\(location.user)@\(location.host)")
@@ -50,7 +64,7 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
             guard let self else { return }
             switch outcome {
             case .connected:
-                self.load(self.path)
+                self.didConnect()
             case .failed:
                 // The error is already on the status line. A listing now
                 // would run over a connection that was never made and
@@ -83,7 +97,7 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
                 guard let self else { return }
                 switch outcome {
                 case .connected:
-                    self.load(self.path)
+                    self.didConnect()
                 case .needsPassword:
                     self.setStatus("That username or password was refused.", isError: true)
                 case .failed:
@@ -93,6 +107,17 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
                 }
             }
         }
+    }
+
+    /// The mount flows record an address only after a verified mount. The
+    /// browser keeps that contract: the address enters the recents list
+    /// here, once ssh has accepted the connection, so a typo or a dead host
+    /// never takes one of the ten slots from an address that works.
+    private func didConnect() {
+        if let address {
+            RemoteLocations.remember(address)
+        }
+        load(path)
     }
 
     /// How an attempt at the master connection ended. Success and a hard
@@ -162,13 +187,27 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
     /// not arrive under a label that already names a different one.
     private var loadGeneration = 0
 
+    /// The navigation in flight, if any: where it goes, and what the history
+    /// will be once its listing arrives. goUp starts from this instead of
+    /// the committed path, so each press climbs one more level even while
+    /// the server has not answered the previous press.
+    private struct PendingNavigation {
+        var path: String
+        var history: [String]
+    }
+    private var pending: PendingNavigation?
+
     /// Reads `path`, and only makes it the current folder once the listing
     /// arrives. Committing the path up front left the table showing one
     /// folder while every double-click resolved names against another.
-    private func load(_ path: String, addingToHistory: Bool = false) {
+    /// `historyOnArrival` is installed at that same moment, and only then:
+    /// history changes are part of the navigation, and a folder that refuses
+    /// to list must leave the history it would have consumed intact.
+    private func load(_ path: String, historyOnArrival: [String]? = nil) {
         guard let session else { return }
         loadGeneration += 1
         let generation = loadGeneration
+        pending = PendingNavigation(path: path, history: historyOnArrival ?? history)
         setStatus("Reading…", isError: false)
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -178,15 +217,15 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
             DispatchQueue.main.async {
                 guard generation == self.loadGeneration else { return }
                 if let failure {
+                    // The navigation did not happen. Drop it, so the next Up
+                    // starts again from the folder still on screen.
+                    self.pending = nil
                     self.setStatus(failure.localizedDescription, isError: true)
                     return
                 }
-                // History records only navigations that completed; a refused
-                // folder never happened, so Up must not lead back to it.
-                if addingToHistory, self.path != path {
-                    self.history.append(self.path)
-                }
                 self.path = path
+                if let historyOnArrival { self.history = historyOnArrival }
+                self.pending = nil
                 self.pathLabel.stringValue = path == "." ? "~" : path
                 // Folders first, then by name — the same order the rest of the
                 // application uses when it is not asked for something else.
@@ -210,17 +249,32 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
         guard entries.indices.contains(table.selectedRow) else { return }
         let entry = entries[table.selectedRow]
         if entry.isDirectory {
-            load(child(entry.name), addingToHistory: true)
+            // History records only navigations that completed; a refused
+            // folder never happened, so Up must not lead back to it. The
+            // rows on screen belong to the committed folder, so the entry
+            // pushed is the committed path, not any navigation in flight.
+            let target = child(entry.name)
+            load(target, historyOnArrival: target == path ? history : history + [path])
         } else {
             openFile(entry)
         }
     }
 
     @objc private func goUp() {
-        if let previous = history.popLast() { load(previous); return }
-        guard path != "." , path != "/" else { return }
-        let parent = (path as NSString).deletingLastPathComponent
-        load(parent.isEmpty ? "." : parent)
+        // Start from the navigation in flight when there is one: two quick
+        // presses must climb two levels, not compute the same parent twice.
+        let fromPath = pending?.path ?? path
+        let fromHistory = pending?.history ?? history
+        if let previous = fromHistory.last {
+            // The entry is not popped here. It leaves the history only when
+            // the listing arrives; a folder that refuses to list would
+            // otherwise consume the entry without going anywhere.
+            load(previous, historyOnArrival: Array(fromHistory.dropLast()))
+            return
+        }
+        guard fromPath != ".", fromPath != "/" else { return }
+        let parent = (fromPath as NSString).deletingLastPathComponent
+        load(parent.isEmpty ? "." : parent, historyOnArrival: fromHistory)
     }
 
     /// Fetches the file to a temporary folder and hands it to whatever opens

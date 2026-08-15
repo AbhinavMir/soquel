@@ -215,8 +215,14 @@ final class ShelfPanelController: NSWindowController {
     /// Hands the shelf to the ordinary transfer engine, so conflicts, undo and
     /// the transfer queue all behave as they do for any other copy or move.
     private func deliver(moving: Bool) {
-        guard let destination, !Shelf.isEmpty, !deliveryInFlight else { return }
+        // One read of the shelf, guarded before the flag is set. Every read
+        // of Shelf.urls re-stats the shelved paths, so a second read can
+        // come back empty when a file vanished between the two — and
+        // transfer() returns without calling its completion for an empty
+        // list, which would leave deliveryInFlight stuck true and the
+        // buttons disabled until relaunch.
         let urls = Shelf.urls
+        guard let destination, !urls.isEmpty, !deliveryInFlight else { return }
         deliveryInFlight = true
         copyButton.isEnabled = false
         moveButton.isEnabled = false

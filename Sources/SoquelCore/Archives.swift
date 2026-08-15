@@ -43,7 +43,7 @@ enum Archive {
         case "tar", "tgz", "gz", "bz2", "tbz", "xz":
             return ("/usr/bin/tar", ["-tvf", path])
         case "7z":
-            return which("7z").map { ($0, ["l", "-ba", path]) }
+            return sevenZip().map { ($0, ["l", "-ba", path]) }
         case "rar":
             return which("unrar").map { ($0, ["lb", path]) }
         default:
@@ -57,6 +57,12 @@ enum Archive {
             if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
         }
         return nil
+    }
+
+    /// Homebrew's current sevenzip formula installs `7zz`; the legacy p7zip
+    /// formula installs `7z`. Both take the same commands, so either serves.
+    static func sevenZip() -> String? {
+        which("7zz") ?? which("7z")
     }
 
     /// Lists an archive's contents. Returns an empty list when no tool can read
@@ -91,7 +97,7 @@ enum Archive {
         case "zip", "jar", "ipa": tool = ("/usr/bin/unzip", ["-q", url.path, "-d", destination.path])
         case "tar", "tgz", "gz", "bz2", "tbz", "xz":
             tool = ("/usr/bin/tar", ["-xf", url.path, "-C", destination.path])
-        case "7z": tool = which("7z").map { ($0, ["x", url.path, "-o" + destination.path]) }
+        case "7z": tool = sevenZip().map { ($0, ["x", url.path, "-o" + destination.path]) }
         case "rar": tool = which("unrar").map { ($0, ["x", url.path, destination.path + "/"]) }
         default: tool = nil
         }
@@ -109,10 +115,15 @@ enum Archive {
                 return
             }
             let result = runCapturing(tool.0, tool.1)
-            // unrar exits 1 for warnings on an extraction that completed;
-            // every other status, from any tool, means it stopped early.
+            // unzip, 7z and unrar all exit 1 for warnings on an extraction
+            // that completed: unzip's manual says "processing completed
+            // successfully anyway", 7z's says "Warning (Non fatal error(s))".
+            // tar has no such convention; from it, and for every status above
+            // 1 from any tool, the extraction stopped early.
+            let toolName = (tool.0 as NSString).lastPathComponent
             let failed = result.status != 0
-                && !(tool.0.hasSuffix("unrar") && result.status == 1)
+                && !(result.status == 1
+                    && ["unzip", "7z", "7zz", "unrar"].contains(toolName))
             let landed = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
             DispatchQueue.main.async {
                 if failed {
@@ -271,6 +282,10 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
         guard let host = controller.window, panel == nil else { return }
         owner = controller
         self.url = url
+        // The new table asks this controller for rows the moment the sheet
+        // first draws. Without a reset it would show the previous archive's
+        // entries under the new title until the new listing returns.
+        entries = []
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 460),

@@ -338,13 +338,18 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             restoreCollectionSelection(selectedURLsCache)
         } else {
             tableView.reloadData()
-            // The cache carries the selection across the switch. Without this
-            // the table re-asserted whatever rows it held before icon mode,
-            // and the next command acted on files the user never picked.
-            if selectedURLsCache.isEmpty {
-                tableView.deselectAll(nil)
-            } else {
-                restoreSelection(selectedURLsCache)
+            // The cache carries the selection across the switch. The table's
+            // own rows are always cleared first: reloadData keeps old row
+            // indexes, and restoreSelection never deselects, so a cached URL
+            // that is gone from the listing — the folder just entered, a
+            // trashed file, a filtered-out item — would otherwise leave the
+            // table asserting rows the user never picked. The cache is
+            // captured before deselecting, because deselection runs the
+            // selection-changed delegate, which rewrites the cache.
+            let cached = selectedURLsCache
+            tableView.deselectAll(nil)
+            if !cached.isEmpty {
+                restoreSelection(cached)
             }
         }
     }
@@ -536,7 +541,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                             self.collectionScroll.contentView.scroll(to: .zero)
                             self.collectionScroll.reflectScrolledClipView(self.collectionScroll.contentView)
                         }
-                    } else if self.tableView.numberOfRows > 0 {
+                    }
+                    // The table resets in every mode, not only when it is on
+                    // screen. A hidden table keeps its offset across reloads,
+                    // so navigating in icon mode and then switching to the
+                    // list opened it at the previous folder's position.
+                    if self.tableView.numberOfRows > 0 {
                         self.tableView.scrollRowToVisible(self.tableView.selectedRow >= 0 ? self.tableView.selectedRow : 0)
                     }
                 }
@@ -557,7 +567,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             self.refreshGitStatus()
             self.measureFolderSizes()
             self.requestMetadata()
-            if Prefs.autoFitColumns { self.fitColumnsToContent() }
+            if Prefs.autoFitColumns { self.fitColumnsToContent(persistWidths: false) }
             self.reportStatus()
             completion?()
         }
@@ -668,23 +678,49 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
     }
 
+    /// Guards against a slow repository's answer landing after this pane
+    /// moved elsewhere. The token is per pane on purpose: a shared counter
+    /// in the reader once dropped the answer for every pane but the last
+    /// one to ask, so the reader now delivers to everyone and each pane
+    /// discards only its own superseded requests.
+    private var gitRequestToken = UUID()
+
     /// Git status is Tier 3 metadata: the listing is already on screen before
     /// this runs, and a repository that cannot be read simply shows nothing.
     private func refreshGitStatus() {
         guard Prefs.showGitStatus else {
+            // Invalidate any completion still in flight, or its late answer
+            // would repopulate the statuses being cleared here.
+            gitRequestToken = UUID()
             gitStatuses = [:]
             gitRootURL = nil
             return
         }
+        let token = UUID()
+        gitRequestToken = token
         GitStatusReader.shared.status(for: url) { [weak self] statuses, root in
-            guard let self else { return }
+            guard let self, self.gitRequestToken == token else { return }
+            // A completion can also land between a navigation and the reload
+            // that follows it, while the token is still current. An answer
+            // for a repository that no longer contains this pane's folder
+            // would badge the new folder with the old repository's statuses.
+            if let root {
+                let rootPath = root.standardizedFileURL.path
+                let herePath = self.url.standardizedFileURL.path
+                guard herePath == rootPath || herePath.hasPrefix(rootPath + "/") else { return }
+            }
             self.gitStatuses = statuses
             self.gitRootURL = root
             guard self.isViewLoaded else { return }
             self.tableView.reloadData()
             // The icon tiles carry the badge too; only reloading the table
             // left them stale in icon view.
-            if self.isIconMode { self.collectionView.reloadData() }
+            if self.isIconMode {
+                self.collectionView.reloadData()
+                // reloadData clears a collection view's selection, so a
+                // badge refresh must put back what the user had picked.
+                self.restoreCollectionSelection(self.selectedURLsCache)
+            }
         }
     }
 
@@ -1752,7 +1788,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     /// can tell the fit's own notifications from a user's drag.
     private var isFittingColumns = false
 
-    func fitColumnsToContent() {
+    /// `persistWidths` separates the two callers. The resize handler is muted
+    /// while a fit runs, so an explicit Fit Columns must record its widths
+    /// here or they are lost to new windows and the next launch. The
+    /// automatic fit on reload passes false: it runs again anyway, and
+    /// writing settings once per column on every reload is pure churn.
+    func fitColumnsToContent(persistWidths: Bool = true) {
         guard isViewLoaded, !items.isEmpty else { return }
         isFittingColumns = true
         defer { isFittingColumns = false }
@@ -1777,6 +1818,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             // holding one long filename. Truncating is the lesser loss.
             let ceiling: CGFloat = key == "name" ? 320 : 600
             column.width = min(max(widest, column.minWidth), ceiling)
+            if persistWidths { Self.saveWidth(column.width, for: key) }
         }
     }
 

@@ -475,9 +475,15 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
         // in columns adds levels without moving the pane's URL, so the deepest
         // differs from it after one descend, and comparing there tore down
         // the drill-down on every settings change.
-        if columns, let url = currentURL,
-           columnBrowser.rootURL?.standardizedFileURL != url.standardizedFileURL {
+        guard columns, let url = currentURL else { return }
+        if columnBrowser.rootURL?.standardizedFileURL != url.standardizedFileURL {
             columnBrowser.show(url)
+        } else {
+            // A matching root can still be stale: files change while the
+            // list view is in front, and a sort change reaches here without
+            // a reload. Re-read the columns in place, keeping the
+            // drill-down that the root comparison exists to protect.
+            columnBrowser.refreshColumns()
         }
     }
 
@@ -603,7 +609,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSTextFieldD
 
     func fileListDidReload(_ list: FileListViewController) {
         guard list === activeList, (activeList?.mode ?? Prefs.viewMode) == .column else { return }
-        columnBrowser.refreshDeepest()
+        columnBrowser.refreshColumns()
     }
 
     func fileListDidRequestFilter(_ list: FileListViewController) {

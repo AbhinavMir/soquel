@@ -72,10 +72,17 @@ final class GitStatusReader {
     /// global generation counter used to stand here, and it dropped the
     /// answer for every pane except the last one to ask.
     private var pending: [URL: [([String: GitState], URL?) -> Void]] = [:]
+    /// Roots where a request arrived while a run was already reading. Such a
+    /// request can be the echo of a change made after that run started, so
+    /// the run's snapshot may not include it; one fresh run follows.
+    private var dirtyRoots: Set<URL> = []
 
     /// Statuses keyed by absolute path, for every changed file in the
     /// repository containing `directory`. Returns immediately with a cached
-    /// answer when one exists, then calls back with fresh data.
+    /// answer when one exists, then calls back with fresh data. The
+    /// completion can run more than once: a request that joins a read
+    /// already under way gets that read's snapshot first and the follow-up
+    /// run's answer after it.
     func status(
         for directory: URL,
         cached: (([String: GitState]) -> Void)? = nil,
@@ -91,16 +98,34 @@ final class GitStatusReader {
         // result rather than starting another `git status` on the same tree.
         if pending[root] != nil {
             pending[root]?.append(completion)
+            // This request may be the result of a change the running read
+            // started before, so its snapshot cannot be trusted to include
+            // it. Remember to read again once the run finishes, or stale
+            // statuses would stick until an unrelated filesystem event.
+            dirtyRoots.insert(root)
             return
         }
         pending[root] = [completion]
+        startRun(root: root)
+    }
+
+    /// One `git status` run for one repository. When a request joined while
+    /// the run was reading, the run delivers its snapshot — the newest answer
+    /// that exists — and immediately reads again, keeping the same waiters
+    /// registered so they also hear the corrected answer.
+    private func startRun(root: URL) {
         queue.async { [weak self] in
             let statuses = Self.read(root: root)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.cache[root] = statuses
-                let waiting = self.pending.removeValue(forKey: root) ?? []
-                for callback in waiting { callback(statuses, root) }
+                if self.dirtyRoots.remove(root) != nil {
+                    for callback in self.pending[root] ?? [] { callback(statuses, root) }
+                    self.startRun(root: root)
+                } else {
+                    let waiting = self.pending.removeValue(forKey: root) ?? []
+                    for callback in waiting { callback(statuses, root) }
+                }
             }
         }
     }

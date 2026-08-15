@@ -294,7 +294,12 @@ enum FolderTree {
     /// reaches home only through a duplicate row. The chain starts at the
     /// deepest ancestor that is itself a root, so a home or volume path walks
     /// down from its own root node.
-    static func chain(to url: URL) -> [URL] {
+    ///
+    /// The sidebar passes the roots its tree was built with. The default
+    /// enumerates mounted volumes, which touches the filesystem and can stall
+    /// on a dead network mount — a price a per-navigation caller on the main
+    /// thread must not pay.
+    static func chain(to url: URL, roots: [URL] = FolderTree.roots) -> [URL] {
         var chain: [URL] = []
         var cursor: URL? = url.standardizedFileURL
         while let current = cursor {

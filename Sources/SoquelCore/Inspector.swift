@@ -20,6 +20,12 @@ final class InspectorView: NSView {
     private var current: URL?
     /// Guards against a slow checksum landing after the selection moved on.
     private var checksumToken = UUID()
+    /// The finished hash for `current`, and whether one is being computed.
+    /// The details are rebuilt whenever a metadata read lands, so this state
+    /// must live outside the stack or the rebuild erases the computed row
+    /// and re-arms the button mid-hash. Both reset when the selection moves.
+    private var checksumResult: String?
+    private var isComputingChecksum = false
     /// Metadata is read in the background; the panel hears about the answer
     /// through this, or the rows would only appear on a reselection.
     private var metadataObserver: NSObjectProtocol?
@@ -53,7 +59,11 @@ final class InspectorView: NSView {
             forName: .soquelMetadataRead, object: nil, queue: .main
         ) { [weak self] note in
             guard let self, let url = note.object as? URL, url == self.current else { return }
-            self.showDetails(of: url)
+            // The rebuild must not request another read: for a file under
+            // active writes, each read would invalidate the last one and
+            // trigger the next, and the panel would churn for as long as
+            // the writes continue.
+            self.showDetails(of: url, startMetadataRead: false)
         }
 
         previewContainer = NSView()
@@ -134,6 +144,8 @@ final class InspectorView: NSView {
     /// Shows one file. Passing nil, or more than one selection, clears it.
     func show(_ urls: [URL]) {
         checksumToken = UUID()
+        checksumResult = nil
+        isComputingChecksum = false
 
         guard urls.count == 1, let url = urls.first else {
             current = nil
@@ -245,7 +257,7 @@ final class InspectorView: NSView {
         return stack
     }
 
-    private func showDetails(of url: URL) {
+    private func showDetails(of url: URL, startMetadataRead: Bool = true) {
         clearDetails()
 
         let keys: Set<URLResourceKey> = [
@@ -308,15 +320,18 @@ final class InspectorView: NSView {
             detailStack.addArrangedSubview(row("Type", type))
         }
 
-        // Whatever media metadata has already been read, without triggering a
-        // fresh scan from here.
+        // Whatever media metadata has already been read. A fresh selection
+        // also asks for a background check, so a file overwritten since its
+        // last read shows current values; the check is skipped on the
+        // notification-driven rebuild, which must not start the next read.
         if let record = MetadataReader.shared.cached(url) {
             for field in MetadataField.allCases {
                 if let value = record[field] {
                     detailStack.addArrangedSubview(row(field.title, value))
                 }
             }
-        } else if !isDirectory {
+        }
+        if startMetadataRead, !isDirectory {
             MetadataReader.shared.read(url)
         }
 
@@ -330,9 +345,17 @@ final class InspectorView: NSView {
         }
 
         detailStack.addArrangedSubview(row("Where", url.deletingLastPathComponent().path))
-        checksumButton.isHidden = isDirectory
-        checksumButton.title = "Compute SHA-256"
-        checksumButton.isEnabled = true
+        // The checksum survives a rebuild: a metadata read landing after the
+        // hash finished must not wipe the row, and one landing mid-hash must
+        // not re-arm the button for a redundant second run.
+        if let checksumResult {
+            detailStack.addArrangedSubview(row("SHA-256", checksumResult))
+            checksumButton.isHidden = true
+        } else {
+            checksumButton.isHidden = isDirectory
+            checksumButton.title = isComputingChecksum ? "Computing…" : "Compute SHA-256"
+            checksumButton.isEnabled = !isComputingChecksum
+        }
     }
 
     /// "rwxr-xr-x (755)".
@@ -385,6 +408,7 @@ final class InspectorView: NSView {
         guard let url = current else { return }
         let token = UUID()
         checksumToken = token
+        isComputingChecksum = true
         checksumButton.isEnabled = false
         checksumButton.title = "Computing…"
 
@@ -392,8 +416,11 @@ final class InspectorView: NSView {
             let digest = Checksum.sha256(of: url)
             DispatchQueue.main.async {
                 guard let self, self.checksumToken == token else { return }
+                let text = digest ?? "could not read file"
+                self.isComputingChecksum = false
+                self.checksumResult = text
                 self.checksumButton.isHidden = true
-                self.detailStack.addArrangedSubview(self.row("SHA-256", digest ?? "could not read file"))
+                self.detailStack.addArrangedSubview(self.row("SHA-256", text))
             }
         }
     }

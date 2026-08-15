@@ -53,17 +53,33 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         )
         window.title = "Soquel"
         window.titlebarAppearsTransparent = false
-        window.setFrameAutosaveName("SoquelMainWindow")
+        // Only one window at a time can own the autosave name; for any other
+        // the call returns false and that window neither saves nor restores.
+        let ownsAutosaveFrame = window.setFrameAutosaveName("SoquelMainWindow")
         window.minSize = NSSize(width: 640, height: 380)
         self.init(window: window)
         window.delegate = self
         window.alphaValue = Theme.windowOpacity
         build()
         restoreSession()
-        // Centring unconditionally threw away the origin the autosave name
-        // restored, so the window forgot its place on every launch. Centre
-        // only when no frame has been saved yet.
-        if !window.setFrameUsingName("SoquelMainWindow") { window.center() }
+        if ownsAutosaveFrame {
+            // Centring unconditionally threw away the origin the autosave
+            // name restored, so the window forgot its place on every launch.
+            // Centre only when no frame has been saved yet.
+            if !window.setFrameUsingName("SoquelMainWindow") { window.center() }
+        } else if let front = NSApp.orderedWindows.first(where: {
+            $0 !== window && $0.windowController is MainWindowController
+        }) {
+            // Reading the shared saved frame here opened every further window
+            // exactly on top of the first, so nothing visibly changed when one
+            // appeared. Cascade from the frontmost window instead; the zero
+            // point asks it for its own offset without moving it.
+            _ = window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
+        } else {
+            // No other window is on screen to cascade from — the owner may be
+            // minimised — so the pre-autosave behaviour is the right one.
+            window.center()
+        }
     }
 
     // MARK: - Construction
@@ -919,21 +935,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                 pane.addTab(url: URL(fileURLWithPath: extra), activate: false)
             }
             // activeTabs indexes the pane's full saved tab list, but this pane
-            // was rebuilt from only the surviving tabs, so the number must be
-            // mapped through the path. When the active tab itself is gone, the
-            // count of survivors before it lands on the nearest neighbour.
+            // was rebuilt from only the surviving tabs, so the number is
+            // mapped by position: survivors keep their saved order, and the
+            // active tab's new index is the count of survivors before it.
+            // Matching by path value picked the first duplicate when a pane
+            // held two tabs on the same folder. When the active tab itself is
+            // gone, the same count lands on the nearest surviving neighbour.
             let savedIndex = survivingWithIndices[position].index
             if workspace.activeTabs.indices.contains(savedIndex) {
                 let original = workspace.panes[savedIndex]
                 let activeIndex = workspace.activeTabs[savedIndex]
-                if original.indices.contains(activeIndex),
-                   let selected = tabs.firstIndex(of: original[activeIndex]) {
-                    pane.selectTab(at: selected)
-                } else {
-                    let before = original.prefix(max(activeIndex, 0))
-                        .filter { tabs.contains($0) }.count
-                    pane.selectTab(at: min(before, tabs.count - 1))
-                }
+                // Survival is decided per path, so a set of the surviving
+                // paths tells whether each original position was kept.
+                let survivors = Set(tabs)
+                let before = original.prefix(max(activeIndex, 0))
+                    .filter { survivors.contains($0) }.count
+                pane.selectTab(at: min(before, tabs.count - 1))
             }
         }
 

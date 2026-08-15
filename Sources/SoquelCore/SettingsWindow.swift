@@ -192,6 +192,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 /// A colour well per slot, for light and dark, writing straight to theme.json.
 final class AppearanceSettingsView: NSView {
     private var wells: [(slot: ThemeConfig.Slot, dark: Bool, well: ColourSwatchButton)] = []
+    private var saveStatus: NSTextField!
     private var observer: NSObjectProtocol?
 
     init() {
@@ -269,7 +270,15 @@ final class AppearanceSettingsView: NSView {
         note.lineBreakMode = .byWordWrapping
         note.maximumNumberOfLines = 2
 
-        let buttons = NSStackView(views: [reset, openFile])
+        // Where a failed write of theme.json is reported. The window still
+        // repaints from memory when the write fails, so without a visible
+        // message the edit looks applied and silently reverts at relaunch.
+        saveStatus = label("")
+        saveStatus.textColor = Theme.danger
+        saveStatus.lineBreakMode = .byTruncatingTail
+        saveStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let buttons = NSStackView(views: [reset, openFile, saveStatus])
         buttons.orientation = .horizontal
         buttons.spacing = 10
         buttons.translatesAutoresizingMaskIntoConstraints = false
@@ -295,6 +304,7 @@ final class AppearanceSettingsView: NSView {
 
             buttons.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 18),
             buttons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            buttons.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -18),
 
             note.topAnchor.constraint(equalTo: buttons.bottomAnchor, constant: 12),
             note.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
@@ -373,7 +383,15 @@ final class AppearanceSettingsView: NSView {
         } else {
             config.light[slot.rawValue] = colour.hexString
         }
-        Theme.apply(config)
+        // The wells repaint from memory whether or not the write succeeds,
+        // so the failure has to be said out loud here or the edit silently
+        // reverts at the next launch. Cleared on success so a message left
+        // over from a transient failure does not outlive it.
+        if let error = Theme.apply(config) {
+            saveStatus.stringValue = "Could not save: \(error.localizedDescription)"
+        } else {
+            saveStatus.stringValue = ""
+        }
     }
 
     @objc private func resetAll() {

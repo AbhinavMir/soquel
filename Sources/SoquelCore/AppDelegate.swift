@@ -118,7 +118,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Saving every controller had each overwrite the previous, keeping
         // whichever window happened to be created last rather than the one
         // the user was working in.
-        let front = NSApp.mainWindow?.windowController as? MainWindowController
+        // NSApp.mainWindow is nil while the app is inactive — quitting from
+        // the Dock menu, the app switcher, or at logout — so the front window
+        // is taken from the z-order, which stays valid while another
+        // application is active. The first controller stands in only when no
+        // window is on screen at all, such as when every window is minimised.
+        let front = NSApp.orderedWindows
+            .compactMap { $0.windowController as? MainWindowController }
+            .first
         (front ?? windowControllers.first)?.saveSession()
         // Writes are coalesced, so the last quarter second of changes — which
         // includes the session just saved above — is still only in memory.
@@ -263,6 +270,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 /// built once, so without this a workspace saved after launch would not
 /// appear until a relaunch, and a removed one would linger.
 private final class WorkspaceMenuDelegate: NSObject, NSMenuDelegate {
+    // Without this, AppKit calls menuNeedsUpdate during key-equivalent
+    // matching — on every Cmd-key press — and the rebuild below stats every
+    // saved tab path, which blocks the main thread for the full network
+    // timeout when a workspace points at an unreachable mount. No workspace
+    // item has a key equivalent, so the scan can be declined outright and
+    // the rebuild runs only when the menu actually opens.
+    func menuHasKeyEquivalent(
+        _ menu: NSMenu, for event: NSEvent,
+        target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
+        action: UnsafeMutablePointer<Selector?>
+    ) -> Bool {
+        false
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let fresh = MainWindowController.workspaceMenu()

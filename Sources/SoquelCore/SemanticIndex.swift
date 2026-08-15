@@ -120,9 +120,12 @@ final class SemanticIndex {
     /// A rebuild asked for while one is running. The running pass read its
     /// roots before the new request existed, so dropping the request would
     /// leave a freshly added folder unindexed with no error and a status bar
-    /// that reports success. The request is kept — newest wins — and started
-    /// when the current pass lands, reading the roots afresh.
-    private var queuedRebuild: (progress: (Progress) -> Void, finished: (Int) -> Void)?
+    /// that reports success. The request is kept and started when the current
+    /// pass lands. The newest request decides what is walked — its roots are
+    /// stored as given, nil meaning the settings list read afresh at replay —
+    /// and every superseded request's finished closure still fires with the
+    /// replay's count, so no caller waits forever.
+    private var queuedRebuild: (roots: [URL]?, progress: (Progress) -> Void, finished: (Int) -> Void)?
 
     private init() {
         // Off the main thread. This runs on whoever first touches `shared`,
@@ -342,14 +345,30 @@ final class SemanticIndex {
 
     /// Reads every readable file under the indexed roots that has changed, and
     /// leaves the rest alone.
+    ///
+    /// nil roots means the settings list, read when the pass actually starts.
+    /// That timing matters for a request queued behind a running pass: it
+    /// replays later, and a root added in the meantime must be walked.
+    /// Explicit roots are honoured exactly, even when the request waits.
     func rebuild(
-        roots: [URL] = SemanticIndex.roots,
+        roots: [URL]? = nil,
         progress: @escaping (Progress) -> Void,
         finished: @escaping (Int) -> Void
     ) {
         guard Self.isAvailable else { finished(0); return }
         guard !isIndexing else {
-            queuedRebuild = (progress, finished)
+            // The newest request decides what the replay walks, but a
+            // completion promise is never dropped: a superseded request's
+            // finished closure fires alongside the replacement's.
+            if let waiting = queuedRebuild {
+                let waitingFinished = waiting.finished
+                queuedRebuild = (roots, progress, { (count: Int) in
+                    waitingFinished(count)
+                    finished(count)
+                })
+            } else {
+                queuedRebuild = (roots, progress, finished)
+            }
             return
         }
         isIndexing = true
@@ -357,6 +376,7 @@ final class SemanticIndex {
 
         queue.async { [weak self] in
             guard let self else { return }
+            let roots = roots ?? SemanticIndex.roots
             var seen = 0, indexed = 0
             var freshStamps: [String: FileStamp] = [:]
             var kept: [Entry] = []
@@ -438,12 +458,14 @@ final class SemanticIndex {
                 NotificationCenter.default.post(name: .soquelIndexChanged, object: nil)
                 Log.info(.search, "Semantic index: \(all.count) passages across \(freshStamps.count) files")
                 finished(all.count)
-                // A request that arrived mid-pass starts now, with the default
-                // roots argument reading the list afresh so a root added since
+                // A request that arrived mid-pass starts now, with the roots
+                // it asked for. A request that named none passes nil through,
+                // so the settings list is read afresh and a root added since
                 // this pass began is walked.
                 if let queued = self.queuedRebuild {
                     self.queuedRebuild = nil
-                    self.rebuild(progress: queued.progress, finished: queued.finished)
+                    self.rebuild(roots: queued.roots,
+                                 progress: queued.progress, finished: queued.finished)
                 }
             }
         }

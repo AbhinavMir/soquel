@@ -75,32 +75,35 @@ final class MetadataReader {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
-    /// The cached record, dropped when the file has changed since it was read.
-    private func validated(_ url: URL) -> Record? {
-        guard let hit = cache.object(forKey: url as NSURL) else { return nil }
-        guard hit.stamp == Self.stamp(of: url) else {
-            cache.removeObject(forKey: url as NSURL)
-            return nil
-        }
-        return hit.record
+    /// The cached record for a file. A plain lookup, and deliberately so: the
+    /// callers are per-cell draw paths and per-file reload loops on the main
+    /// thread, so this must never touch the filesystem — one synchronous stat
+    /// per cell on a network mount stalls the whole UI, and a dead mount
+    /// hangs it. Freshness is `read`'s job, on the background queue.
+    func cached(_ url: URL) -> Record? {
+        cache.object(forKey: url as NSURL)?.record
     }
-
-    func cached(_ url: URL) -> Record? { validated(url) }
 
     func value(_ field: MetadataField, for url: URL) -> String? {
-        validated(url)?[field]
+        cached(url)?[field]
     }
 
-    /// Starts a read unless one is cached or already running. Nothing here
-    /// blocks the listing; a column shows nothing until an answer arrives.
+    /// Checks the cache against the file and extracts when needed, entirely
+    /// on the background queue. A file overwritten since its last read gets
+    /// fresh values; an unchanged one costs one background stat and posts no
+    /// notification. Nothing here blocks the listing.
     func read(_ url: URL) {
-        guard validated(url) == nil, !inFlight.contains(url) else { return }
+        guard !inFlight.contains(url) else { return }
         inFlight.insert(url)
 
         queue.async { [weak self] in
             // The stamp is read before the extraction, so a file that changes
             // mid-read stores an already-stale stamp and is read again.
             let stamp = Self.stamp(of: url)
+            if let hit = self?.cache.object(forKey: url as NSURL), hit.stamp == stamp {
+                DispatchQueue.main.async { self?.inFlight.remove(url) }
+                return
+            }
             let record = Self.extract(from: url)
             DispatchQueue.main.async {
                 guard let self else { return }

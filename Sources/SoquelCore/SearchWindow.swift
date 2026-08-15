@@ -292,6 +292,14 @@ final class SearchWindowController: NSObject, NSTableViewDataSource, NSTableView
 
     private func startSearch() {
         search.cancel()
+        // A fresh engine per run, not just a fresh generation. The engine's
+        // queue is serial, and a walk stuck inside a filesystem call on an
+        // unresponsive network mount only observes the cancel when that call
+        // returns, which can take minutes. Reusing the instance would queue
+        // this run behind the stuck one; a new instance starts immediately,
+        // and the sequence guard below drops whatever the abandoned walk
+        // still delivers.
+        search = FileSearch()
         searchSequence += 1
         let sequence = searchSequence
         hits = []

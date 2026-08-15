@@ -30,6 +30,7 @@ enum Theme {
         do {
             config = try ThemeConfig.load()
             BackgroundImageCache.shared.invalidate()
+            lastBackgroundStamp = backgroundStamp(for: config)
             NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
             return nil
         } catch {
@@ -55,7 +56,10 @@ enum Theme {
     static func setBackground(_ background: BackgroundConfig) {
         var updated = config
         updated.background = background
-        BackgroundImageCache.shared.invalidate()
+        // apply() empties the image cache when the picture's file changed.
+        // The image-opacity slider also arrives here once per tick of a
+        // drag, and its edits leave the file alone, so they must keep the
+        // cached decode rather than force one per tick.
         apply(updated)
     }
 
@@ -67,10 +71,7 @@ enum Theme {
     @discardableResult
     static func apply(_ newConfig: ThemeConfig) -> Error? {
         config = newConfig
-        // The image cache keys on the URL alone, and reinstalling an updated
-        // theme writes new bytes to the same path, so the old picture would
-        // survive until relaunch if the cache were kept.
-        BackgroundImageCache.shared.invalidate()
+        invalidateImagesIfStale()
         var failure: Error?
         do {
             try ThemeConfig.write(newConfig)
@@ -81,6 +82,44 @@ enum Theme {
         noteOwnWrite()
         NotificationCenter.default.post(name: .soquelThemeChanged, object: nil)
         return failure
+    }
+
+    // MARK: - Background image staleness
+
+    /// The background image file as the cache last saw it: its URL plus the
+    /// modification date and size the file had on disk at that moment.
+    private struct BackgroundStamp: Equatable {
+        var url: URL
+        var modified: Date?
+        var size: UInt64?
+    }
+
+    private static var lastBackgroundStamp: BackgroundStamp?
+
+    private static func backgroundStamp(for config: ThemeConfig) -> BackgroundStamp? {
+        guard let url = config.background?.imageURL else { return nil }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return BackgroundStamp(
+            url: url,
+            modified: attributes?[.modificationDate] as? Date,
+            size: (attributes?[.size] as? NSNumber)?.uint64Value
+        )
+    }
+
+    /// Empties the image cache only when the picture itself changed.
+    ///
+    /// The cache keys on the URL alone, and reinstalling an updated theme
+    /// writes new bytes to the same path, so the old picture would survive
+    /// until relaunch if the URL were trusted on its own. But apply() also
+    /// runs on every tick of the opacity slider and the colour wells, and
+    /// emptying the cache there made every pane re-read and re-decode the
+    /// photo once per mouse tick. Comparing a stamp of the file costs one
+    /// stat per apply and tells the two cases apart.
+    private static func invalidateImagesIfStale() {
+        let stamp = backgroundStamp(for: config)
+        guard stamp != lastBackgroundStamp else { return }
+        BackgroundImageCache.shared.invalidate()
+        lastBackgroundStamp = stamp
     }
 
     // MARK: - Watching the file

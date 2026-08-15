@@ -33,8 +33,16 @@ final class ConnectToServerController: NSObject {
         self.panel = panel
 
         host.beginSheet(panel) { [weak self] _ in
-            self?.panel = nil
-            self?.owner = nil
+            guard let self else { return }
+            self.panel = nil
+            self.owner = nil
+            // Cancel can close the sheet while NetFS still blocks on a mount.
+            // If the flag survived into the next presentation, Connect in the
+            // reopened sheet would be refused, silently, until the stale call
+            // returned. The bump makes that call's completion obsolete, so
+            // its result cannot land in a sheet it does not belong to.
+            self.isMounting = false
+            self.attempt += 1
         }
         panel.makeFirstResponder(field)
     }
@@ -182,6 +190,11 @@ final class ConnectToServerController: NSObject {
     /// starts a second mount of the same URL against the first.
     private var isMounting = false
 
+    /// Counts presentations of the sheet. A mount completion compares its
+    /// captured value against this, so a mount that outlived a cancelled
+    /// sheet cannot write an old result into the sheet that replaced it.
+    private var attempt = 0
+
     @objc private func connect() {
         guard !isMounting else { return }
         status.stringValue = ""
@@ -197,13 +210,13 @@ final class ConnectToServerController: NSObject {
             // browser window instead. Asking first meant the refusal was
             // printed and the browser never ran.
             if address.scheme == .sftp, let location = sftpLocation(from: address) {
-                // The mount paths record their addresses themselves; this one
-                // never mounts, so it has to be recorded here or the recents
-                // list never learns the sheet's own headline flow.
-                RemoteLocations.remember(address)
+                // The browser records the address in recents once ssh accepts
+                // the connection — the same verified-only contract the mount
+                // paths keep. Recording here, before any connection, put
+                // typos and dead hosts at the top of the recents list.
                 let host = panel?.sheetParent
                 close()
-                SFTPBrowserController.open(location, over: host)
+                SFTPBrowserController.open(location, remembering: address, over: host)
                 return
             }
 
@@ -219,8 +232,9 @@ final class ConnectToServerController: NSObject {
             status.textColor = .secondaryLabelColor
             status.stringValue = "Connecting to \(address.host)…"
 
+            let attempt = self.attempt
             RemoteLocations.mount(address) { [weak self] result in
-                guard let self else { return }
+                guard let self, attempt == self.attempt else { return }
                 self.isMounting = false
                 self.spinner.stopAnimation(nil)
                 self.connectButton.isEnabled = true

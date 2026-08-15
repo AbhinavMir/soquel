@@ -369,6 +369,17 @@ final class FileSearch {
                 if !query.includePackages { options.insert(.skipsPackageDescendants) }
 
                 let rootDepth = root.standardizedFileURL.pathComponents.count
+                // On APFS the data volume is mounted twice: firmlinks graft
+                // it into "/", and the same files appear again under
+                // /System/Volumes/Data. A walk that starts at "/" reaches
+                // every one of those files through its firmlinked path, so
+                // the second mount is pruned there and nothing is skipped.
+                // The test is the root, not the scope: a folder search of
+                // the disk root is the identical walk and duplicated every
+                // hit when only the everywhere scope was pruned. A walk
+                // rooted anywhere else that still meets the mount, such as
+                // /System, has no other way to those files, so it descends.
+                let prunesDataVolume = root.standardizedFileURL.path == "/"
                 let enumerator = FileManager.default.enumerator(
                     at: root,
                     includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
@@ -382,16 +393,7 @@ final class FileSearch {
                 while let candidate = enumerator?.nextObject() as? URL {
                     if !self.isCurrent(token) { summary.cancelled = true; break outer }
 
-                    // On APFS the data volume is mounted twice: firmlinks graft
-                    // it into "/", and the same files appear again under
-                    // /System/Volumes/Data. A walk of "/" that descends into
-                    // the second mount reports every user file twice and burns
-                    // the result limit on duplicates. Nothing is skipped by
-                    // pruning it: every file there is reached through its
-                    // firmlinked path. Only the everywhere scope is pruned — a
-                    // search deliberately rooted inside /System/Volumes has no
-                    // other way to those files.
-                    if query.scope == .everywhere, candidate.path == "/System/Volumes/Data" {
+                    if prunesDataVolume, candidate.path == "/System/Volumes/Data" {
                         enumerator?.skipDescendants()
                         continue
                     }

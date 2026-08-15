@@ -284,7 +284,13 @@ final class FolderComparePanelController: NSWindowController {
     }
 
     @objc private func selectAllDifferences(_ sender: Any?) {
-        chosen = Set(entries.filter { $0.status.isDifference }.map(\.relativePath))
+        // Type conflicts stay out, exactly as the rescan completion leaves
+        // them: plan() refuses them and their checkbox is disabled, so a
+        // tick set here could never be cleared by hand, and the footer
+        // would count a copy that will never happen.
+        chosen = Set(entries
+            .filter { $0.status.isDifference && $0.status != .typeConflict }
+            .map(\.relativePath))
         refreshRows()
     }
 

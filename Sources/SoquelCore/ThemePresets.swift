@@ -27,13 +27,22 @@ enum ThemePresets {
     ///
     /// The background is chosen separately from the colours, so picking a
     /// palette must not throw away the picture behind the file list.
-    static func apply(_ preset: ThemePreset) {
-        Theme.apply(ThemeConfig(
+    ///
+    /// Returns the write error from `Theme.apply` so the Use button can
+    /// report it. On failure the config is also reloaded from disk: the
+    /// Themes pane derives its checkmark and status line from `Theme.config`
+    /// by comparison, so a preset left in memory while the file kept the old
+    /// colours would show as installed and then revert at the next launch.
+    @discardableResult
+    static func apply(_ preset: ThemePreset) -> Error? {
+        let failure = Theme.apply(ThemeConfig(
             light: preset.light, dark: preset.dark,
             background: Theme.config.background,
             windowOpacity: Theme.config.windowOpacity,
             style: preset.style
         ))
+        if failure != nil { Theme.reload() }
+        return failure
     }
 
     /// The preset the current colours came from, if they still match one.

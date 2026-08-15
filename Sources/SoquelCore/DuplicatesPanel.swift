@@ -4,7 +4,8 @@ import AppKit
 ///
 /// The scan is the easy half. Every row starts unticked, one copy in each group
 /// is marked as the keeper, and what happens is a move to the Trash that Undo
-/// can take back.
+/// can take back. On a volume without a Trash the panel warns and deletes
+/// outright instead, the same way the file list does.
 final class DuplicatesPanelController: NSWindowController {
     static let shared: DuplicatesPanelController = {
         let window = NSWindow(
@@ -191,14 +192,41 @@ final class DuplicatesPanelController: NSWindowController {
             return
         }
 
-        let alert = NSAlert()
-        alert.messageText = urls.count == 1 ? "Move 1 file to the Trash?" : "Move \(urls.count) items to the Trash?"
-        alert.informativeText = "They go to the Trash and ⌘Z brings them back."
-        alert.addButton(withTitle: "Move to Trash")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // On a network share there is no Trash: trashItem throws instead of
+        // falling back, so promising that ⌘Z brings things back would be
+        // false and nothing would be deleted at all. Warn the way the file
+        // list does, and send those items through the permanent delete the
+        // user just agreed to. The ordinary local case keeps its ordinary
+        // confirmation.
+        if let warning = TrashPolicy.warning(for: urls) {
+            let alert = NSAlert()
+            alert.messageText = warning.title
+            alert.informativeText = warning.body
+            let readOnly = urls.contains {
+                if case .readOnly = TrashPolicy.outcome(for: $0) { return true }
+                return false
+            }
+            if readOnly {
+                alert.runModal()
+                return
+            }
+            alert.addButton(withTitle: "Delete")
+            alert.addButton(withTitle: "Cancel")
+            alert.buttons.first?.hasDestructiveAction = true
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        } else {
+            let alert = NSAlert()
+            alert.messageText = urls.count == 1 ? "Move 1 file to the Trash?" : "Move \(urls.count) items to the Trash?"
+            alert.informativeText = "They go to the Trash and ⌘Z brings them back."
+            alert.addButton(withTitle: "Move to Trash")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
 
-        OperationEngine.shared.trash(urls) { [weak self] result in
+        let permanent = urls.filter { !TrashPolicy.outcome(for: $0).isRecoverable }
+        let recoverable = urls.filter { TrashPolicy.outcome(for: $0).isRecoverable }
+
+        let finish: (OperationResult) -> Void = { [weak self] result in
             guard let self else { return }
             UndoStack.shared.pushTrash(result.trashedPairs)
             // A failed trash looks exactly like a successful one from here —
@@ -207,8 +235,10 @@ final class DuplicatesPanelController: NSWindowController {
             if !result.failures.isEmpty {
                 let alert = NSAlert()
                 alert.alertStyle = .warning
-                alert.messageText = "Could not move \(result.failures.count) "
-                    + "item\(result.failures.count == 1 ? "" : "s") to the Trash"
+                let noun = "item\(result.failures.count == 1 ? "" : "s")"
+                alert.messageText = permanent.isEmpty
+                    ? "Could not move \(result.failures.count) \(noun) to the Trash"
+                    : "Could not delete \(result.failures.count) \(noun)"
                 alert.informativeText = result.failures.prefix(8)
                     .map { "\($0.url.lastPathComponent): \($0.error.localizedDescription)" }
                     .joined(separator: "\n")
@@ -216,6 +246,21 @@ final class DuplicatesPanelController: NSWindowController {
             }
             self.onChanged?()
             self.rescan()
+        }
+
+        if permanent.isEmpty {
+            OperationEngine.shared.trash(urls, completion: finish)
+        } else if recoverable.isEmpty {
+            OperationEngine.shared.deletePermanently(permanent, completion: finish)
+        } else {
+            OperationEngine.shared.deletePermanently(permanent) { deleted in
+                OperationEngine.shared.trash(recoverable) { trashed in
+                    var merged = trashed
+                    merged.succeeded.append(contentsOf: deleted.succeeded)
+                    merged.failures.append(contentsOf: deleted.failures)
+                    finish(merged)
+                }
+            }
         }
     }
 }

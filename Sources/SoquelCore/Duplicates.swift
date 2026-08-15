@@ -93,17 +93,16 @@ enum Duplicates {
         let folderDupes = folderGroups(
             folders, fileHashes: hashes, includeHidden: includeHidden, isCancelled: isCancelled
         )
-        // A file group living entirely inside reported duplicate folders is
-        // the folder group restated one file at a time: it double-counts the
-        // reclaimable bytes, and ticking both means the file trashes fail
-        // after the folder has already moved. A group with any copy outside
-        // the folders stays, so a lone extra copy elsewhere is still shown.
-        let folderPrefixes = folderDupes.flatMap(\.urls).map { $0.path + "/" }
-        if !folderPrefixes.isEmpty {
+        // A file group whose copies sit at the same relative path across one
+        // folder group's members is that folder group restated one file at a
+        // time: it double-counts the reclaimable bytes, and ticking both means
+        // the file trashes fail after the folder has already moved. Location
+        // alone is not enough to drop a group — internal duplicates within a
+        // single folder, or copies spread across two folder groups, survive
+        // the folder trash and must stay in the report.
+        if !folderDupes.isEmpty {
             report.groups.removeAll { group in
-                group.urls.allSatisfy { url in
-                    folderPrefixes.contains { url.path.hasPrefix($0) }
-                }
+                folderDupes.contains { subsumes($0, fileGroup: group) }
             }
         }
         report.groups.append(contentsOf: folderDupes)
@@ -147,35 +146,77 @@ enum Duplicates {
                 isFolder: true
             ))
         }
-        return groups
+        // {A, B} identical means every subfolder of A matches its twin in B,
+        // so {A/s, B/s} lands under its own fingerprint as a separate group.
+        // Reporting both restates the parent: the reclaimable bytes are
+        // counted twice, and ticking both trashes B first and then fails on
+        // B/s, which already moved inside it. A group is dropped when every
+        // member sits inside a member of one other group; the outermost group
+        // always survives, because nothing contains it.
+        return groups.filter { group in
+            !groups.contains { other in
+                other.urls != group.urls && group.urls.allSatisfy { member in
+                    other.urls.contains { member.path.hasPrefix($0.path + "/") }
+                }
+            }
+        }
     }
+
+    /// Whether trashing all but one member of `folder` removes all but one
+    /// copy in `fileGroup`: exactly one copy per member, all at the same
+    /// relative path. Only then does the folder group make the file group
+    /// redundant.
+    static func subsumes(_ folder: Group, fileGroup: Group) -> Bool {
+        guard fileGroup.urls.count == folder.urls.count else { return false }
+        var relatives: Set<String> = []
+        var members: Set<URL> = []
+        for url in fileGroup.urls {
+            guard let member = folder.urls.first(where: { url.path.hasPrefix($0.path + "/") }),
+                  let relative = relativePath(of: url, under: member)
+            else { return false }
+            relatives.insert(relative)
+            members.insert(member)
+        }
+        return relatives.count == 1 && members.count == folder.urls.count
+    }
+
+    /// Files that are Finder bookkeeping, not content. Two folders that
+    /// differ only in these are duplicates for every purpose this panel
+    /// serves, so they stay out of the fingerprint when hidden files are off.
+    static let noiseNames: Set<String> = [".DS_Store", ".localized", "Icon\r"]
 
     /// A folder's fingerprint is its contents' names and hashes, sorted. nil
     /// when any file in it was never hashed — an unhashed file means the
     /// contents are not known, and guessing they match is how a duplicate
     /// finder deletes something it should not have.
     ///
-    /// The walk here must skip the same hidden files the scan skipped:
-    /// otherwise a .DS_Store the scan never saw makes every real folder come
-    /// back nil. Zero-length files take part by name alone — the scan never
-    /// hashes them, and empty is empty.
+    /// Hidden files count even when the scan skipped them. A .git or .env
+    /// that only one folder has makes the folders different, and skipping it
+    /// here declared them identical and offered to trash one. Such hidden
+    /// files were never hashed, so the folder comes back nil rather than
+    /// grouped. Only known Finder noise is left out, which is what kept a
+    /// .DS_Store the scan never saw from turning every real folder nil.
+    /// Zero-length files take part by name alone — the scan never hashes
+    /// them, and empty is empty — but a fingerprint needs at least one hashed
+    /// file: folders whose files are all empty would otherwise group by name
+    /// alone to reclaim zero bytes, a match the scan itself calls useless.
     static func fingerprint(
         of folder: URL, fileHashes: [URL: String], includeHidden: Bool
     ) -> (String, Int64)? {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey]
-        var options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
-        if !includeHidden { options.insert(.skipsHiddenFiles) }
         guard let walker = FileManager.default.enumerator(
-            at: folder, includingPropertiesForKeys: keys, options: options
+            at: folder, includingPropertiesForKeys: keys, options: [.skipsPackageDescendants]
         ) else { return nil }
 
         var entries: [String] = []
         var total: Int64 = 0
+        var hashed = 0
 
         for case let url as URL in walker {
             guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
             if values.isSymbolicLink == true { return nil }
             if values.isDirectory == true { continue }
+            if !includeHidden, noiseNames.contains(url.lastPathComponent) { continue }
             guard let relative = relativePath(of: url, under: folder),
                   let size = values.fileSize else { return nil }
             if size == 0 {
@@ -185,9 +226,10 @@ enum Duplicates {
             guard let digest = fileHashes[url] else { return nil }
             entries.append("\(relative):\(digest)")
             total += Int64(size)
+            hashed += 1
         }
 
-        guard !entries.isEmpty else { return nil }
+        guard hashed > 0 else { return nil }
         return (entries.sorted().joined(separator: "\n"), total)
     }
 

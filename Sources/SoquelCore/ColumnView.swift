@@ -498,10 +498,35 @@ extension ColumnBrowserView {
     /// Narrows the deepest column as you type in the filter box.
     ///
     /// The file list filters its own table, which is not what is on screen
-    /// here, so the box appeared to do nothing in this view.
+    /// here, so the box appeared to do nothing in this view. The selection is
+    /// carried across the reload by URL: the table keeps selection by row
+    /// number, and changing the filter renumbers the rows, so a bare reload
+    /// moved the highlight onto whatever files took over those row numbers
+    /// while the pane's mirror kept the old URLs.
     func applyFilter(_ text: String) {
+        guard let level = levels.last else {
+            filterText = text
+            return
+        }
+        let index = levels.count - 1
+        let before = items(at: index)
+        let selected = level.table.selectedRowIndexes.compactMap {
+            before.indices.contains($0) ? before[$0].url : nil
+        }
         filterText = text
-        levels.last?.table.reloadData()
+        level.table.reloadData()
+        let after = items(at: index)
+        let restored = selected.compactMap { url in after.firstIndex { $0.url == url } }
+        isRemappingSelection = true
+        level.table.selectRowIndexes(IndexSet(restored), byExtendingSelection: false)
+        isRemappingSelection = false
+        // A narrower filter can hide selected files, and the pane's mirror
+        // has to hear that or Delete acts on files no longer on screen. When
+        // the browser itself is hidden the pane is showing another view, and
+        // reporting would overwrite that view's selection instead.
+        if !isHidden, restored.count != selected.count {
+            onSelectMany?(restored.map { after[$0].url })
+        }
     }
 
     /// Selects the first row in the deepest column whose name starts with
@@ -560,22 +585,53 @@ extension ColumnBrowserView {
         return nil
     }
 
-    /// Re-reads the deepest column, for after a trash or a rename. In place:
-    /// rebuilding through show() collapsed the whole path to one column and
-    /// lost the drill-down on every reload the pane forwarded here.
-    func refreshDeepest() {
-        // The folder being refreshed may itself be what was trashed or
-        // renamed; back out to the nearest ancestor column that still exists.
-        while levels.count > 1, let last = levels.last,
-              !FileManager.default.fileExists(atPath: last.url.path) {
-            let level = levels.removeLast()
-            level.container.removeFromSuperview()
-            level.divider.removeFromSuperview()
-            level.message.removeFromSuperview()
-        }
+    /// Re-reads every column, for after a trash, a rename, or a settings
+    /// change. In place: rebuilding through show() collapsed the whole path
+    /// to one column and lost the drill-down on every reload the pane
+    /// forwarded here. Reloading only the deepest was not enough either: a
+    /// hidden-files or sort change reaches every column, and ancestors left
+    /// alone kept drawing the old rows next to a column with the new ones.
+    func refreshColumns() {
         guard !levels.isEmpty else { return }
-        layoutColumns()
-        loadColumn(at: levels.count - 1)
+        let urls = levels.map { $0.url }
+        // The folder being refreshed may itself be what was trashed or
+        // renamed; back out to the nearest ancestor column that still
+        // exists. The existence check is file IO, and on a dead network
+        // mount it blocks until the mount times out, so it runs off the
+        // main thread like every other read in this view.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var keep = urls.count
+            while keep > 1, !FileManager.default.fileExists(atPath: urls[keep - 1].path) {
+                keep -= 1
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // A navigation while the check ran already rebuilt the
+                // columns; acting on the stale answer here would tear the
+                // new ones down, so this pass stands down instead.
+                guard self.levels.map({ $0.url }) == urls else { return }
+                if keep < self.levels.count {
+                    // Dropping levels moves which column is deepest, and
+                    // the filter applies only to the deepest, so it is
+                    // cleared the same way every other depth change clears
+                    // it. Kept, it would make loadColumn map the new
+                    // deepest's selection through filtered rows the table
+                    // never drew, and the highlight would land on files the
+                    // user never picked.
+                    self.clearFilterForDepthChange()
+                    while self.levels.count > keep {
+                        let level = self.levels.removeLast()
+                        level.container.removeFromSuperview()
+                        level.divider.removeFromSuperview()
+                        level.message.removeFromSuperview()
+                    }
+                    self.layoutColumns()
+                }
+                for index in self.levels.indices {
+                    self.loadColumn(at: index)
+                }
+            }
+        }
     }
 }
 

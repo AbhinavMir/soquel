@@ -247,12 +247,18 @@ final class UninstallPanelController: NSWindowController {
         let target = app!
         DispatchQueue.global(qos: .userInitiated).async {
             let found = Uninstall.leftovers(for: target)
+            let appExists = FileManager.default.fileExists(atPath: target.path)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.leftovers = found
                 // Ticks on items that no longer exist (typically because they
                 // were just trashed) would inflate the count forever.
                 self.ticked.formIntersection(found.map(\.url))
+                // The app row is governed by includeApp, not by ticked, so it
+                // needs the same pruning: once the .app itself was trashed, a
+                // still-ticked row would count it forever and re-queue a URL
+                // that no longer exists.
+                if !appExists { self.includeApp = false }
                 self.table.reloadData()
                 self.updateFooter()
             }
