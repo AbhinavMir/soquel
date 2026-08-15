@@ -177,7 +177,13 @@ final class ConnectToServerController: NSObject {
         )
     }
 
+    /// Return in the address field fires connect() too, and the field stays
+    /// first responder while a mount runs. Without this, a second Return
+    /// starts a second mount of the same URL against the first.
+    private var isMounting = false
+
     @objc private func connect() {
+        guard !isMounting else { return }
         status.stringValue = ""
 
         switch RemoteLocations.parse(Self.completing(field.stringValue)) {
@@ -191,6 +197,10 @@ final class ConnectToServerController: NSObject {
             // browser window instead. Asking first meant the refusal was
             // printed and the browser never ran.
             if address.scheme == .sftp, let location = sftpLocation(from: address) {
+                // The mount paths record their addresses themselves; this one
+                // never mounts, so it has to be recorded here or the recents
+                // list never learns the sheet's own headline flow.
+                RemoteLocations.remember(address)
                 let host = panel?.sheetParent
                 close()
                 SFTPBrowserController.open(location, over: host)
@@ -203,6 +213,7 @@ final class ConnectToServerController: NSObject {
                 return
             }
 
+            isMounting = true
             connectButton.isEnabled = false
             spinner.startAnimation(nil)
             status.textColor = .secondaryLabelColor
@@ -210,6 +221,7 @@ final class ConnectToServerController: NSObject {
 
             RemoteLocations.mount(address) { [weak self] result in
                 guard let self else { return }
+                self.isMounting = false
                 self.spinner.stopAnimation(nil)
                 self.connectButton.isEnabled = true
 

@@ -75,6 +75,7 @@ enum RemoteLocations {
         case unknownScheme(String)
         case missingScheme
         case missingHost
+        case unreadable
         case needsFUSE(Scheme)
 
         var errorDescription: String? {
@@ -88,6 +89,8 @@ enum RemoteLocations {
                     + Scheme.allCases.filter(\.isNative).map { $0.rawValue + "://" }.joined(separator: ", ") + "."
             case .missingHost:
                 return "The address has no server name."
+            case .unreadable:
+                return "That address could not be read."
             case .needsFUSE(let scheme):
                 // Nothing to install any more: SFTP opens in a browser window
                 // driven by the ssh already on the system. This is left for
@@ -112,8 +115,8 @@ enum RemoteLocations {
             return .failure(.unknownScheme(rawScheme))
         }
 
-        guard let components = URLComponents(string: trimmed), let host = components.host, !host.isEmpty
-        else { return .failure(.missingHost) }
+        guard let components = urlComponents(from: trimmed) else { return .failure(.unreadable) }
+        guard let host = components.host, !host.isEmpty else { return .failure(.missingHost) }
 
         return .success(Address(
             scheme: scheme,
@@ -122,6 +125,20 @@ enum RemoteLocations {
             port: components.port,
             path: components.path
         ))
+    }
+
+    /// URLComponents on macOS 13 is a strict RFC 3986 parser: a raw space
+    /// anywhere makes it return nil, and "smb://server/My Share" is an
+    /// address people type. Newer systems encode the stray characters
+    /// themselves; the supported minimum gets its spaces encoded by hand.
+    private static func urlComponents(from text: String) -> URLComponents? {
+        if let components = URLComponents(string: text) { return components }
+        if #available(macOS 14.0, *) {
+            return URLComponents(string: text, encodingInvalidCharacters: true)
+        }
+        guard let separator = text.range(of: "://") else { return nil }
+        let encoded = text[separator.upperBound...].replacingOccurrences(of: " ", with: "%20")
+        return URLComponents(string: String(text[..<separator.upperBound]) + encoded)
     }
 
     /// Whether this address can be mounted on this machine right now.
@@ -192,9 +209,14 @@ enum RemoteLocations {
                     // A zero status with no mount point means it was already
                     // mounted somewhere; find it rather than reporting nothing.
                     if let existing = existingMount(for: address) {
+                        remember(address)
                         completion(.success(Mounted(address: address, mountPoint: existing)))
                     } else {
-                        completion(.failure(AddressError.missingHost))
+                        completion(.failure(NSError(
+                            domain: "app.soquel.netfs", code: Int(EEXIST),
+                            userInfo: [NSLocalizedDescriptionKey:
+                                "\(address.host) is already mounted, but its volume was not found."]
+                        )))
                     }
                     return
                 }
@@ -223,17 +245,25 @@ enum RemoteLocations {
 
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: sshfs)
+                // FUSE splits an -o value on commas and has no way to escape
+                // one, so a comma in the share name would smuggle extra mount
+                // options in. A space keeps the name readable and inert.
+                let volname = address.displayName.replacingOccurrences(of: ",", with: " ")
                 // Arguments are passed as a list, never through a shell, so a
                 // hostname can never be read as a command.
-                process.arguments = [remote, mountPoint.path, "-o", "volname=\(address.displayName)"]
+                process.arguments = [remote, mountPoint.path, "-o", "volname=\(volname)"]
                 let errors = Pipe()
                 process.standardError = errors
                 try process.run()
-                process.waitUntilExit()
 
+                // The pipe is drained before waiting: a child that fills the
+                // pipe's buffer blocks on write, and waiting on it first
+                // deadlocks both sides. sshfs closes stderr when it
+                // daemonizes, so the read ends on success too.
                 let message = String(
                     data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
                 ) ?? ""
+                process.waitUntilExit()
 
                 DispatchQueue.main.async {
                     if process.terminationStatus == 0 {
@@ -253,12 +283,26 @@ enum RemoteLocations {
         }
     }
 
-    /// An already-mounted volume matching this address, matched by name.
+    /// An already-mounted volume for this address, matched by where it was
+    /// mounted from. Matching by name is not enough: mountedVolumeURLs also
+    /// lists local volumes and disk images, and one of those that happens to
+    /// share the name must not stand in for the server.
     static func existingMount(for address: Address) -> URL? {
         let volumes = FileManager.default.mountedVolumeURLs(
-            includingResourceValuesForKeys: [.volumeNameKey], options: []
+            includingResourceValuesForKeys: [.volumeURLForRemountingKey], options: []
         ) ?? []
-        return volumes.first { $0.lastPathComponent == address.displayName }
+        let slashes = CharacterSet(charactersIn: "/")
+        let wanted = address.path.trimmingCharacters(in: slashes).lowercased()
+        return volumes.first { volume in
+            guard let values = try? volume.resourceValues(forKeys: [.volumeURLForRemountingKey]),
+                  let source = values.volumeURLForRemounting,
+                  source.host?.lowercased() == address.host.lowercased()
+            else { return false }
+            // An address without a share names only the server, so any
+            // volume mounted from that server answers it.
+            guard !wanted.isEmpty else { return true }
+            return source.path.trimmingCharacters(in: slashes).lowercased() == wanted
+        }
     }
 
     /// Turns a NetFS status into something a person can act on. The numbers are

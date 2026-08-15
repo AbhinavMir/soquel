@@ -46,16 +46,25 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
 
         // A password is only collected once the server has refused everything
         // else, so a key-based host never sees the prompt.
-        connect(session: session, password: nil) { [weak self] failed in
+        connect(session: session, password: nil) { [weak self] outcome in
             guard let self else { return }
-            guard failed else { self.load(self.path); return }
-            // The window is still being presented at this point. Running a
-            // modal on top of a window mid-animation is what put an
-            // _NSWindowTransformAnimation in an autorelease pool that outlived
-            // the window it was animating.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.promptAndConnect(session: session, location: location)
+            switch outcome {
+            case .connected:
+                self.load(self.path)
+            case .failed:
+                // The error is already on the status line. A listing now
+                // would run over a connection that was never made and
+                // overwrite the one message that says why.
+                break
+            case .needsPassword:
+                // The window is still being presented at this point. Running a
+                // modal on top of a window mid-animation is what put an
+                // _NSWindowTransformAnimation in an autorelease pool that
+                // outlived the window it was animating.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.promptAndConnect(session: session, location: location)
+                }
             }
         }
     }
@@ -70,21 +79,37 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
             setStatus("No password entered.", isError: true)
         case .entered(let password):
             setStatus("Connecting to \(location.host)…", isError: false)
-            connect(session: session, password: password) { [weak self] stillFailed in
+            connect(session: session, password: password) { [weak self] outcome in
                 guard let self else { return }
-                if stillFailed {
-                    self.setStatus("That username or password was refused.", isError: true)
-                } else {
+                switch outcome {
+                case .connected:
                     self.load(self.path)
+                case .needsPassword:
+                    self.setStatus("That username or password was refused.", isError: true)
+                case .failed:
+                    // The status line already carries the error; there is no
+                    // connection to list over.
+                    break
                 }
             }
         }
     }
 
+    /// How an attempt at the master connection ended. Success and a hard
+    /// failure both used to read as "not failed", which sent a listing down
+    /// a connection that was never made.
+    private enum ConnectOutcome {
+        case connected
+        /// The server refused the credentials; a password prompt can help.
+        case needsPassword
+        /// Anything else. The error has already been put on the status line.
+        case failed
+    }
+
     /// The connection is made off the main queue: a server that is not
     /// answering would otherwise freeze the application until it timed out.
     private func connect(
-        session: SFTPSession, password: String?, then finish: @escaping (Bool) -> Void
+        session: SFTPSession, password: String?, then finish: @escaping (ConnectOutcome) -> Void
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
             var failure: Error?
@@ -95,14 +120,14 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
                     // Anything that is not a rejected password is worth showing
                     // as it stands; asking for a password again would not help.
                     if case SFTPSession.Failure.authenticationFailed = failure {
-                        finish(true)
+                        finish(.needsPassword)
                     } else {
                         self.setStatus(failure.localizedDescription, isError: true)
-                        finish(false)
+                        finish(.failed)
                     }
                     return
                 }
-                finish(false)
+                finish(.connected)
             }
         }
     }
@@ -132,10 +157,18 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
 
     // MARK: - Listing
 
-    private func load(_ path: String) {
+    /// Each request takes a number so that only the latest one may land:
+    /// two listings can be in flight at once, and a slow folder's rows must
+    /// not arrive under a label that already names a different one.
+    private var loadGeneration = 0
+
+    /// Reads `path`, and only makes it the current folder once the listing
+    /// arrives. Committing the path up front left the table showing one
+    /// folder while every double-click resolved names against another.
+    private func load(_ path: String, addingToHistory: Bool = false) {
         guard let session else { return }
-        self.path = path
-        pathLabel.stringValue = path == "." ? "~" : path
+        loadGeneration += 1
+        let generation = loadGeneration
         setStatus("Reading…", isError: false)
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -143,10 +176,18 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
             var failure: Error?
             do { found = try session.list(path) } catch { failure = error }
             DispatchQueue.main.async {
+                guard generation == self.loadGeneration else { return }
                 if let failure {
                     self.setStatus(failure.localizedDescription, isError: true)
                     return
                 }
+                // History records only navigations that completed; a refused
+                // folder never happened, so Up must not lead back to it.
+                if addingToHistory, self.path != path {
+                    self.history.append(self.path)
+                }
+                self.path = path
+                self.pathLabel.stringValue = path == "." ? "~" : path
                 // Folders first, then by name — the same order the rest of the
                 // application uses when it is not asked for something else.
                 self.entries = found.sorted {
@@ -169,8 +210,7 @@ final class SFTPBrowserController: NSObject, NSTableViewDataSource, NSTableViewD
         guard entries.indices.contains(table.selectedRow) else { return }
         let entry = entries[table.selectedRow]
         if entry.isDirectory {
-            history.append(path)
-            load(child(entry.name))
+            load(child(entry.name), addingToHistory: true)
         } else {
             openFile(entry)
         }

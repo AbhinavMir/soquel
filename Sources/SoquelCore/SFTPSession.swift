@@ -212,6 +212,12 @@ final class SFTPSession {
 
     /// Runs commands down the existing master connection.
     private func batch(_ commands: [String]) throws -> String {
+        // sftp reads one command per line from `-b -`, and its quoting has no
+        // way to carry a line break. A name with one would split into two
+        // commands and do something other than what was asked.
+        for command in commands where command.contains("\n") {
+            throw Failure.commandFailed("The name contains a line break, which sftp cannot carry.")
+        }
         let arguments = [
             "-o", "ControlPath=\(controlPath)",
             // `-b` turns BatchMode on, which switches password authentication
@@ -224,7 +230,7 @@ final class SFTPSession {
         ]
         let result = Self.run("/usr/bin/sftp", arguments, input: commands.joined(separator: "\n") + "\n")
         guard result.status == 0 else {
-            throw Self.failure(from: result.output, host: location.host)
+            throw Self.operationFailure(from: result.output, host: location.host)
         }
         return result.output
     }
@@ -234,13 +240,18 @@ final class SFTPSession {
     /// One `ls -l` line, whatever is in the filename.
     ///
     /// Splitting on whitespace breaks the moment a name contains a space, and
-    /// counting fields from the right breaks on the same thing. Anchoring on
-    /// the two parts whose shape is fixed — the mode string at the front and
-    /// the date in the middle — leaves the name as everything after, spaces
-    /// and all.
+    /// counting fields from the right breaks on the same thing. So does
+    /// counting the owner and group fields from the left: either can carry a
+    /// space ("Domain Users"). Anchoring on the parts whose shape is fixed —
+    /// the mode string at the front, then the first size-and-date pair —
+    /// leaves the name as everything after, spaces and all. Every file type
+    /// letter is accepted, sockets and devices included, and a device's
+    /// "major, minor" is taken where the size goes. OpenSSH puts exactly one
+    /// space between the date and the name, so a name's own leading spaces
+    /// survive.
     static let lineExpression = try? NSRegularExpression(
-        pattern: #"^([dl\-])([rwxsStT\-]{9})[+@.]?\s+\S+\s+\S+\s+\S+\s+(\d+)\s+"#
-            + #"(\w{3}\s+\d{1,2}\s+(?:\d{1,2}:\d{2}|\d{4}))\s+(.+)$"#
+        pattern: #"^([dlspcb\-])([rwxsStT\-]{9})[+@.]?\s+.+?\s(\d+(?:,\s*\d+)?)\s+"#
+            + #"(\w{3}\s+\d{1,2}\s+(?:\d{1,2}:\d{2}|\d{4})) (.+)$"#
     )
 
     static func parse(listing: String) -> [Entry] {
@@ -272,7 +283,8 @@ final class SFTPSession {
         if kind == "l", let arrow = name.range(of: " -> ") {
             name = String(name[name.startIndex..<arrow.lowerBound])
         }
-        name = name.trimmingCharacters(in: .whitespaces)
+        // Not trimmed: a name really can end in a space, and addressing it
+        // without one names a file that does not exist on the server.
         guard !name.isEmpty else { return nil }
 
         return Entry(
@@ -321,7 +333,24 @@ final class SFTPSession {
         "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
     ]
 
-    /// What went wrong, in words rather than ssh's.
+    /// What went wrong mid-session. "Permission denied" here is the server
+    /// refusing a file, not a password — the master already authenticated —
+    /// so only the reachability patterns are translated and the rest is
+    /// reported in sftp's own words.
+    static func operationFailure(from output: String, host: String) -> Failure {
+        let text = output.lowercased()
+        if text.contains("could not resolve") || text.contains("no route to host")
+            || text.contains("connection refused") || text.contains("operation timed out")
+            || text.contains("connection timed out") {
+            return .hostUnreachable(host)
+        }
+        let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .commandFailed(detail.isEmpty ? "The server rejected that." : detail)
+    }
+
+    /// What went wrong while connecting, in words rather than ssh's. Only
+    /// here does "permission denied" mean the credentials: this is ssh's own
+    /// authentication verdict, not a file the server would not hand over.
     static func failure(from output: String, host: String) -> Failure {
         let text = output.lowercased()
         if text.contains("permission denied") || text.contains("authentication failed") {
