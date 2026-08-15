@@ -175,11 +175,11 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.7/Soquel-1.0.7.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v2.0.0/Soquel-2.0.0.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note"><a href="#changelog">Version 1.0.7</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
-  <p class="note">Soquel is in beta. Version 2.0 will be the first alpha release.</p>
+  <p class="note"><a href="#changelog">Version 2.0.0</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note">2.0.0 is the first alpha release.</p>
 
 </header>
 
@@ -565,6 +565,27 @@ footer a { color: var(--faint); }
 
 <h2 id="changelog">Changelog</h2>
 <div class="log">
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">2.0.0</p>
+      <span class="rel-d">14 Aug 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v2.0.0">notes</a>
+    </div>
+    <ul>
+      <li>The first alpha release. The whole application was audited for it: every line
+          of the code read, every claim on this page checked against it, and the app
+          driven live. 199 verified defects fixed — 12 that lost data, 5 that crashed,
+          41 broken features, and the rest wrong behaviour and polish.</li>
+      <li>Drag and drop works in all three views. It only worked list-to-list.</li>
+      <li>Double-click opens folders in icon view.</li>
+      <li>Compress survives a file named <code>-m</code>; zip was reading it as its own
+          delete-after-archive option and deleting the files beside it.</li>
+      <li>A typo in a hand-edited settings.json no longer erases every setting.</li>
+      <li>Folder sizes, metadata and git badges reach both panes, not whichever loaded last.</li>
+      <li>Background images render right side up.</li>
+    </ul>
+  </div>
 
   <div class="rel">
     <div class="rel-head">
