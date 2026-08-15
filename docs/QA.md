@@ -127,7 +127,7 @@ cp plain.txt copy-of-plain.txt
 6.3 Copy (⌘C) and paste (⌘V) in another folder.
 6.4 Cut (⌘X) and paste. The original is gone.
 6.5 Paste into the same folder. A "copy" name is made rather than a clobber.
-6.6 Duplicate (⌘D).
+6.6 Duplicate (⌃⌘D).
 6.7 Move to trash (⌘⌫). The view updates immediately.
 6.8 Trash multiple files at once.
 6.9 Delete permanently (⌥⌘⌫). Confirmation is asked for.
@@ -188,7 +188,7 @@ cp plain.txt copy-of-plain.txt
 9.3 Close the only tab. It stays; one tab is the minimum.
 9.4 Open eight tabs. The tab bar scrolls.
 9.5 Click a tab. It activates and the pane changes.
-9.6 ⌘D splits vertically, ⇧⌘D horizontally, ⌥⌘D rotates.
+9.6 ⌘D splits vertically, ⇧⌘D horizontally, ⇧⌥⌘D rotates.
 9.7 ⌘1 to ⌘4 focus the panes.
 9.8 The focused pane is visibly marked.
 9.9 Drag a file from one pane to another. It copies or moves as expected.
@@ -329,7 +329,7 @@ cp plain.txt copy-of-plain.txt
 
 ## 20. Command palette
 
-20.1 ⌘K opens it.
+20.1 ⇧⌘P opens it.
 20.2 Fuzzy match finds a command by an abbreviation.
 20.3 Every command in the palette actually runs.
 20.4 A command that needs a selection is not offered without one, or explains itself.
