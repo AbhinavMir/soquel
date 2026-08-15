@@ -555,7 +555,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     @objc func menuCloseTab(_ sender: Any?) {
         guard let pane = focusedPane else { return }
         if !pane.closeActiveTab() {
-            if panes.count > 1 { menuClosePane(nil) } else { window?.performClose(nil) }
+            // The last tab of the last pane stays: ⌘W is Close Tab, and a
+            // reflex ⌘W in a one-tab window took the whole window and the
+            // session with it. Closing the window has its own key, ⌥⌘W.
+            if panes.count > 1 {
+                menuClosePane(nil)
+            } else {
+                statusLeft.stringValue = "One tab is the minimum — ⌥⌘W closes the window"
+                NSSound.beep()
+            }
         }
     }
 

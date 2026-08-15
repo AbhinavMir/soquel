@@ -1,5 +1,11 @@
 import AppKit
 
+/// A view whose origin is the top-left corner, so a form laid out inside a
+/// scroll view starts at the top the way a reader expects.
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 /// A window that closes on Escape and on ⌘W.
 ///
 /// AppKit only routes Escape to a button wired as the cancel button, and a
@@ -187,19 +193,35 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
     static func paneContainer(_ pane: NSView) -> NSView {
         pane.translatesAutoresizingMaskIntoConstraints = false
 
+        // The pane goes inside a flipped host, not straight into the scroll
+        // view. An NSScrollView's document space grows upward from the
+        // bottom; a pane shorter than the clip was pinned to the top of the
+        // clip's unflipped coordinate space, which is the bottom of what is
+        // on screen, so every pane except the tallest drew below the visible
+        // area and could not be scrolled to. Flipping the host puts y=0 at
+        // the top, where a settings form starts.
+        let host = FlippedView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(pane)
+
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
-        scroll.documentView = pane
+        scroll.documentView = host
 
         NSLayoutConstraint.activate([
-            pane.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
-            pane.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            pane.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
+            host.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            host.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
             // Width only. Pinning the bottom too would stop it scrolling.
-            pane.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            host.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+
+            pane.topAnchor.constraint(equalTo: host.topAnchor),
+            pane.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            pane.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            pane.bottomAnchor.constraint(equalTo: host.bottomAnchor),
         ])
         return scroll
     }

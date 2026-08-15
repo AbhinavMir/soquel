@@ -744,6 +744,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
     // MARK: - Selection accessors
 
     func selectedURLs() -> [URL] {
+        // Asked before the view exists — a toolbar being built for a pane
+        // while a workspace opens asks the focused list what it has selected,
+        // and that list may not have loaded its table yet. Nothing, honestly.
+        guard isViewLoaded else { return [] }
         // In column view the browser owns the selection and the table is not on
         // screen, so its rows say nothing about what the user picked.
         if mode == .column { return columnSelection }
