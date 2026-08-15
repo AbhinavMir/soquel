@@ -377,11 +377,12 @@ final class OperationEngine {
                 return true
             case .skip:
                 continue
-            case .merge:
-                // Offered only for two folders; anything else falls back to skip
-                // rather than guessing at a destructive action.
-                continue
-            case .keepBoth:
+            case .merge, .keepBoth:
+                // Merge is only meaningful for two folders. A standing Merge
+                // answer landing on a file conflict copies the file beside the
+                // existing one, as the top level does: skipping it silently
+                // would end the job as Done while the destination keeps its
+                // stale file, and nothing anywhere would say so.
                 target = Self.uniqueURL(for: target, fileManager: fm)
                 do {
                     if move { try fm.moveItem(at: child, to: target) }

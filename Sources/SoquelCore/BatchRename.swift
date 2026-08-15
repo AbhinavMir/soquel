@@ -86,8 +86,12 @@ enum BatchRename {
                 // case-sensitive volume the same spelling can be a second,
                 // distinct file, so the test is file identity, not name case.
                 let destination = url.deletingLastPathComponent().appendingPathComponent(proposed)
+                // Identity alone is not enough: a hard link is the same inode
+                // under a different name, and renaming onto it is a real
+                // collision. Only a case-respelling of the same entry passes.
+                let caseOnly = proposed.lowercased() == original.lowercased()
                 if FileManager.default.fileExists(atPath: destination.path),
-                   !sameFile(url, destination) {
+                   !(caseOnly && sameFile(url, destination)) {
                     preview.problem = "A file with this name already exists"
                 }
             }

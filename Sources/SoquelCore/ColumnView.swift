@@ -514,17 +514,23 @@ extension ColumnBrowserView {
             before.indices.contains($0) ? before[$0].url : nil
         }
         filterText = text
+        // The flag goes up before the reload, not only around the reselect:
+        // a filter that shrinks the row count below a selected index makes
+        // reloadData trim the selection and post selectionDidChange
+        // synchronously, and unsuppressed that runs the descend logic and
+        // overwrites the pane's mirror mid-keystroke.
+        isRemappingSelection = true
         level.table.reloadData()
         let after = items(at: index)
         let restored = selected.compactMap { url in after.firstIndex { $0.url == url } }
-        isRemappingSelection = true
         level.table.selectRowIndexes(IndexSet(restored), byExtendingSelection: false)
         isRemappingSelection = false
-        // A narrower filter can hide selected files, and the pane's mirror
-        // has to hear that or Delete acts on files no longer on screen. When
-        // the browser itself is hidden the pane is showing another view, and
-        // reporting would overwrite that view's selection instead.
-        if !isHidden, restored.count != selected.count {
+        // The pane's mirror hears the selection as restored — always, since
+        // the reload was suppressed and the trim may have already changed
+        // what the table itself believes. When the browser is hidden the
+        // pane is showing another view, and reporting would overwrite that
+        // view's selection instead.
+        if !isHidden {
             onSelectMany?(restored.map { after[$0].url })
         }
     }

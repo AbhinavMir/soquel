@@ -326,7 +326,12 @@ final class ThemeSettingsView: NSView {
     @objc private func usePreset(_ sender: NSButton) {
         guard let name = sender.identifier?.rawValue,
               let preset = ThemePresets.all.first(where: { $0.name == name }) else { return }
-        ThemePresets.apply(preset)
+        if let failure = ThemePresets.apply(preset) {
+            // reload() would recompute the status from the reverted config
+            // and overwrite the message, so the error is the last word here.
+            status.stringValue = "Could not save: \(failure.localizedDescription)"
+            return
+        }
         status.stringValue = "Using “\(preset.name)”"
         reload()
     }

@@ -338,18 +338,23 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             restoreCollectionSelection(selectedURLsCache)
         } else {
             tableView.reloadData()
-            // The cache carries the selection across the switch. The table's
-            // own rows are always cleared first: reloadData keeps old row
-            // indexes, and restoreSelection never deselects, so a cached URL
-            // that is gone from the listing — the folder just entered, a
-            // trashed file, a filtered-out item — would otherwise leave the
-            // table asserting rows the user never picked. The cache is
-            // captured before deselecting, because deselection runs the
-            // selection-changed delegate, which rewrites the cache.
-            let cached = selectedURLsCache
-            tableView.deselectAll(nil)
-            if !cached.isEmpty {
-                restoreSelection(cached)
+            // The cache carries the selection across the switch. reloadData
+            // keeps old row indexes, so the rows are replaced wholesale with
+            // whatever the cache still names — a cached URL that is gone (the
+            // folder just entered, a trashed file, a filtered-out item) must
+            // not leave the table asserting rows the user never picked. One
+            // replace, and only when something differs: a deselect-then-
+            // restore pair posted two selection events for an unchanged
+            // selection, and each reset the inspector, dropping a computed
+            // SHA-256 mid-hash.
+            let wanted = Set(selectedURLsCache)
+            var target = IndexSet()
+            for (i, item) in items.enumerated() where wanted.contains(item.url) {
+                target.insert(i)
+            }
+            if tableView.selectedRowIndexes != target {
+                tableView.selectRowIndexes(target, byExtendingSelection: false)
+                if let first = target.first { tableView.scrollRowToVisible(first) }
             }
         }
     }

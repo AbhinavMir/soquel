@@ -150,14 +150,23 @@ enum Duplicates {
         // so {A/s, B/s} lands under its own fingerprint as a separate group.
         // Reporting both restates the parent: the reclaimable bytes are
         // counted twice, and ticking both trashes B first and then fails on
-        // B/s, which already moved inside it. A group is dropped when every
-        // member sits inside a member of one other group; the outermost group
-        // always survives, because nothing contains it.
+        // B/s, which already moved inside it. A group is dropped only when
+        // its members map one-to-one onto the members of another group —
+        // trashing all but one parent then resolves it completely. Containment
+        // alone is not enough: with A holding identical twins s and t and B a
+        // copy of A, the group {A/s, A/t, B/s, B/t} sits entirely inside
+        // {A, B}, yet trashing B still leaves the real pair {A/s, A/t}, so
+        // that group must stay in the report.
         return groups.filter { group in
             !groups.contains { other in
-                other.urls != group.urls && group.urls.allSatisfy { member in
-                    other.urls.contains { member.path.hasPrefix($0.path + "/") }
+                guard other.urls != group.urls, other.urls.count == group.urls.count else {
+                    return false
                 }
+                let parents = group.urls.compactMap { member in
+                    other.urls.first { member.path.hasPrefix($0.path + "/") }
+                }
+                return parents.count == group.urls.count
+                    && Set(parents).count == other.urls.count
             }
         }
     }
