@@ -94,8 +94,11 @@ struct SortOrder: Codable, Equatable {
             descriptors[index].ascending.toggle()
             return
         }
+        // At depth, refuse the key rather than push one out from the front:
+        // dropping the primary reorders the whole listing, the opposite of
+        // adding a tiebreak.
+        guard descriptors.count < Self.maximumDepth else { return }
         descriptors.append(SortDescriptorSpec(key: key, ascending: true))
-        if descriptors.count > Self.maximumDepth { descriptors.removeFirst() }
     }
 
     mutating func reverse() {

@@ -405,12 +405,15 @@ final class ApplicationSettingsView: NSView, NSTableViewDataSource, NSTableViewD
         } else {
             for app in candidates {
                 let name = FileManager.default.displayName(atPath: app.path)
-                popup.addItem(withTitle: name)
-                let item = popup.lastItem
-                item?.representedObject = app
+                // Appended as a built menu item, not via addItem(withTitle:),
+                // which removes an existing item with the same title — two
+                // applications sharing a display name would leave one row.
+                let item = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+                item.representedObject = app
                 let icon = NSWorkspace.shared.icon(forFile: app.path)
                 icon.size = NSSize(width: 16, height: 16)
-                item?.image = icon
+                item.image = icon
+                popup.menu?.addItem(item)
                 if app.standardizedFileURL == current?.standardizedFileURL {
                     popup.select(item)
                 }

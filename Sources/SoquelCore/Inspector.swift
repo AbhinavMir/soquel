@@ -20,6 +20,9 @@ final class InspectorView: NSView {
     private var current: URL?
     /// Guards against a slow checksum landing after the selection moved on.
     private var checksumToken = UUID()
+    /// Metadata is read in the background; the panel hears about the answer
+    /// through this, or the rows would only appear on a reselection.
+    private var metadataObserver: NSObjectProtocol?
 
     private static let byteFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
@@ -41,7 +44,18 @@ final class InspectorView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
+    deinit {
+        if let metadataObserver { NotificationCenter.default.removeObserver(metadataObserver) }
+    }
+
     private func build() {
+        metadataObserver = NotificationCenter.default.addObserver(
+            forName: .soquelMetadataRead, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self, let url = note.object as? URL, url == self.current else { return }
+            self.showDetails(of: url)
+        }
+
         previewContainer = NSView()
         previewContainer.wantsLayer = true
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -273,7 +287,7 @@ final class InspectorView: NSView {
             if let mode = attributes[.posixPermissions] as? NSNumber {
                 detailStack.addArrangedSubview(row(
                     "Permissions", Self.describe(mode: mode.uint16Value),
-                    tooltip: Self.explain(mode: mode.uint16Value)
+                    tooltip: Self.explain(mode: mode.uint16Value, isDirectory: isDirectory)
                 ))
             }
             let owner = attributes[.ownerAccountName] as? String
@@ -335,10 +349,13 @@ final class InspectorView: NSView {
     ///
     /// The notation is only obvious to people who already know it, and it is
     /// the one line in the panel that decides whether a file will open.
-    static func explain(mode: UInt16) -> String {
+    ///
+    /// The caller says whether this is a folder: the posixPermissions
+    /// attribute carries the permission bits only, so the S_IFDIR bit is
+    /// never in `mode` to be tested here.
+    static func explain(mode: UInt16, isDirectory: Bool = false) -> String {
         let who = ["The owner", "The group", "Everyone else"]
         let values = [Int((mode >> 6) & 0o7), Int((mode >> 3) & 0o7), Int(mode & 0o7)]
-        let isDirectory = mode & UInt16(S_IFDIR) != 0
 
         var lines: [String] = []
         for (index, value) in values.enumerated() {

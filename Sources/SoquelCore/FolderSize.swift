@@ -24,13 +24,22 @@ final class FolderSizeCalculator {
         let fileCount: Int
         /// Modification date of the folder when measured; a change invalidates.
         let stamp: Date?
+        /// When the walk ran, so an old answer can be refreshed.
+        let measured = Date()
     }
+
+    /// The stamp only moves when a direct child appears, disappears or is
+    /// renamed; a file growing two levels down leaves it untouched. Age is
+    /// the backstop: past this, the entry is re-measured in the background
+    /// while the old number stays on screen.
+    private static let maximumAge: TimeInterval = 60
 
     private let queue = DispatchQueue(label: "app.soquel.foldersize", qos: .utility)
     private var cache: [URL: Measurement] = [:]
     private var inFlight: Set<URL> = []
 
-    /// A cached size, if one is still valid.
+    /// A cached size, if one is still valid. An entry past its age ceiling is
+    /// still returned, but a fresh walk starts and its answer replaces it.
     func cached(for url: URL) -> Measurement? {
         guard let hit = cache[url] else { return nil }
         let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
@@ -38,12 +47,20 @@ final class FolderSizeCalculator {
             cache.removeValue(forKey: url)
             return nil
         }
+        if Date().timeIntervalSince(hit.measured) > Self.maximumAge {
+            start(url)
+        }
         return hit
     }
 
     /// Starts measuring unless an answer is already cached or on its way.
     func measure(_ url: URL) {
-        guard cached(for: url) == nil, !inFlight.contains(url) else { return }
+        guard cached(for: url) == nil else { return }
+        start(url)
+    }
+
+    private func start(_ url: URL) {
+        guard !inFlight.contains(url) else { return }
         inFlight.insert(url)
 
         queue.async { [weak self] in

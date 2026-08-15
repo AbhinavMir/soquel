@@ -48,35 +48,71 @@ final class MetadataReader {
     /// Values keyed by field, for one file.
     typealias Record = [MetadataField: String]
 
-    private var cache: [URL: Record] = [:]
+    /// A record together with the file's modification date when it was read.
+    /// A re-exported video or an overwritten image gets fresh values instead
+    /// of keeping the old ones for the life of the application.
+    private final class Entry {
+        let record: Record
+        let stamp: Date?
+        init(record: Record, stamp: Date?) {
+            self.record = record
+            self.stamp = stamp
+        }
+    }
+
+    private let cache = NSCache<NSURL, Entry>()
     private var inFlight: Set<URL> = []
     private let queue = DispatchQueue(label: "app.soquel.metadata", qos: .utility)
 
-    func cached(_ url: URL) -> Record? { cache[url] }
+    private init() {
+        // Records are small, but the dictionary this replaced grew for as
+        // long as the application ran; NSCache bounds it and also evicts
+        // under memory pressure on its own.
+        cache.countLimit = 4096
+    }
+
+    private static func stamp(of url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    /// The cached record, dropped when the file has changed since it was read.
+    private func validated(_ url: URL) -> Record? {
+        guard let hit = cache.object(forKey: url as NSURL) else { return nil }
+        guard hit.stamp == Self.stamp(of: url) else {
+            cache.removeObject(forKey: url as NSURL)
+            return nil
+        }
+        return hit.record
+    }
+
+    func cached(_ url: URL) -> Record? { validated(url) }
 
     func value(_ field: MetadataField, for url: URL) -> String? {
-        cache[url]?[field]
+        validated(url)?[field]
     }
 
     /// Starts a read unless one is cached or already running. Nothing here
     /// blocks the listing; a column shows nothing until an answer arrives.
     func read(_ url: URL) {
-        guard cache[url] == nil, !inFlight.contains(url) else { return }
+        guard validated(url) == nil, !inFlight.contains(url) else { return }
         inFlight.insert(url)
 
         queue.async { [weak self] in
+            // The stamp is read before the extraction, so a file that changes
+            // mid-read stores an already-stale stamp and is read again.
+            let stamp = Self.stamp(of: url)
             let record = Self.extract(from: url)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.inFlight.remove(url)
-                self.cache[url] = record
+                self.cache.setObject(Entry(record: record, stamp: stamp), forKey: url as NSURL)
                 NotificationCenter.default.post(name: .soquelMetadataRead, object: url)
             }
         }
     }
 
     func clear() {
-        cache.removeAll()
+        cache.removeAllObjects()
     }
 
     /// Reads whatever the file actually has. An unrecognised file yields an
