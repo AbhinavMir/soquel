@@ -569,21 +569,27 @@ footer a { color: var(--faint); }
   <div class="rel">
     <div class="rel-head">
       <p class="rel-v">1.0.8</p>
-      <span class="rel-d">14 Aug 2026</span>
+      <span class="rel-d">15 Aug 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.8">notes</a>
     </div>
     <ul>
-      <li>The bug-squash release. The whole application was audited: every line of the
-          code read, every claim on this page checked against it, and the app driven
-          live. 199 verified defects fixed — 12 that lost data, 5 that crashed,
-          41 broken features, and the rest wrong behaviour and polish.</li>
-      <li>Drag and drop works in all three views. It only worked list-to-list.</li>
+      <li>The bug-squash release. Every line of the code was read, every claim on this
+          page checked against it, and the app driven by hand through its own QA script.
+          252 verified defects fixed — 12 that lost data, 8 that crashed, and the rest
+          broken features, wrong behaviour and polish.</li>
+      <li>Reading a folder of a thousand files is five times faster: the Kind column
+          asked the type system the same question once per file.</li>
+      <li>Copying four thousand files went from 31 a second to about 2,000. The copy
+          waited on the main thread twice per file for a value it already had.</li>
+      <li>Drag and drop works in all three views, and onto the sidebar. It only worked
+          list to list.</li>
       <li>Double-click opens folders in icon view.</li>
       <li>Compress survives a file named <code>-m</code>; zip was reading it as its own
           delete-after-archive option and deleting the files beside it.</li>
       <li>A typo in a hand-edited settings.json no longer erases every setting.</li>
-      <li>Folder sizes, metadata and git badges reach both panes, not whichever loaded last.</li>
-      <li>Background images render right side up.</li>
+      <li>Undo is offered after every file operation, and ⌘W no longer quits the app
+          from a window with one tab.</li>
+      <li>Every settings pane draws its contents; five of the six were blank.</li>
     </ul>
   </div>
 
