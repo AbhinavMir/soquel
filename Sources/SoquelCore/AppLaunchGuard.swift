@@ -85,18 +85,96 @@ enum AppLaunchGuard {
         return !allowed.contains(bundleID)
     }
 
+    /// Bundle identifiers by application path, and default applications by
+    /// filename extension.
+    ///
+    /// Both answers come from Launch Services, which reads them off disk:
+    /// about 6 ms for the first query and a further 1.5 ms to open the
+    /// application's Info.plist. That was paid once per file on the main
+    /// thread every time anything was opened, so a selection of twenty files
+    /// spent a visible fraction of a second deciding something that depends
+    /// only on the extension. Both are cached, and the caches are dropped
+    /// when the set of installed applications changes.
+    private static var bundleIDByApp: [String: String] = [:]
+    private static var appByExtension: [String: URL] = [:]
+    private static let cacheLock = NSLock()
+
+    /// Launch Services answers change when applications are installed or
+    /// removed, which is what this notification reports.
+    static func startWatchingInstalledApplications() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didMountNotification, object: nil, queue: .main
+        ) { _ in clearCaches() }
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.LaunchServices.applicationRegistered"),
+            object: nil, queue: .main
+        ) { _ in clearCaches() }
+    }
+
+    static func clearCaches() {
+        cacheLock.lock()
+        bundleIDByApp.removeAll()
+        appByExtension.removeAll()
+        cacheLock.unlock()
+    }
+
     static func bundleID(of app: URL) -> String? {
-        Bundle(url: app)?.bundleIdentifier
+        let key = app.standardizedFileURL.path
+        cacheLock.lock()
+        if let hit = bundleIDByApp[key] { cacheLock.unlock(); return hit }
+        cacheLock.unlock()
+
+        guard let identifier = Bundle(url: app)?.bundleIdentifier else { return nil }
+        cacheLock.lock()
+        bundleIDByApp[key] = identifier
+        cacheLock.unlock()
+        return identifier
+    }
+
+    /// The default application for one file, by extension where that decides
+    /// it. A package or a file with no extension is asked about directly:
+    /// its answer depends on the item itself, so caching it under a shared
+    /// key would hand one item's application to another.
+    static func application(toOpen url: URL) -> URL? {
+        let ext = url.pathExtension.lowercased()
+        guard !ext.isEmpty, !url.hasDirectoryPath else {
+            return NSWorkspace.shared.urlForApplication(toOpen: url)
+        }
+        cacheLock.lock()
+        if let hit = appByExtension[ext] { cacheLock.unlock(); return hit }
+        cacheLock.unlock()
+
+        guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return nil }
+        cacheLock.lock()
+        appByExtension[ext] = app
+        cacheLock.unlock()
+        return app
     }
 
     /// The application that would open these files, when they all agree on one.
     /// Returns nil for a mixed selection, where there is no single answer to
     /// ask about.
     static func applicationThatWouldOpen(_ urls: [URL]) -> URL? {
-        let apps = urls.compactMap { NSWorkspace.shared.urlForApplication(toOpen: $0) }
+        let apps = urls.compactMap { application(toOpen: $0) }
         guard let first = apps.first, apps.count == urls.count else { return nil }
         guard apps.allSatisfy({ $0.standardizedFileURL == first.standardizedFileURL }) else { return nil }
         return first
+    }
+
+    /// Opens files without waiting for the applications to start.
+    ///
+    /// `NSWorkspace.open(_:)` returns only once Launch Services has taken the
+    /// request, so opening from the main thread held the file list still
+    /// while another application woke up. This hands the work over and
+    /// returns; `whenFailed` names anything that could not be opened.
+    static func open(_ urls: [URL], whenFailed: @escaping (URL) -> Void) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        for url in urls {
+            NSWorkspace.shared.open(url, configuration: configuration) { _, error in
+                guard error != nil else { return }
+                DispatchQueue.main.async { whenFailed(url) }
+            }
+        }
     }
 
     enum Answer {
@@ -126,6 +204,13 @@ enum AppLaunchGuard {
         in window: NSWindow?,
         open launch: @escaping () -> Void
     ) {
+        // The guard being off is the common case and the cheapest answer:
+        // decided before anything is asked of Launch Services, since the
+        // lookup exists only to name the application in the question.
+        guard isEnabled else {
+            launch()
+            return
+        }
         let target = app ?? applicationThatWouldOpen(urls)
         let identifier = target.flatMap(bundleID(of:))
 

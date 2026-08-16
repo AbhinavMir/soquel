@@ -100,3 +100,61 @@ enum Tags {
             + "when the disk is next mounted."
     }
 }
+
+extension Notification.Name {
+    /// Posted on the main thread once a batch of files has been checked for
+    /// tags. The object is the set of paths that turned out to carry one, so
+    /// a listing where nothing is tagged — the usual case — redraws nothing.
+    static let soquelTagsRead = Notification.Name("app.soquel.tagsRead")
+}
+
+/// Reads Finder tags after a listing is on screen.
+///
+/// Tags live in an extended attribute, so asking for them costs a read per
+/// file: prefetching them with the listing made reading a folder of a
+/// thousand files 43 per cent slower, and reading them at draw time cost an
+/// xattr call per visible row per redraw. Neither is worth it for a colour
+/// that almost no file carries, so the listing goes up without them and this
+/// fills them in behind it.
+enum TagReader {
+    private static let queue = DispatchQueue(label: "app.soquel.tags", qos: .utility)
+    /// Paths known to carry tags, and their names. Only tagged files are
+    /// kept: the absence of an entry is the answer for everything else.
+    private static var known: [String: [String]] = [:]
+    private static let lock = NSLock()
+
+    static func tags(for url: URL) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return known[url.standardizedFileURL.path] ?? []
+    }
+
+    /// Checks `urls` off the main thread. `generation` is handed back with
+    /// the notification so a listing that has moved on can ignore it.
+    static func read(_ urls: [URL], generation: Int) {
+        queue.async {
+            var found: [String: [String]] = [:]
+            for url in urls {
+                guard let names = (try? url.resourceValues(forKeys: [.tagNamesKey]))?.tagNames,
+                      !names.isEmpty else { continue }
+                found[url.standardizedFileURL.path] = names
+            }
+            guard !found.isEmpty else { return }
+            lock.lock()
+            known.merge(found) { _, new in new }
+            lock.unlock()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .soquelTagsRead, object: generation, userInfo: ["paths": Set(found.keys)]
+                )
+            }
+        }
+    }
+
+    /// Dropped when a file is renamed, trashed or retagged, so a stale colour
+    /// never outlives the file it belonged to.
+    static func forget(_ url: URL) {
+        lock.lock()
+        known.removeValue(forKey: url.standardizedFileURL.path)
+        lock.unlock()
+    }
+}

@@ -40,6 +40,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Theme.reload()
         Theme.startWatching()
+        // Which application opens which file is cached; installing or removing
+        // one is what makes that answer stale.
+        AppLaunchGuard.startWatchingInstalledApplications()
         let menu = makeMainMenu()
         NSApp.mainMenu = menu
         NSApp.windowsMenu = menu.items.compactMap(\.submenu).first { $0.title == "Window" }

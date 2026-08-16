@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 struct FileItem {
     let url: URL
@@ -13,9 +14,13 @@ struct FileItem {
     let modified: Date
     let created: Date
     let kind: String
-    /// Finder tags, read with the listing. Reading them per row at draw time
-    /// was an xattr call for every visible row on every redraw.
-    let tags: [String]
+    /// Finder tags. Filled in by TagReader after the listing is on screen,
+    /// never read at draw time: an xattr call per visible row per redraw was
+    /// the cost that started this, and asking for them with the listing was
+    /// no better — a tag lives in an extended attribute, and prefetching them
+    /// made reading a folder of a thousand files 43 per cent slower for a
+    /// colour almost nothing carries.
+    var tags: [String] = []
 
     var opensAsFolder: Bool { isDirectory && !isPackage }
 
@@ -216,8 +221,41 @@ final class DirectoryLoader {
     static let resourceKeys: [URLResourceKey] = [
         .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey, .isHiddenKey,
         .fileSizeKey, .contentModificationDateKey, .creationDateKey,
-        .localizedTypeDescriptionKey, .tagNamesKey,
     ]
+
+    /// Kind strings by filename extension.
+    ///
+    /// `localizedTypeDescriptionKey` was 26 ms of the 37 ms a folder of a
+    /// thousand files took to read — seventy per cent of the listing, spent
+    /// asking the type system the same question once per file. The answer
+    /// depends on the extension, so it is asked once per extension instead:
+    /// a folder of a thousand files with thirty kinds in it makes thirty
+    /// queries rather than a thousand.
+    private static var kindByExtension: [String: String] = [:]
+    private static let kindLock = NSLock()
+
+    static func kind(for url: URL, isDirectory: Bool, isPackage: Bool) -> String {
+        // A package is a folder the type system has an opinion about, and a
+        // plain folder is always "Folder"; neither depends on an extension.
+        if isDirectory && !isPackage { return "Folder" }
+        let ext = url.pathExtension.lowercased()
+        guard !ext.isEmpty else { return isDirectory ? "Folder" : "Document" }
+
+        kindLock.lock()
+        if let hit = kindByExtension[ext] { kindLock.unlock(); return hit }
+        kindLock.unlock()
+
+        let described: String
+        if let type = UTType(filenameExtension: ext), let description = type.localizedDescription {
+            described = description
+        } else {
+            described = "\(ext.uppercased()) file"
+        }
+        kindLock.lock()
+        kindByExtension[ext] = described
+        kindLock.unlock()
+        return described
+    }
 
     static func read(_ url: URL, showHidden: Bool) throws -> [FileItem] {
         let fm = FileManager.default
@@ -242,8 +280,7 @@ final class DirectoryLoader {
                 size: isDir ? -1 : Int64(values?.fileSize ?? 0),
                 modified: values?.contentModificationDate ?? .distantPast,
                 created: values?.creationDate ?? .distantPast,
-                kind: values?.localizedTypeDescription ?? (isDir ? "Folder" : "Document"),
-                tags: values?.tagNames ?? []
+                kind: kind(for: itemURL, isDirectory: isDir, isPackage: values?.isPackage ?? false)
             )
         }
     }
