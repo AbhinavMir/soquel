@@ -8,7 +8,7 @@ Every command is also in the command palette (`⇧⌘P`), which shows its shortc
 | --- | --- |
 | Split vertically | `⌘D` |
 | Split horizontally | `⇧⌘D` |
-| Rotate the split holding this pane | `⌥⌘D` |
+| Rotate the split holding this pane | `⇧⌥⌘D` |
 | Close pane | `⇧⌘W` |
 | Focus pane by position | `⌘1`–`⌘4` |
 | Focus next / previous pane | `⌥⌘→` / `⌥⌘←` |
@@ -26,7 +26,8 @@ the right-hand pane horizontally and the left one is untouched. Splitting the sa
 adds a sibling rather than nesting, since a divider inside a divider running the same way changes
 nothing.
 
-`⌘W` closes a tab, so the window takes `⌥⌘W`. Closing the last tab in the last pane closes the window.
+`⌘W` closes a tab, so the window takes `⌥⌘W`. One tab is the minimum: `⌘W` on the last tab of the
+last pane keeps it and says so, rather than taking the window and the session with it.
 
 ## Navigation
 
@@ -49,7 +50,7 @@ nothing.
 | New file | `⌃⌘N` |
 | Rename | `↩` on a selected row |
 | Open With, and set the default application for the type | context menu |
-| Duplicate | `⌃⌘D` |
+| Duplicate | `⌃⇧⌘D` |
 | Cut / copy / paste | `⌘X` / `⌘C` / `⌘V` |
 | Move to Trash | `⌘⌫` |
 | Delete permanently | `⌥⌘⌫` |
