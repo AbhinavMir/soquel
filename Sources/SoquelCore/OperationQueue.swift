@@ -10,6 +10,8 @@ final class TransferJob {
     enum State: String {
         case waiting, running, paused, finished, failed, cancelled
 
+        var isActive: Bool { self == .running || self == .paused || self == .waiting }
+
         var title: String {
             switch self {
             case .waiting: return "Waiting"
@@ -28,22 +30,44 @@ final class TransferJob {
     let isMove: Bool
     let createdAt: Date
 
-    private(set) var state: State = .waiting
-    private(set) var bytesCopied: Int64 = 0
-    private(set) var totalBytes: Int64 = 0
-    private(set) var filesCopied = 0
-    private(set) var totalFiles = 0
+    /// Every mutable field is read from the main thread (the panel and the
+    /// status bar) and written from the copy worker, so all of it is guarded
+    /// by one lock. The worker used to bounce to the main thread twice per
+    /// file just to read `state`; at four thousand files that was eight
+    /// thousand blocking hops onto a thread already busy redrawing, and the
+    /// copy ran about a hundred times slower than `cp`.
+    private let lock = NSLock()
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock(); defer { lock.unlock() }
+        return body()
+    }
+
+    private var _state: State = .waiting
+    var state: State { locked { _state } }
+    private var _bytesCopied: Int64 = 0
+    var bytesCopied: Int64 { locked { _bytesCopied } }
+    private var _totalBytes: Int64 = 0
+    var totalBytes: Int64 { locked { _totalBytes } }
+    private var _filesCopied = 0
+    var filesCopied: Int { locked { _filesCopied } }
+    private var _totalFiles = 0
+    var totalFiles: Int { locked { _totalFiles } }
     /// Failures in the same unit as `totalFiles`. `failures` holds one entry
     /// per failed item; a folder that failed weighs in here as the files it
     /// held, so "N of M failed" compares like with like.
-    private(set) var filesFailed = 0
-    private(set) var currentFile: String?
-    private(set) var failures: [(url: URL, message: String)] = []
-    private(set) var startedAt: Date?
+    private var _filesFailed = 0
+    var filesFailed: Int { locked { _filesFailed } }
+    private var _currentFile: String?
+    var currentFile: String? { locked { _currentFile } }
+    private var _failures: [(url: URL, message: String)] = []
+    var failures: [(url: URL, message: String)] { locked { _failures } }
+    private var _startedAt: Date?
+    var startedAt: Date? { locked { _startedAt } }
 
     /// Bytes per second over the life of the job, once enough has moved to mean
     /// anything.
-    private(set) var bytesPerSecond: Double = 0
+    private var _bytesPerSecond: Double = 0
+    var bytesPerSecond: Double { locked { _bytesPerSecond } }
 
     /// The file named by the most recent `recordFailure`, cleared by the next
     /// `advance`. The copy loop reports a failure by recording it and then
@@ -83,18 +107,20 @@ final class TransferJob {
         return left / bytesPerSecond
     }
 
-    var isActive: Bool { state == .running || state == .paused || state == .waiting }
+    var isActive: Bool { state.isActive }
 
     // MARK: - Transitions
 
     func markStarted(totalBytes: Int64, totalFiles: Int, now: Date) {
-        self.totalBytes = totalBytes
-        self.totalFiles = totalFiles
-        startedAt = now
-        // Measuring runs in the background, so a cancel can land before this
-        // does. Promoting unconditionally would resurrect that cancelled job
-        // and the copy would carry on.
-        if state == .waiting { state = .running }
+        locked {
+            _totalBytes = totalBytes
+            _totalFiles = totalFiles
+            _startedAt = now
+            // Measuring runs in the background, so a cancel can land before
+            // this does. Promoting unconditionally would resurrect that
+            // cancelled job and the copy would carry on.
+            if _state == .waiting { _state = .running }
+        }
     }
 
     func advance(bytes: Int64, file: String?, now: Date) {
@@ -102,7 +128,7 @@ final class TransferJob {
         // the failure just recorded against that same name. Matching on both
         // the pending failure and the name keeps a later file that happens to
         // share a name with a failed one from being lost from the count.
-        let arrived = (file != nil && file != justFailedFile) ? 1 : 0
+        let arrived = locked { (file != nil && file != justFailedFile) ? 1 : 0 }
         advance(bytes: bytes, files: arrived, file: file, now: now)
     }
 
@@ -110,13 +136,15 @@ final class TransferJob {
     /// placed. A copied or merged folder is one advance but many files, and
     /// `totalFiles` counts files, so the progress counts must too.
     func advance(bytes: Int64, files: Int, file: String?, now: Date) {
-        bytesCopied += bytes
-        filesCopied += files
-        justFailedFile = nil
-        currentFile = file
-        if let startedAt {
-            let elapsed = now.timeIntervalSince(startedAt)
-            if elapsed > 0.25 { bytesPerSecond = Double(bytesCopied) / elapsed }
+        locked {
+            _bytesCopied += bytes
+            _filesCopied += files
+            justFailedFile = nil
+            _currentFile = file
+            if let started = _startedAt {
+                let elapsed = now.timeIntervalSince(started)
+                if elapsed > 0.25 { _bytesPerSecond = Double(_bytesCopied) / elapsed }
+            }
         }
     }
 
@@ -125,41 +153,50 @@ final class TransferJob {
     /// failure's weight in the unit `totalFiles` uses: a failed folder is the
     /// files it held, not one.
     func recordFailure(_ url: URL, _ message: String, files: Int = 1) {
-        failures.append((url, message))
-        filesFailed += files
-        justFailedFile = url.lastPathComponent
+        locked {
+            _failures.append((url, message))
+            _filesFailed += files
+            justFailedFile = url.lastPathComponent
+        }
     }
 
-    private(set) var manifest: VerifiedCopy.Manifest?
+    private var _manifest: VerifiedCopy.Manifest?
+    var manifest: VerifiedCopy.Manifest? { locked { _manifest } }
 
     func recordVerification(_ manifest: VerifiedCopy.Manifest) {
-        self.manifest = manifest
+        locked { _manifest = manifest }
         // A copy whose bytes did not survive is not a finished job. The SOURCE
         // is recorded: retry re-copies it. Recording the destination made
         // retry copy the corrupt file onto itself and report success.
-        for entry in manifest.failed {
-            failures.append((entry.source, "Checksum did not match after copying"))
-            filesFailed += 1
+        locked {
+            for entry in manifest.failed {
+                _failures.append((entry.source, "Checksum did not match after copying"))
+                _filesFailed += 1
+            }
         }
         // An unreadable entry proves nothing about the copy — a read that
         // errored mid-stream on a flaky disk is precisely the event verified
         // copy exists to catch — and nothing else in the app surfaces the
         // manifest. Left uncounted, the job would finish as Done. It is a
         // failure here so the panel shows it and offers the retry.
-        for entry in manifest.unreadable {
-            failures.append((entry.source, "Could not be read back to verify"))
-            filesFailed += 1
+        locked {
+            for entry in manifest.unreadable {
+                _failures.append((entry.source, "Could not be read back to verify"))
+                _filesFailed += 1
+            }
         }
     }
 
-    func pause() { if state == .running { state = .paused } }
-    func resume() { if state == .paused { state = .running } }
-    func cancel() { if isActive { state = .cancelled } }
+    func pause() { locked { if _state == .running { _state = .paused } } }
+    func resume() { locked { if _state == .paused { _state = .running } } }
+    func cancel() { locked { if _state.isActive { _state = .cancelled } } }
 
     func finish() {
-        guard state != .cancelled else { return }
-        state = failures.isEmpty ? .finished : .failed
-        currentFile = nil
+        locked {
+            guard _state != .cancelled else { return }
+            _state = _failures.isEmpty ? .finished : .failed
+            _currentFile = nil
+        }
     }
 
     /// What the row says: never a bare percentage, always what is happening.
@@ -265,7 +302,38 @@ final class TransferQueue {
     }
 
     func notify() {
-        NotificationCenter.default.post(name: Self.changed, object: nil)
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: Self.changed, object: nil)
+        } else {
+            DispatchQueue.main.async { NotificationCenter.default.post(name: Self.changed, object: nil) }
+        }
+    }
+
+    /// Guards a pending throttled refresh.
+    private let throttleLock = NSLock()
+    private var refreshPending = false
+    /// How often progress reaches the screen. Ten times a second is past
+    /// what anyone can read and well under what the panel costs to rebuild.
+    static let refreshInterval: TimeInterval = 0.1
+
+    /// Progress from the copy worker, coalesced. One notification per file
+    /// rebuilt the whole transfer panel per file — thousands of layouts for a
+    /// job the user watches as a moving bar — and the rebuild also swapped
+    /// the rows out from under Pause and Cancel as they were being clicked.
+    func notifyThrottled() {
+        throttleLock.lock()
+        let alreadyPending = refreshPending
+        refreshPending = true
+        throttleLock.unlock()
+        guard !alreadyPending else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refreshInterval) { [weak self] in
+            guard let self else { return }
+            self.throttleLock.lock()
+            self.refreshPending = false
+            self.throttleLock.unlock()
+            NotificationCenter.default.post(name: Self.changed, object: nil)
+        }
     }
 
     /// Clears everything that is no longer running. Active jobs are kept: the

@@ -130,10 +130,11 @@ final class OperationEngine {
 
             for source in sources {
                 // Pausing holds the worker here; cancelling abandons the rest.
-                while DispatchQueue.main.sync(execute: { job.state }) == .paused {
-                    Thread.sleep(forTimeInterval: 0.2)
-                }
-                if DispatchQueue.main.sync(execute: { job.state }) == .cancelled { break }
+                // Read directly: the job is lock-protected, and hopping to the
+                // main thread for it made every file wait on the redraw the
+                // last file had just queued.
+                while job.state == .paused { Thread.sleep(forTimeInterval: 0.2) }
+                if job.state == .cancelled { break }
 
                 var destination = directory.appendingPathComponent(source.lastPathComponent)
 
@@ -270,13 +271,19 @@ final class OperationEngine {
 
                     // Measured at the destination so the job's progress is in
                     // the same units as its totals: a placed folder is many
-                    // files, not one.
-                    let moved = TransferQueue.measure([destination])
-                    let name = source.lastPathComponent
-                    DispatchQueue.main.async {
-                        job.advance(bytes: moved.bytes, files: moved.files, file: name, now: Date())
-                        TransferQueue.shared.notify()
+                    // files, not one. A plain file needs no walk — it is one
+                    // file of a size already known, and re-enumerating every
+                    // copied file doubled the syscalls of the copy itself.
+                    let moved: (bytes: Int64, files: Int)
+                    if let size = try? destination.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                       size.isRegularFile == true {
+                        moved = (Int64(size.fileSize ?? 0), 1)
+                    } else {
+                        moved = TransferQueue.measure([destination])
                     }
+                    let name = source.lastPathComponent
+                    job.advance(bytes: moved.bytes, files: moved.files, file: name, now: Date())
+                    TransferQueue.shared.notifyThrottled()
                 } catch {
                     result.failures.append((source, error))
                     let name = source.lastPathComponent
@@ -285,11 +292,9 @@ final class OperationEngine {
                     // measured still counts as one: one item did fail,
                     // whatever it held.
                     let failedFiles = max(1, TransferQueue.measure([source]).files)
-                    DispatchQueue.main.async {
-                        job.recordFailure(source, message, files: failedFiles)
-                        job.advance(bytes: 0, file: name, now: Date())
-                        TransferQueue.shared.notify()
-                    }
+                    job.recordFailure(source, message, files: failedFiles)
+                    job.advance(bytes: 0, file: name, now: Date())
+                    TransferQueue.shared.notifyThrottled()
                 }
             }
 
