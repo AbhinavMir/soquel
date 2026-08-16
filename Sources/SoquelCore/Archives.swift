@@ -351,7 +351,7 @@ enum Archive {
 /// Lists an archive's contents in a sheet, with a button to extract it — the
 /// whole thing, or only the row that is selected.
 final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-    private var panel: NSPanel?
+    private var panel: ArchiveSheetPanel?
     private weak var owner: MainWindowController?
     private var url: URL!
     private var entries: [Archive.Entry] = []
@@ -374,12 +374,13 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
         // entries under the new title until the new listing returns.
         entries = []
 
-        let panel = NSPanel(
+        let panel = ArchiveSheetPanel(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 460),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered, defer: false
         )
         panel.title = url.lastPathComponent
+        panel.closeSheet = { [weak self] in self?.dismiss() }
 
         table = NSTableView()
         table.headerView = nil
@@ -403,6 +404,10 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
 
         extractButton = NSButton(title: "Extract", target: self, action: #selector(extractArchive))
         let close = NSButton(title: "Close", target: self, action: #selector(dismiss))
+        // Escape closes the sheet, the way Cancel does in the other panels.
+        // Without a key equivalent the button was the only way out, and every
+        // key pressed while the sheet was up went to the sheet and was lost.
+        close.keyEquivalent = "\u{1b}"
         let buttons = NSStackView(views: [close, extractButton])
         buttons.orientation = .horizontal
         buttons.spacing = 8
@@ -532,6 +537,31 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
             size.widthAnchor.constraint(equalToConstant: 80),
         ])
         return cell
+    }
+}
+
+/// The sheet's own window, so that ⌘W closes it.
+///
+/// A sheet is not in its host window's responder chain, so the main menu's
+/// ⌘W found no target and the key did nothing. The Close button carries
+/// Escape as its key equivalent; a button can hold only one, so the second
+/// key is answered here. A key equivalent offered to the key window is taken
+/// before the menu bar sees it, and a disabled menu item hands it back, so
+/// this runs whichever way round the event travels.
+private final class ArchiveSheetPanel: NSPanel {
+    var closeSheet: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Caps Lock and the function flags ride along on ordinary key presses,
+        // so they come off before the command key is compared.
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .function, .numericPad])
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "w" {
+            closeSheet?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 

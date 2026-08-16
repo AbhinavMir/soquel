@@ -203,6 +203,15 @@ final class PaneToolbarView: NSView {
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        // Every button carries a required width, and an arranged subview may
+        // not be dropped unless it is allowed to be: at the window's minimum
+        // width the required widths could not all fit, so AppKit broke a
+        // constraint and laid the buttons on top of one another. The stack
+        // sheds trailing buttons instead, and the bar clips what is left.
+        stack.setClippingResistancePriority(.defaultLow, for: .horizontal)
+        stack.setHuggingPriority(.defaultHigh, for: .horizontal)
+        wantsLayer = true
+        layer?.masksToBounds = true
         addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -249,6 +258,9 @@ final class PaneToolbarView: NSView {
                 let pill = ToolbarPillView(actions: members)
                 pill.onActivate = { [weak self] in self?.onActivate?() }
                 stack.addArrangedSubview(pill)
+                // Droppable, so a bar too narrow for everything loses its
+                // trailing controls rather than stacking them on each other.
+                stack.setVisibilityPriority(.detachOnlyIfNecessary, for: pill)
                 continue
             }
             index += 1
@@ -277,6 +289,7 @@ final class PaneToolbarView: NSView {
                 button.setAccessibilityValue("off")
             }
             stack.addArrangedSubview(button)
+            stack.setVisibilityPriority(.detachOnlyIfNecessary, for: button)
         }
         needsDisplay = true
     }

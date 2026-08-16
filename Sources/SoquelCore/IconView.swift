@@ -88,6 +88,13 @@ final class FileIconItem: NSCollectionViewItem {
         badge.stringValue = gitState.badge
         badge.toolTip = gitState == .clean ? nil : gitState.label
 
+        // isSelected is set by the collection view before the tile is handed a
+        // file, and its observer runs against the previous file's resting
+        // colour — or against no view at all, when the selection was set on a
+        // grid that had just been reloaded. Re-applied here, after the tile
+        // knows what it is showing, so a carried-over selection is drawn.
+        applySelectionAppearance()
+
         ThumbnailCache.shared.cancel(thumbnailToken)
         thumbnailToken = nil
         // The type icon is shown first and replaced when the real thumbnail

@@ -124,7 +124,28 @@ final class InlineRenameEditor: NSObject, NSTextFieldDelegate {
         // dismissed the editor pulls the view out from under the click still
         // being delivered — in the column browser that read as the parent
         // column closing. The rename happens once the click is finished.
-        DispatchQueue.main.async { commit(typed) }
+        commitOnceClickEnds(typed, commit: commit)
+    }
+
+    /// Waits for the mouse button to come up before renaming.
+    ///
+    /// A table decides which row a click hit when the button goes down and
+    /// applies it when the button comes up. `DispatchQueue.main.async` runs
+    /// in the event-tracking mode too, so the rename and the re-sort landed
+    /// between those two halves: the row the click had chosen then held a
+    /// different file, and clicking one file selected another.
+    private func commitOnceClickEnds(_ typed: String, commit: @escaping (String) -> Void) {
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            DispatchQueue.main.async { commit(typed) }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+            guard let self else {
+                commit(typed)
+                return
+            }
+            self.commitOnceClickEnds(typed, commit: commit)
+        }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {

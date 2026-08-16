@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 
 /// Column view: one pane per directory level, side by side, the way Finder's
 /// column browser works.
@@ -10,10 +11,25 @@ import AppKit
 /// as in the list view, rather than only where the table happens to live.
 final class ColumnTableView: NSTableView {
     var onKeyDown: ((NSEvent) -> Bool)?
+    /// Called once this table has the keyboard, so the pane can say that it
+    /// is the focused one and hand an open Quick Look panel over.
+    var onFocus: (() -> Void)?
+
+    /// The pane asks for the keyboard as the columns come to the front, which
+    /// is before this table has been laid out or filled. Accepting outright
+    /// means the ask cannot be turned down for the state the table happens to
+    /// be in at that moment.
+    override var acceptsFirstResponder: Bool { true }
 
     override func keyDown(with event: NSEvent) {
         if onKeyDown?(event) == true { return }
         super.keyDown(with: event)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let took = super.becomeFirstResponder()
+        if took { onFocus?() }
+        return took
     }
 }
 
@@ -35,6 +51,17 @@ final class ColumnBrowserView: NSView {
     /// Called when descending or backing out clears the filter, so the pane
     /// can empty its filter box rather than showing a filter that is off.
     var onFilterCleared: (() -> Void)?
+    /// Called when a column takes the keyboard.
+    var onFocusTaken: (() -> Void)?
+    /// The list controller that answers Quick Look for this pane.
+    ///
+    /// Quick Look looks for its controller by walking up the responder chain
+    /// from the first responder, and while the columns hold the keyboard that
+    /// chain runs through this view and the pane, never through the list
+    /// controller that owns the selection and the panel's contents. The pane
+    /// hands that controller over here, so Space previews the file the
+    /// columns have selected.
+    var quickLookSource: (() -> FileListViewController?)?
 
     /// Suppresses selection reporting while a reload re-selects the same
     /// files by URL; without it the re-selection re-enters the descend logic
@@ -165,6 +192,9 @@ final class ColumnBrowserView: NSView {
     /// Shows `url` as the leftmost column, discarding anything to the right.
     func show(_ url: URL) {
         clearLevels()
+        // The drill-down the rename happened in is gone, so the file it was
+        // waiting to select is no longer anything this view is showing.
+        pendingRenamedSelection = nil
         // Nothing is selected in a browser that was just rebuilt, and the
         // pane's mirror of the selection has to hear that, or Delete acts on
         // files that are no longer on screen.
@@ -183,6 +213,11 @@ final class ColumnBrowserView: NSView {
     /// only the pane's own switch counts, not a collapsed ancestor.
     override var isHidden: Bool {
         didSet {
+            // An ask for the keyboard does not outlive the switch away from
+            // this view: the pane puts the keyboard in the list, and a
+            // listing landing afterwards would take it back to a column
+            // nobody can see.
+            if isHidden { wantsKeyboardFocus = false }
             guard oldValue, !isHidden else { return }
             collapseToRoot()
         }
@@ -271,6 +306,7 @@ final class ColumnBrowserView: NSView {
         if !levels.isEmpty { clearFilterForDepthChange() }
         let table = ColumnTableView()
         table.onKeyDown = { [weak self] event in self?.onKeyDown?(event) ?? false }
+        table.onFocus = { [weak self] in self?.onFocusTaken?() }
         table.headerView = nil
         table.rowHeight = Theme.rowHeight
         table.style = .plain
@@ -359,10 +395,34 @@ final class ColumnBrowserView: NSView {
         if let first = indexes.first { root.table.scrollRowToVisible(first) }
     }
 
-    /// Puts the keyboard in the deepest column, so arrows move its rows.
+    /// Set while the pane wants the keyboard in this view. The ask is kept
+    /// rather than acted on once: a column's rows are read in the background,
+    /// so at the moment the pane asks there is usually a table with nothing
+    /// in it, and a table with nothing in it has no row for an arrow key to
+    /// move to.
+    private var wantsKeyboardFocus = false
+
+    /// The file a rename has just created, to select once the listing that
+    /// follows the rename lands. The columns still hold the old name when the
+    /// rename commits, so the selection cannot move to the new one until the
+    /// refreshed rows are on screen.
+    private var pendingRenamedSelection: URL?
+
+    /// Puts the keyboard in the deepest column, so arrows move its rows. The
+    /// ask is honoured now if that column is already listed, and otherwise as
+    /// soon as its listing lands.
     func focusDeepestColumn() {
-        guard let level = levels.last else { return }
-        window?.makeFirstResponder(level.table)
+        wantsKeyboardFocus = true
+        guard let level = levels.last, !level.items.isEmpty else { return }
+        claimKeyboardFocus()
+    }
+
+    /// Makes the deepest column's table the first responder, if the keyboard
+    /// is still wanted here and this view is on screen.
+    private func claimKeyboardFocus() {
+        guard wantsKeyboardFocus, !isHidden, let window, let level = levels.last else { return }
+        wantsKeyboardFocus = false
+        window.makeFirstResponder(level.table)
     }
 
     private func loadColumn(at index: Int) {
@@ -404,15 +464,34 @@ final class ColumnBrowserView: NSView {
                 level.table.reloadData()
                 self.layoutColumns()
                 let rows = self.items(at: index)
-                let restored = previous.compactMap { url in rows.firstIndex { $0.url == url } }
+                var restored = previous.compactMap { url in rows.firstIndex { $0.url == url } }
+                // A rename that has just committed leaves the old name in
+                // `previous` and nothing to restore. The file is on screen
+                // under its new name and is the one the user is working on,
+                // so the selection follows it there instead of emptying.
+                var renamed: Int?
+                if let wanted = self.pendingRenamedSelection,
+                   let row = rows.firstIndex(where: { $0.url == wanted }) {
+                    self.pendingRenamedSelection = nil
+                    renamed = row
+                    restored = [row]
+                }
                 level.table.selectRowIndexes(IndexSet(restored), byExtendingSelection: false)
                 self.isRemappingSelection = false
-                // When files the selection held are gone, the pane's mirror
-                // is told, or Delete acts on files no longer on screen.
-                if !previous.isEmpty, restored.count != previous.count,
-                   index == self.levels.count - 1 {
+                if let row = renamed {
+                    level.table.scrollRowToVisible(row)
+                    self.onSelectMany?([rows[row].url])
+                } else if !previous.isEmpty, restored.count != previous.count,
+                          index == self.levels.count - 1 {
+                    // When files the selection held are gone, the pane's
+                    // mirror is told, or Delete acts on files no longer on
+                    // screen.
                     self.onSelectMany?(restored.map { rows[$0].url })
                 }
+                // The pane asks for the keyboard while this column is still
+                // being read, and the ask is honoured here, where there is a
+                // filled table to hand it to.
+                if index == self.levels.count - 1 { self.claimKeyboardFocus() }
             }
         }
     }
@@ -433,6 +512,29 @@ final class ColumnBrowserView: NSView {
     private func scrollToEnd() {
         guard let last = levels.last else { return }
         scroll.contentView.scrollToVisible(last.container.frame)
+    }
+
+    // MARK: - Quick Look
+
+    /// The list controller that answers the panel, if the pane has one.
+    private var quickLookController: FileListViewController? {
+        quickLookSource.flatMap { $0() }
+    }
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool {
+        quickLookController != nil
+    }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        guard let list = quickLookController else { return }
+        panel.dataSource = list
+        panel.delegate = list
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        guard let list = quickLookController else { return }
+        if panel.dataSource === list { panel.dataSource = nil }
+        if panel.delegate === list { panel.delegate = nil }
     }
 }
 
@@ -684,6 +786,31 @@ extension ColumnBrowserView {
             return (table, rect)
         }
         return nil
+    }
+
+    /// Follows a rename that has just committed under the columns.
+    ///
+    /// Every column names its folder by the path it had, so the refresh that
+    /// follows a rename finds the old name gone: it drops the column the
+    /// renamed folder had opened, and the reload restores a selection by URLs
+    /// that no longer exist and reports that nothing is selected. The old path
+    /// is rewritten to the new one here, and the new name is held until the
+    /// refreshed listing lands so the selection can move to it.
+    func noteRename(from old: URL, to new: URL) {
+        let oldPath = old.standardizedFileURL.path
+        for index in levels.indices {
+            let path = levels[index].url.standardizedFileURL.path
+            if path == oldPath {
+                levels[index].url = new
+            } else if path.hasPrefix(oldPath + "/") {
+                // A column below the renamed folder keeps its place in the
+                // path: only the part that was renamed changes.
+                levels[index].url = new.appendingPathComponent(
+                    String(path.dropFirst(oldPath.count + 1))
+                )
+            }
+        }
+        pendingRenamedSelection = new
     }
 
     /// Re-reads every column, for after a trash, a rename, or a settings

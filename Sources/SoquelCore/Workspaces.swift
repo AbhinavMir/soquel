@@ -195,6 +195,23 @@ extension Notification.Name {
     static let soquelWorkspacesChanged = Notification.Name("app.soquel.workspacesChanged")
 }
 
+/// The table behind Manage Workspaces…, with one rule relaxed.
+///
+/// A table view vets every first responder inside it, and it refuses an
+/// editable text field unless the mouse event that proposed it was a double
+/// click. That rule is what makes a single click select the row instead of
+/// opening an editor, so it must stay for real clicks. A programmatic request
+/// carries no event, and that is the case the Rename button needs, so the
+/// field is allowed through when no event asked for it.
+private final class WorkspaceTableView: NSTableView {
+    override func validateProposedFirstResponder(
+        _ responder: NSResponder, for event: NSEvent?
+    ) -> Bool {
+        if event == nil, responder is NSTextField { return true }
+        return super.validateProposedFirstResponder(responder, for: event)
+    }
+}
+
 /// The body of Go > Manage Workspaces…: every saved workspace in a table,
 /// with a button to rename the selected one in place and one to delete it.
 ///
@@ -220,7 +237,7 @@ final class WorkspaceManagerView: NSView, NSTableViewDataSource, NSTableViewDele
     required init?(coder: NSCoder) { fatalError("not supported") }
 
     private func build() {
-        table = NSTableView()
+        table = WorkspaceTableView()
         table.dataSource = self
         table.delegate = self
         table.rowHeight = 22
@@ -284,7 +301,21 @@ final class WorkspaceManagerView: NSView, NSTableViewDataSource, NSTableViewDele
     @objc private func renameSelected() {
         let row = table.selectedRow
         guard workspaces.indices.contains(row) else { return }
-        table.editColumn(0, row: row, with: nil, select: true)
+        // editColumn(_:row:with:select:) starts an editor only when the table
+        // hands the field editor to a cell it agrees to edit, and it never
+        // agreed here, so the button looked dead while a double click on the
+        // same cell worked. Focus the name field itself, which is the state
+        // the double click reaches, and let the field editor take over.
+        table.scrollRowToVisible(row)
+        guard
+            let cell = table.view(atColumn: 0, row: row, makeIfNecessary: true)
+                as? NSTableCellView,
+            let field = cell.textField
+        else { return }
+        window?.makeFirstResponder(field)
+        // Rename usually replaces the whole name, so the old one starts
+        // selected, the way editColumn's select flag asked for.
+        field.currentEditor()?.selectAll(nil)
     }
 
     @objc private func deleteSelected() {

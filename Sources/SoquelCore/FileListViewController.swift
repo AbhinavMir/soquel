@@ -138,6 +138,8 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     /// Tokens for the background-work notifications this list listens to.
     private var updateObservers: [NSObjectProtocol] = []
+    /// Bumped per listing, so a tag pass for a folder already left is dropped.
+    private var tagGeneration = 0
 
     deinit {
         for observer in updateObservers { NotificationCenter.default.removeObserver(observer) }
@@ -163,6 +165,22 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             let column = self.tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("size"))
             guard column >= 0 else { return }
             self.tableView.reloadData(forRowIndexes: [row], columnIndexes: [column])
+        })
+        updateObservers.append(center.addObserver(
+            forName: .soquelTagsRead, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self, self.isViewLoaded,
+                  (note.object as? Int) == self.tagGeneration,
+                  let paths = note.userInfo?["paths"] as? Set<String> else { return }
+            let rows = IndexSet(self.items.indices.filter {
+                paths.contains(self.items[$0].url.standardizedFileURL.path)
+            })
+            guard !rows.isEmpty else { return }
+            // Only the tagged rows are redrawn, and only their own row view.
+            for row in rows {
+                (self.tableView.rowView(atRow: row, makeIfNecessary: false) as? FileRowView)?
+                    .tagTint = Tags.rowTint(for: TagReader.tags(for: self.items[row].url))
+            }
         })
         updateObservers.append(center.addObserver(
             forName: .soquelMetadataRead, object: nil, queue: .main
@@ -345,8 +363,32 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // views are swapped the focus is already gone, so it is recorded on
         // the way in and given back on the way out.
         if viewHoldsFocus { focusReturnsAfterSwitch = true }
-        mode = FolderViewSettings.viewMode(for: url)
+        let next = FolderViewSettings.viewMode(for: url)
+        let switching = next != mode && isViewLoaded
+        // selectedURLs() answers for whichever view `mode` names, so the
+        // selection has to be read here, while it still names the view the
+        // user was looking at. A line later it names the other one, whose rows
+        // are whatever they were the last time that view was in front.
+        //
+        // Column view is left out on purpose: the browser owns that selection
+        // and applyViewMode copies its mirror across, keeping the old cache
+        // when the mirror is empty.
+        if switching, mode != .column { selectedURLsCache = selectedURLs() }
+        mode = next
+        // Until applyViewMode has rearranged the views, both of them describe
+        // a half-finished switch: the table still holds the rows of the mode
+        // being left, the grid the tiles of the one being entered. A selection
+        // message arriving in that window read the incoming view and wrote its
+        // stale selection over the one being carried across — which is how the
+        // icon view came up showing the tile picked the last time it was on
+        // screen instead of the file picked in the table.
+        if switching { isSwitchingMode = true }
     }
+
+    /// True from the moment `mode` changes until applyViewMode has arranged the
+    /// views for it. Selection messages are ignored while it is set;
+    /// applyViewMode reports the finished selection itself.
+    private var isSwitchingMode = false
 
     /// True while a view switch is under way that started with the keyboard
     /// in this list. Consumed by applyViewMode.
@@ -371,7 +413,14 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     func applyViewMode() {
         refreshMode()
+        // However this returns, the views describe the mode again by the time
+        // it does, so selection messages go back to being trusted.
+        defer { isSwitchingMode = false }
         guard isViewLoaded else { return }
+        // Read before shownMode is brought up to date below. True only for a
+        // real switch of view: applyViewMode also runs on every other tab when
+        // a sort or an icon size changes.
+        let switched = shownMode != mode
         scrollView.isHidden = mode != .list
         collectionScroll.isHidden = mode != .icon
         // Coming back from the column browser, its selection is the current
@@ -399,7 +448,19 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
                 layout.itemSize = NSSize(width: max(side, Self.minimumTileWidth), height: side + 34)
             }
             collectionView.reloadData()
-            restoreCollectionSelection(selectedURLsCache)
+            // The same wholesale replace the table branch does, and for the
+            // same reasons. restoreCollectionSelection is not used here
+            // because it leaves an empty list alone: an empty cache means the
+            // user has nothing selected, and left alone the grid went on
+            // showing — and the inspector went on describing — the tile it was
+            // given the last time icon view was in front.
+            let target = collectionPaths(for: selectedURLsCache)
+            if collectionView.selectionIndexPaths != target {
+                collectionView.selectionIndexPaths = target
+                if let first = target.min() {
+                    collectionView.scrollToItems(at: [first], scrollPosition: .nearestHorizontalEdge)
+                }
+            }
         } else {
             tableView.reloadData()
             // The cache carries the selection across the switch. reloadData
@@ -422,6 +483,15 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             }
         }
         if returnFocus { focusTable() }
+        // Neither view announces a selection that was put on it in code, and
+        // the messages the switch did produce were ignored above, so the
+        // status bar, the inspector and an open Quick Look panel would still
+        // be describing the view that was left. Say it once, here.
+        if switched {
+            isSwitchingMode = false
+            reportStatus()
+            reloadQuickLookIfVisible()
+        }
     }
 
     /// Selection is held as URLs so it survives switching view modes, where the
@@ -654,6 +724,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             self.refreshGitStatus()
             self.measureFolderSizes()
             self.requestMetadata()
+            // Tags are read behind the listing: nothing waits on them, and a
+            // folder where nothing is tagged never redraws for them at all.
+            self.tagGeneration += 1
+            TagReader.read(self.items.map(\.url), generation: self.tagGeneration)
             if Prefs.autoFitColumns { self.fitColumnsToContent(persistWidths: false) }
             self.reportStatus()
             completion?()
@@ -770,7 +844,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
             "Dragging \(count) item\(count == 1 ? "" : "s") — press esc to cancel")
     }
 
-    private func reportStatus() {
+    /// Also called by the pane when it takes focus: the status bar and the
+    /// inspector describe the focused pane, and a pane can become the focused
+    /// one without its rows or its selection changing.
+    func reportStatus() {
         delegate?.fileList(self, didChangeSelection: selectedURLs())
         let selected = selectedURLs().count
         var text = "\(items.count) item\(items.count == 1 ? "" : "s")"
@@ -1023,19 +1100,35 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     private func restoreCollectionSelection(_ urls: [URL]) {
         guard isIconMode, !urls.isEmpty else { return }
+        collectionView.selectionIndexPaths = collectionPaths(for: urls)
+    }
+
+    /// Where `urls` sit in the listing as it stands, as collection-view paths.
+    /// A URL that is not in it — filtered out, trashed, or in another folder —
+    /// contributes nothing.
+    private func collectionPaths(for urls: [URL]) -> Set<IndexPath> {
         let wanted = Set(urls)
-        let paths = items.enumerated()
-            .filter { wanted.contains($0.element.url) }
-            .map { IndexPath(item: $0.offset, section: 0) }
-        collectionView.selectionIndexPaths = Set(paths)
+        return Set(
+            items.enumerated()
+                .filter { wanted.contains($0.element.url) }
+                .map { IndexPath(item: $0.offset, section: 0) }
+        )
+    }
+
+    /// Keeps an open Quick Look panel on what is selected now.
+    private func reloadQuickLookIfVisible() {
+        guard QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible else { return }
+        QLPreviewPanel.shared().reloadData()
     }
 
     func collectionSelectionChanged() {
+        // Mid-switch the grid is still being filled and what it reports is not
+        // what the user picked; applyViewMode reports the result once the
+        // views match the mode.
+        guard !isSwitchingMode else { return }
         selectedURLsCache = selectedURLs()
         reportStatus()
-        if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
-            QLPreviewPanel.shared().reloadData()
-        }
+        reloadQuickLookIfVisible()
     }
 
     // MARK: - Keyboard
@@ -1197,9 +1290,16 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // Asked once for the whole selection rather than once per file, and
         // only when the application is one of the slow ones.
         AppLaunchGuard.confirm(opening: files, with: nil, in: view.window) { [weak self] in
-            for file in files where !NSWorkspace.shared.open(file) {
+            guard let self else { return }
+            // Handed over rather than waited on: NSWorkspace.open returns
+            // only once Launch Services has taken the request, and a cold
+            // application can take seconds to answer.
+            self.delegate?.fileList(self, didReportStatus: files.count == 1
+                ? "Opening \(files[0].lastPathComponent)…"
+                : "Opening \(files.count) items…")
+            AppLaunchGuard.open(files) { [weak self] failed in
                 guard let self else { return }
-                self.delegate?.fileList(self, didReportStatus: "Could not open “\(file.lastPathComponent)”")
+                self.delegate?.fileList(self, didReportStatus: "Could not open “\(failed.lastPathComponent)”")
             }
         }
     }
@@ -1295,6 +1395,9 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
         var failed = 0
         for url in urls where Tags.toggle(name, on: url) != nil { failed += 1 }
+        // The reader's answer for these files is now stale; the reload's own
+        // pass reads them again.
+        for url in urls { TagReader.forget(url) }
         delegate?.fileList(self, didReportStatus: failed == 0
             ? "Tagged \(urls.count) item(s) \(name)"
             : "Could not tag \(failed) of \(urls.count) item(s)")
@@ -1303,7 +1406,10 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
     @objc private func clearTags() {
         let urls = selectedURLs()
-        for url in urls { Tags.write([], to: url) }
+        for url in urls {
+            Tags.write([], to: url)
+            TagReader.forget(url)
+        }
         delegate?.fileList(self, didReportStatus: "Cleared tags on \(urls.count) item(s)")
         reload(selecting: urls.first)
     }
@@ -2500,7 +2606,20 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
     /// extension, and one lookup per extension covers a folder of thousands.
     private static var iconByExtension: [String: NSImage] = [:]
 
+    /// The generic folder icon, which most folder rows want and none of them
+    /// were getting from a cache: a lookup per folder row per redraw at
+    /// 0.067 ms each is a visible cost in a folder of folders.
+    private static let genericFolderIcon = NSWorkspace.shared.icon(for: .folder)
+
     static func icon(for item: FileItem) -> NSImage {
+        // A plain folder without a custom icon is the common case and always
+        // the same picture. A package, a symlink or a folder someone has
+        // given an icon of its own still gets asked about by path.
+        if item.isDirectory, !item.isPackage, !item.isSymlink,
+           item.url.pathExtension.isEmpty,
+           !FileManager.default.fileExists(atPath: item.url.appendingPathComponent("Icon\r").path) {
+            return genericFolderIcon
+        }
         if item.isDirectory || item.isPackage || item.isSymlink || item.url.pathExtension.isEmpty {
             return NSWorkspace.shared.icon(forFile: item.url.path)
         }
@@ -2519,16 +2638,22 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             return fresh
         }()
         view.isAlternateRow = row % 2 == 1
-        view.tagTint = items.indices.contains(row) ? Tags.rowTint(for: items[row].tags) : nil
+        // Tags come from the background reader, which knows only the files
+        // that carry one: an untagged folder costs nothing to draw.
+        view.tagTint = items.indices.contains(row)
+            ? Tags.rowTint(for: TagReader.tags(for: items[row].url))
+            : nil
         return view
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        // See collectionSelectionChanged: a view switch drives both views in
+        // code, and reloadData drops the table's selection on the way. Those
+        // messages describe a half-finished swap, not a choice by the user.
+        guard !isSwitchingMode else { return }
         selectedURLsCache = selectedURLs()
         reportStatus()
-        if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
-            QLPreviewPanel.shared().reloadData()
-        }
+        reloadQuickLookIfVisible()
     }
 
     func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {

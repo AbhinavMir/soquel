@@ -285,6 +285,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         let host = SettingsPaneHost()
         host.translatesAutoresizingMaskIntoConstraints = false
         host.adopt(wrappingLabelsIn: pane)
+        sizeInnerScrollViews(in: pane)
         host.addSubview(pane)
 
         let scroll = NSScrollView()
@@ -307,6 +308,50 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
             pane.bottomAnchor.constraint(equalTo: host.bottomAnchor),
         ])
         return scroll
+    }
+
+    /// How tall a table inside a pane is made. Large enough to show a dozen
+    /// rows, small enough that the pane around it still fits the window at the
+    /// size it opens at.
+    private static let innerScrollHeight: CGFloat = 420
+
+    /// Gives every scroll view a pane puts inside itself a real height.
+    ///
+    /// The Keyboard, Applications and Themes panes each hold a table in a
+    /// scroll view, and the pane is in turn the document of the scroll view
+    /// built above. A scroll view has no intrinsic height, and a document view
+    /// is free to be any height at all, so nothing in that chain said how tall
+    /// the inner one should be and it settled at zero: the Keyboard table
+    /// measured 607x2794 inside a clip of 605x0, and the pane drew its column
+    /// headers on top of the label that belongs under the table. The height is
+    /// applied here, where every pane passes through, because two of those
+    /// panes cannot be reached from this file.
+    ///
+    /// The constraint is not required, so a pane that does size its own scroll
+    /// view keeps the size it asked for and no conflict is logged.
+    private static func sizeInnerScrollViews(in pane: NSView) {
+        for scroll in innerScrollViews(in: pane) {
+            let height = scroll.heightAnchor.constraint(equalToConstant: innerScrollHeight)
+            height.priority = .defaultHigh
+            height.isActive = true
+        }
+    }
+
+    /// The scroll views a pane lays out itself. A scroll view found this way is
+    /// not descended into: what it scrolls is its own business, and only the
+    /// one the pane positions needs to be given a height. A view still carrying
+    /// its autoresizing mask is left alone, because a constraint cannot be
+    /// added to it without breaking the layout it already has.
+    private static func innerScrollViews(in view: NSView) -> [NSScrollView] {
+        var found: [NSScrollView] = []
+        for sub in view.subviews {
+            if let scroll = sub as? NSScrollView {
+                if !scroll.translatesAutoresizingMaskIntoConstraints { found.append(scroll) }
+            } else {
+                found += innerScrollViews(in: sub)
+            }
+        }
+        return found
     }
 
     /// Opens the window on a named pane, for `SOQUEL_OPEN=settings:applications`.

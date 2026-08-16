@@ -74,6 +74,9 @@ final class UpdateSettingsView: NSView {
             status.leadingAnchor.constraint(equalTo: checkButton.trailingAnchor, constant: 10),
             status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
+            // Without a relation to the content above it the pane's height
+            // is ambiguous, and the label settled above the pane's own top.
+            version.topAnchor.constraint(equalTo: checkButton.bottomAnchor, constant: 20),
             version.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             version.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
         ])

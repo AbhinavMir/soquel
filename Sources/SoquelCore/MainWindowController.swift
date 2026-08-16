@@ -105,24 +105,56 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.alphaValue = Theme.windowOpacity
         build()
         restoreSession()
-        if ownsAutosaveFrame {
+        // A window that opens over another one is placed next to it, and the
+        // saved frame is not consulted at all. The saved frame is shared by
+        // every window, so reading it first put each new window exactly on
+        // top of the first; the autosave name is about where the app comes
+        // back, not about where a second window belongs.
+        if let front = Self.windowToCascadeFrom(besides: window) {
+            window.setFrameTopLeftPoint(Self.cascadedTopLeft(
+                from: front.frame,
+                size: window.frame.size,
+                visible: (front.screen ?? NSScreen.main)?.visibleFrame
+            ))
+        } else if !ownsAutosaveFrame || !window.setFrameUsingName("SoquelMainWindow") {
             // Centring unconditionally threw away the origin the autosave
             // name restored, so the window forgot its place on every launch.
-            // Centre only when no frame has been saved yet.
-            if !window.setFrameUsingName("SoquelMainWindow") { window.center() }
-        } else if let front = NSApp.orderedWindows.first(where: {
-            $0 !== window && $0.windowController is MainWindowController
-        }) {
-            // Reading the shared saved frame here opened every further window
-            // exactly on top of the first, so nothing visibly changed when one
-            // appeared. Cascade from the frontmost window instead; the zero
-            // point asks it for its own offset without moving it.
-            _ = window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
-        } else {
-            // No other window is on screen to cascade from — the owner may be
-            // minimised — so the pre-autosave behaviour is the right one.
+            // Centre only when there is no saved frame to come back to.
             window.center()
         }
+    }
+
+    /// The window a new one opens next to: the frontmost other main window.
+    ///
+    /// `orderedWindows` holds only what the window server has on screen, and
+    /// it answers this at the moment a window is still being built, so the
+    /// full window list is asked the same question when the ordered one comes
+    /// back empty.
+    private static func windowToCascadeFrom(besides window: NSWindow) -> NSWindow? {
+        func isSibling(_ candidate: NSWindow) -> Bool {
+            candidate !== window
+                && candidate.isVisible
+                && candidate.windowController is MainWindowController
+        }
+        return NSApp.orderedWindows.first(where: isSibling)
+            ?? NSApp.windows.first(where: isSibling)
+    }
+
+    /// Where a new window's top-left corner goes: one step down and to the
+    /// right of the window it opens over, which is Finder's cascade.
+    ///
+    /// The step is applied here rather than through `cascadeTopLeft(from:)`,
+    /// because that call reports the front window's own corner only as a side
+    /// effect of moving that window, which a new window must not do. A frame
+    /// that would hang off the right or the bottom of the screen starts the
+    /// run again at the screen's own top-left corner.
+    static func cascadedTopLeft(from front: NSRect, size: NSSize,
+                                visible: NSRect?, step: CGFloat = 22) -> NSPoint {
+        let shifted = NSPoint(x: front.minX + step, y: front.maxY - step)
+        guard let visible else { return shifted }
+        let fits = shifted.x + size.width <= visible.maxX
+            && shifted.y - size.height >= visible.minY
+        return fits ? shifted : NSPoint(x: visible.minX, y: visible.maxY)
     }
 
     // MARK: - Construction
@@ -1866,6 +1898,24 @@ extension MainWindowController: PaneDelegate {
     func paneDidChangeTabs(_ pane: PaneViewController) {
         updateWindowTitle()
         if pane === focusedPane, let url = pane.currentURL { sidebar.reveal(url) }
+        // Sync browsing follows the folder a pane shows, not what is selected
+        // in it. After ⌘↑ the selection is the folder just left — which is
+        // where the other pane already was — so following the selection left
+        // it one step behind on every step out.
+        if let url = pane.currentURL { syncBrowse(from: pane, to: url) }
+    }
+
+    /// Walks the next pane along to `url`, for sync browsing.
+    private func syncBrowse(from pane: PaneViewController, to url: URL) {
+        guard Prefs.syncBrowsing, panes.count > 1,
+              let index = panes.firstIndex(where: { $0 === pane })
+        else { return }
+        let other = panes[(index + 1) % panes.count]
+        // The other pane navigates and reports it in turn. Stopping when it
+        // is already there is what keeps the two from following each other
+        // round the window for ever.
+        guard other.currentURL?.standardizedFileURL != url.standardizedFileURL else { return }
+        other.activeList?.navigate(to: url)
     }
 }
 

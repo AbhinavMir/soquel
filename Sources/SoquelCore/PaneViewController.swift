@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 
 protocol PaneDelegate: AnyObject {
     func pane(_ pane: PaneViewController, openInOppositePane url: URL)
@@ -184,6 +185,21 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         columnBrowser.onKeyDown = { [weak self] event in
             self?.activeList?.handleKeyDown(event) ?? false
         }
+        // The columns hold the keyboard in this view, and the list controller
+        // that would otherwise report the focus is not in the responder chain
+        // above them, so the pane says who is focused itself.
+        columnBrowser.onFocusTaken = { [weak self] in
+            guard let self else { return }
+            self.delegate?.paneDidFocus(self)
+            // An open Quick Look panel follows the keyboard, or it goes on
+            // previewing the pane the user has just left.
+            if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
+                QLPreviewPanel.shared().updateController()
+            }
+        }
+        // Quick Look asks the responder chain above the columns for its
+        // controller, and the list is the one that knows the selection.
+        columnBrowser.quickLookSource = { [weak self] in self?.activeList }
 
         let divider = NSBox()
         divider.boxType = .separator
@@ -522,7 +538,18 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         if let list = activeList {
             columnBrowser.select(list.selectedURLsCache)
         }
-        if isFocused { columnBrowser.focusDeepestColumn() }
+        guard isFocused else { return }
+        // Asked for a turn later, not here. A view-mode change tells the pane
+        // first and the list second, and the list puts the keyboard back in
+        // its own hidden table on the way past — that table forwards Return,
+        // Space and ⌘A to the columns but keeps the arrows, so the selection
+        // on screen stopped moving. By the next turn the list has had its
+        // say, and the browser holds the ask until its deepest column has
+        // rows to move through.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isFocused, !self.columnBrowser.isHidden else { return }
+            self.columnBrowser.focusDeepestColumn()
+        }
     }
 
     /// Only an empty stretch of the bar starts editing; a click that landed on
@@ -683,6 +710,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
 
     func focus() {
         activeList?.focusTable()
+        // The bar and the inspector describe the focused pane. A pane that
+        // takes focus after its neighbour closes has nothing else to make it
+        // state its own count and selection.
+        activeList?.reportStatus()
     }
 
     // MARK: - FileListDelegate
@@ -729,8 +760,20 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         guard let placement = columnBrowser.nameRect(for: url) else { return false }
         list.renameEditor.begin(
             name: url.lastPathComponent, in: placement.host, rect: placement.rect
-        ) { [weak list] newName in
-            list?.applyRename(of: url, to: newName)
+        ) { [weak self, weak list] newName in
+            guard let list else { return }
+            list.applyRename(of: url, to: newName)
+            // The refresh that follows the rename re-reads every column, and
+            // they all still name the old file: the column a renamed folder
+            // had opened closes and nothing is left selected. The browser is
+            // told the new name so it carries the path and the selection over.
+            // The mirror having moved to that name is what says the rename
+            // went through and the selection was still on the old one; a name
+            // that was refused, or a click that had already moved the
+            // selection, leaves it where it was and nothing is carried.
+            let renamed = url.deletingLastPathComponent().appendingPathComponent(newName)
+            guard renamed != url, list.selectedURLs().first == renamed else { return }
+            self?.columnBrowser.noteRename(from: url, to: renamed)
         }
         return true
     }
