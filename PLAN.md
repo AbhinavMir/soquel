@@ -2,24 +2,14 @@
 
 Branch: `main`, clean and pushed. 833 tests pass in ~15s.
 
-**2.0.0 is shipped — the first alpha.** Signed, notarised, stapled, disk image
-on the GitHub release, landing page live at trysoquel.com with the 2.0.0
-changelog entry. The release carries every fix from the August 2026 deep QA
-sweep plus two bugs found by driving the app live (filter Escape kept focus in
-the box; selection commands were silent with nothing selected).
+**1.0.8 is shipped.** Signed, notarised, stapled, disk image on the GitHub
+release, landing page live at trysoquel.com with the 1.0.8 changelog entry.
+Still beta; 2.0 is still reserved for the first alpha.
 
-## What this is
-
-Soquel, a file manager for macOS. The August 2026 deep QA sweep is finished:
-the whole of SoquelCore was read by subsystem plus wiring/hostile-input/
-concurrency passes, 146 distinct defects were confirmed and all 146 are fixed
-on main — see [docs/QA-SWEEP-2026-08.md](docs/QA-SWEEP-2026-08.md). Among
-them: drag and drop now works in all three views (it only worked list-to-list),
-double-click opens folders in icon view (#42, closed), a `-m`-named file no
-longer makes zip delete its neighbours, and a settings.json typo no longer
-erases every setting. The docs were audited against the code; 27 wrong claims
-corrected. Milestone "2.0 — first alpha" exists on GitHub; #44 (shortcut
-import/export) is queued in it.
+The release carries the August 2026 deep QA sweep (146 defects found by reading
+every line of SoquelCore) plus 106 more found by driving the installed app
+through docs/QA.md by hand — 252 in all. The app was re-driven after the fixes,
+and the fixes were reviewed the same way the code was.
 
 ## Open
 
@@ -54,10 +44,14 @@ is what the sweep deleted.
 ## Next
 
 Smaller things, none blocking:
-- Shortcut import and export. Remapping works; sharing a keymap does not.
+- Shortcut import and export. Remapping works; sharing a keymap does not (#44).
 - The Show HN draft on the Desktop still describes 1.0.1.
-- [docs/QA.md](docs/QA.md) is a manual sweep, 20 sections, written to be handed to someone
-  who has never used the app. Findings go in as issues.
+- [docs/QA.md](docs/QA.md) is the manual sweep, 20 sections. Driving it by hand is
+  what found the defects reading the code did not: a crash on Open Workspace, ⌘W
+  quitting the app, five blank settings panes, and every one of the speed
+  problems. Run it against a build, not against the source.
+- Known and unfixed: arrow keys do nothing while Quick Look is open in column
+  view. It needs a delegate hook from the pane to the deepest column table.
 
 ## Decisions taken
 
