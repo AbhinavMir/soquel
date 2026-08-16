@@ -8,8 +8,7 @@ Still beta; 2.0 is still reserved for the first alpha.
 
 The release carries the August 2026 deep QA sweep (146 defects found by reading
 every line of SoquelCore) plus 106 more found by driving the installed app
-through docs/QA.md by hand — 209 pre-existing defects in all. Fixing them
-introduced 51 regressions, caught by reviewing every fix and also fixed.
+through docs/QA.md by hand — 209 in all.
 
 Of the fixes, 48 were confirmed by re-driving the running app. The rest rest on
 the build and the test suite. The last thirteen findings and the speed work have
