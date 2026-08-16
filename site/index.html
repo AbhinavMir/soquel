@@ -573,23 +573,18 @@ footer a { color: var(--faint); }
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.8">notes</a>
     </div>
     <ul>
-      <li>The bug-squash release. Every line of the code was read, every claim on this
-          page checked against it, and the app driven by hand through its own QA script.
-          209 defects fixed — 12 that lost data, 8 that crashed, and the rest broken
-          features, wrong behaviour and polish.</li>
-      <li>Reading a folder of a thousand files is five times faster: the Kind column
-          asked the type system the same question once per file.</li>
-      <li>Copying four thousand files went from 31 a second to about 2,000. The copy
-          waited on the main thread twice per file for a value it already had.</li>
-      <li>Drag and drop works in all three views, and onto the sidebar. It only worked
-          list to list.</li>
-      <li>Double-click opens folders in icon view.</li>
-      <li>Compress survives a file named <code>-m</code>; zip was reading it as its own
-          delete-after-archive option and deleting the files beside it.</li>
-      <li>A typo in a hand-edited settings.json no longer erases every setting.</li>
-      <li>Undo is offered after every file operation, and ⌘W no longer quits the app
-          from a window with one tab.</li>
-      <li>Every settings pane draws its contents; five of the six were blank.</li>
+      <li>209 bug fixes.</li>
+      <li>Reading a folder of 1,000 files: 50 ms → 10 ms. Copying 4,000 files:
+          31 a second → 2,000 a second.</li>
+      <li>Drag and drop only worked list-to-list. It works in icon view, column view
+          and onto the sidebar now.</li>
+      <li>Double-click did nothing in icon view.</li>
+      <li>A file named <code>-m</code> made Compress delete the other files you
+          selected.</li>
+      <li>A typo in a hand-edited settings.json wiped every setting on the next save.</li>
+      <li><kbd>⌘W</kbd> quit the app when the window had one tab.</li>
+      <li>Five of the six settings panes were blank.</li>
+      <li>Undo was greyed out after every file operation.</li>
     </ul>
   </div>
 
