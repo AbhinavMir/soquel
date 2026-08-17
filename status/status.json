@@ -1,7 +1,7 @@
 {
-  "updated": "2026-08-15 21:40",
+  "updated": "2026-08-17 21:20",
   "status": "shipped",
-  "statusLabel": "v1.0.8 released — beta",
+  "statusLabel": "v1.0.10 released — beta",
   "stats": [
     {
       "label": "Build",
@@ -15,7 +15,7 @@
     },
     {
       "label": "Release",
-      "value": "1.0.8 notarised",
+      "value": "1.0.10 notarised",
       "tone": "ok"
     },
     {
