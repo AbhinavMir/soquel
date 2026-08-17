@@ -214,8 +214,8 @@ enum CommandRegistry {
         .command(Command("shelf.show", "Show Shelf", #selector(M.menuShowShelf(_:)), Shortcut("b", [.command, .control]))),
         .command(Command("shelf.clear", "Clear Shelf", #selector(M.menuClearShelf(_:)))),
         .separator,
-        .command(Command("file.closeTab", "Close Tab", #selector(M.menuCloseTab(_:)), Shortcut("w"))),
-        .command(Command("file.closeWindow", "Close Window", #selector(NSWindow.performClose(_:)), Shortcut("w", [.command, .option]), inPalette: false)),
+        .command(Command("file.closeTab", "Close Tab", #selector(M.menuCloseTab(_:)), Shortcut("w", [.command, .option]))),
+        .command(Command("file.closeWindow", "Close Window", #selector(NSWindow.performClose(_:)), Shortcut("w"), inPalette: false)),
     ])
 
     static let editSection = MenuSection(title: "Edit", entries: [
@@ -311,7 +311,7 @@ enum CommandRegistry {
     static let paneSection = MenuSection(title: "Panes", entries: [
         .command(Command("pane.splitVertical", "Split Vertically", #selector(M.menuSplitVertically(_:)), Shortcut("d"))),
         .command(Command("pane.splitHorizontal", "Split Horizontally", #selector(M.menuSplitHorizontally(_:)), Shortcut("d", [.command, .shift]))),
-        .command(Command("pane.close", "Close Pane", #selector(M.menuClosePane(_:)), Shortcut("w", [.command, .shift]))),
+        .command(Command("pane.close", "Close Pane", #selector(M.menuClosePane(_:)), Shortcut("w", [.command, .control]))),
         .separator,
         .command(Command("pane.focusNext", "Focus Next Pane", #selector(M.menuFocusNextPane(_:)), Shortcut(String(UnicodeScalar(NSRightArrowFunctionKey)!), [.command, .option]))),
         .command(Command("pane.focusPrevious", "Focus Previous Pane", #selector(M.menuFocusPreviousPane(_:)), Shortcut(String(UnicodeScalar(NSLeftArrowFunctionKey)!), [.command, .option]))),

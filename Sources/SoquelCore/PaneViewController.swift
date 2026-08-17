@@ -36,6 +36,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
     private var pathBar: NSStackView!
     private var pathBarScroll: NSScrollView!
     private var pathField: NSTextField!
+    private var copyPathButton: NSButton!
     private var toolbar: PaneToolbarView!
     private var filterField: NSSearchField!
     private var toolbarObserver: NSObjectProtocol?
@@ -139,6 +140,20 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         pathBarScroll.translatesAutoresizingMaskIntoConstraints = false
         pathBarScroll.addGestureRecognizer(pathClick)
 
+        // Copying the path is one of the things people come to a file manager
+        // for, and it was reachable only from a menu, a submenu or a shortcut.
+        // A button at the end of the address bar says it is there.
+        copyPathButton = NSButton()
+        copyPathButton.image = NSImage(
+            systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Copy path"
+        )
+        copyPathButton.isBordered = false
+        copyPathButton.target = self
+        copyPathButton.action = #selector(copyPathClicked)
+        copyPathButton.toolTip = "Copy this folder's path"
+        copyPathButton.setAccessibilityLabel("Copy path")
+        copyPathButton.translatesAutoresizingMaskIntoConstraints = false
+
         pathField = NSTextField()
         pathField.delegate = self
         pathField.isHidden = true
@@ -211,6 +226,7 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         container.addSubview(filterField)
         container.addSubview(toolbar)
         container.addSubview(pathBarScroll)
+        container.addSubview(copyPathButton)
         container.addSubview(pathField)
         container.addSubview(divider)
         container.addSubview(contentView)
@@ -243,8 +259,13 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
 
             pathBarScroll.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             pathBarScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
-            pathBarScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            pathBarScroll.trailingAnchor.constraint(equalTo: copyPathButton.leadingAnchor, constant: -4),
             pathBarScroll.heightAnchor.constraint(equalToConstant: 22),
+
+            copyPathButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
+            copyPathButton.centerYAnchor.constraint(equalTo: pathBarScroll.centerYAnchor),
+            copyPathButton.widthAnchor.constraint(equalToConstant: 18),
+            copyPathButton.heightAnchor.constraint(equalToConstant: 18),
             pathBar.heightAnchor.constraint(equalTo: pathBarScroll.heightAnchor),
 
             pathField.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
@@ -474,6 +495,21 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
                 pathBar.addArrangedSubview(sep)
             }
         }
+    }
+
+    /// Copies the path of what is selected, or of the folder on screen when
+    /// nothing is. One click, no menu.
+    @objc private func copyPathClicked() {
+        activeList?.focusTable()
+        guard let list = activeList else { return }
+        let selected = list.selectedURLs()
+        let urls = selected.isEmpty ? [list.url] : selected
+        let text = urls.map(\.path).joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        delegate?.pane(self, didReportStatus: urls.count == 1
+            ? "Copied \(urls[0].path)"
+            : "Copied \(urls.count) paths")
     }
 
     @objc private func paneFilterChanged() {

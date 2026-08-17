@@ -353,6 +353,29 @@ enum RemoteLocations {
         NotificationCenter.default.post(name: .soquelServersChanged, object: nil)
     }
 
+    /// Whether a volume can be ejected.
+    ///
+    /// Anything that is not the disk the system is running from: a mounted
+    /// disk image (which is what an installer is, and what keeps sitting in
+    /// the sidebar until something unmounts it), an external drive, a network
+    /// share. The boot volume is never offered, because ejecting it is not a
+    /// thing that can happen.
+    static func isEjectable(_ url: URL) -> Bool {
+        let keys: Set<URLResourceKey> = [
+            .volumeIsRootFileSystemKey, .volumeIsInternalKey,
+            .volumeIsEjectableKey, .volumeIsRemovableKey, .volumeIsLocalKey,
+        ]
+        guard let values = try? url.resourceValues(forKeys: keys) else { return false }
+        if values.volumeIsRootFileSystem == true { return false }
+        if values.volumeIsEjectable == true || values.volumeIsRemovable == true { return true }
+        // A network share reports neither ejectable nor removable, and
+        // unmounting is exactly what "eject" means for one.
+        if values.volumeIsLocal == false { return true }
+        // A disk image is local and not removable, but it is not internal
+        // either — which is what separates it from the built-in disk.
+        return values.volumeIsInternal == false
+    }
+
     /// Unmounts a volume. Used by the sidebar's eject action.
     static func unmount(_ url: URL, completion: @escaping (Error?) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {

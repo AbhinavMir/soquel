@@ -84,6 +84,25 @@ final class SidebarNode {
     }
 }
 
+/// A sidebar row that can carry an eject button.
+///
+/// The button is built once and hidden on the rows that cannot be ejected;
+/// its width goes to zero with it, so a row without one gives the whole
+/// width back to the name.
+final class SidebarCellView: NSTableCellView {
+    var eject: NSButton?
+    var ejectWidth: NSLayoutConstraint?
+    /// The volume this row's button unmounts. Rows are reused, so the button
+    /// cannot be trusted to remember which volume it belonged to.
+    var ejectTarget: URL?
+
+    func showEject(_ shown: Bool) {
+        eject?.isHidden = !shown
+        ejectWidth?.constant = shown ? 16 : 0
+        if !shown { ejectTarget = nil }
+    }
+}
+
 protocol SidebarDelegate: AnyObject {
     func sidebar(_ sidebar: SidebarViewController, didSelect url: URL)
     /// Opens the folder holding `url` and selects it there. A file in the tree
@@ -168,6 +187,35 @@ final class SidebarViewController: NSViewController {
 
     /// Internal drag type for reordering pinned items.
     private static let itemDragType = NSPasteboard.PasteboardType("app.soquel.sidebarItem")
+
+    /// Unmounts the volume whose row this button sits in.
+    @objc fileprivate func ejectClicked(_ sender: NSButton) {
+        var view: NSView? = sender
+        while let current = view, !(current is SidebarCellView) { view = current.superview }
+        guard let url = (view as? SidebarCellView)?.ejectTarget else { return }
+        eject(url)
+    }
+
+    /// Unmounts `url`, and says so either way.
+    ///
+    /// A mounted disk image — which is what an installer is — has nothing in
+    /// the sidebar to get rid of it otherwise, so they pile up.
+    private func eject(_ url: URL) {
+        let name = (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
+            ?? url.lastPathComponent
+        RemoteLocations.unmount(url) { [weak self] error in
+            guard let self else { return }
+            if let error {
+                let alert = NSAlert()
+                alert.messageText = "Could not eject “\(name)”"
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
+                return
+            }
+            Log.info(.remote, "Ejected \(url.path)")
+            self.rebuild()
+        }
+    }
 
     override func loadView() {
         let sidebarOutline = SidebarOutline()
@@ -462,6 +510,16 @@ extension SidebarViewController: NSMenuDelegate {
             return
         }
 
+        if let node, case .volume(let url, _) = node.kind {
+            add(menu, "Open in New Tab", #selector(openInNewTab))
+            add(menu, "Reveal in Finder", #selector(revealInFinder))
+            if RemoteLocations.isEjectable(url) {
+                menu.addItem(.separator())
+                add(menu, "Eject", #selector(ejectSelectedVolume))
+            }
+            return
+        }
+
         if let node, node.itemID != nil {
             add(menu, "Open in New Tab", #selector(openInNewTab))
             add(menu, "Reveal in Finder", #selector(revealInFinder))
@@ -493,6 +551,11 @@ extension SidebarViewController: NSMenuDelegate {
 
         add(menu, "New Group…", #selector(newGroup))
         add(menu, "Reset Sidebar…", #selector(resetSidebar))
+    }
+
+    @objc private func ejectSelectedVolume() {
+        guard let node = selectedNode(), case .volume(let url, _) = node.kind else { return }
+        eject(url)
     }
 
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector) {
@@ -529,11 +592,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         guard let node = item as? SidebarNode else { return nil }
         let id = NSUserInterfaceItemIdentifier(node.isGroup ? "group" : "row")
 
-        let cell: NSTableCellView
-        if let reused = outlineView.makeView(withIdentifier: id, owner: self) as? NSTableCellView {
+        let cell: SidebarCellView
+        if let reused = outlineView.makeView(withIdentifier: id, owner: self) as? SidebarCellView {
             cell = reused
         } else {
-            cell = NSTableCellView()
+            cell = SidebarCellView()
             cell.identifier = id
             let field = NSTextField(labelWithString: "")
             field.translatesAutoresizingMaskIntoConstraints = false
@@ -556,14 +619,39 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
                 cell.addSubview(image)
                 cell.imageView = image
                 field.font = Theme.rowName
+
+                // One click unmounts, the way the eject symbol does in every
+                // other sidebar. Built for every row and shown only on the
+                // ones that can be ejected, so a reused cell never inherits
+                // a button belonging to another volume.
+                let eject = NSButton()
+                eject.image = NSImage(systemSymbolName: "eject.fill", accessibilityDescription: "Eject")
+                eject.isBordered = false
+                eject.target = self
+                eject.action = #selector(ejectClicked(_:))
+                eject.setAccessibilityLabel("Eject")
+                eject.isHidden = true
+                eject.translatesAutoresizingMaskIntoConstraints = false
+                cell.addSubview(eject)
+                cell.eject = eject
+
+                let ejectWidth = eject.widthAnchor.constraint(equalToConstant: 0)
+                cell.ejectWidth = ejectWidth
+
                 NSLayoutConstraint.activate([
                     image.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
                     image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                     image.widthAnchor.constraint(equalToConstant: 16),
                     image.heightAnchor.constraint(equalToConstant: 16),
                     field.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
-                    field.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
                     field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+
+                    eject.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
+                    eject.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                    ejectWidth,
+                    eject.heightAnchor.constraint(equalToConstant: 16),
+                    // The name stops at the button rather than running under it.
+                    field.trailingAnchor.constraint(equalTo: eject.leadingAnchor, constant: -4),
                 ])
             }
         }
@@ -596,6 +684,12 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             cell.imageView?.image = icon
             cell.textField?.textColor = .labelColor
             cell.toolTip = url.path
+            let canEject = RemoteLocations.isEjectable(url)
+            cell.showEject(canEject)
+            if canEject {
+                cell.ejectTarget = url
+                cell.eject?.toolTip = "Eject “\(node.title)”"
+            }
         case .savedSearch(let search):
             cell.imageView?.image = NSImage(
                 systemSymbolName: "magnifyingglass.circle", accessibilityDescription: "Saved search"

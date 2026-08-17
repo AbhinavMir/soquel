@@ -85,7 +85,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// Closing the last window leaves the application running, the way every
+    /// other Mac application behaves: ⌘W closes a window, ⇧⌘W quits. The Dock
+    /// icon and ⌘N bring a window back.
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     /// Opens folders handed over by the system.
     ///
@@ -173,7 +176,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Soquel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        // ⇧⌘W quits; ⌘W closes a window. ⌘Q still works — it is in every Mac
+        // user's fingers — but it is the hidden one of the pair.
+        let quit = appMenu.addItem(
+            withTitle: "Quit Soquel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "w"
+        )
+        quit.keyEquivalentModifierMask = [.command, .shift]
+        let quitByQ = NSMenuItem(
+            title: "Quit Soquel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"
+        )
+        quitByQ.isHidden = true
+        quitByQ.allowsKeyEquivalentWhenHidden = true
+        appMenu.addItem(quitByQ)
         appMenuItem.submenu = appMenu
         main.addItem(appMenuItem)
 
