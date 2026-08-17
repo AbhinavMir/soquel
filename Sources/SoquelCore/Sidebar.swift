@@ -256,10 +256,25 @@ final class SidebarViewController: NSViewController {
                 self?.rebuild()
             })
         }
+
+        // Volumes come and go while the app is running: mounting a disk image
+        // put nothing in the sidebar until the next launch, and ejecting one
+        // elsewhere left a row pointing at a volume that was gone.
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification,
+                     NSWorkspace.didRenameVolumeNotification] {
+            observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.rebuild()
+            })
+        }
     }
 
     deinit {
-        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
     }
 
     /// The sidebar is a big flat surface, so it carries the theme's chrome
