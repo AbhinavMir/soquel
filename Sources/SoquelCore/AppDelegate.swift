@@ -90,6 +90,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     /// icon and ⌘N bring a window back.
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// Clicking the Dock icon with no window open makes one.
+    ///
+    /// ⌘W closes a window and leaves the application running, so this is the
+    /// way back: without it the Dock icon did nothing and the only route to a
+    /// window was ⌘N, which is not something anyone would think to try.
+    public func applicationShouldHandleReopen(
+        _ sender: NSApplication, hasVisibleWindows: Bool
+    ) -> Bool {
+        guard !hasVisibleWindows else { return true }
+        newWindow(nil)
+        return false
+    }
+
     /// Opens folders handed over by the system.
     ///
     /// This is what makes Soquel usable as the handler for folders: without it,
