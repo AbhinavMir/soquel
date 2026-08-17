@@ -495,6 +495,16 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
                 pathBar.addArrangedSubview(sep)
             }
         }
+
+        // A path deeper than the bar is wide keeps its head on screen and cuts
+        // the tail, which hides the one crumb that matters: the folder being
+        // looked at. Scrolled to the end after layout, so the current folder
+        // is the part that is visible.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let last = self.pathBar.arrangedSubviews.last else { return }
+            self.pathBar.layoutSubtreeIfNeeded()
+            self.pathBarScroll.contentView.scrollToVisible(last.frame)
+        }
     }
 
     /// Copies the path of what is selected, or of the folder on screen when

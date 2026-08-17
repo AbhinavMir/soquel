@@ -184,6 +184,9 @@ final class PaneToolbarView: NSView {
     var viewModeOnScreen: (() -> ViewMode?)?
 
     private var stack: NSStackView!
+    /// Holds the stack so a bar narrower than its buttons scrolls instead of
+    /// overlapping or dropping them.
+    private var scroll: NSScrollView!
     private var observers: [NSObjectProtocol] = []
 
     override init(frame frameRect: NSRect) {
@@ -203,21 +206,32 @@ final class PaneToolbarView: NSView {
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        // Every button carries a required width, and an arranged subview may
-        // not be dropped unless it is allowed to be: at the window's minimum
-        // width the required widths could not all fit, so AppKit broke a
-        // constraint and laid the buttons on top of one another. The stack
-        // sheds trailing buttons instead, and the bar clips what is left.
-        stack.setClippingResistancePriority(.defaultLow, for: .horizontal)
-        stack.setHuggingPriority(.defaultHigh, for: .horizontal)
-        wantsLayer = true
-        layer?.masksToBounds = true
-        addSubview(stack)
+
+        // The bar scrolls sideways when it is too narrow for its buttons.
+        //
+        // Every button carries a required width, so a narrow window cannot
+        // satisfy them all: laying them out anyway put them on top of each
+        // other, and letting the stack shed them collapsed the whole bar and
+        // never brought it back. Scrolling keeps every button reachable at
+        // any width, which is what the path bar underneath already does.
+        scroll = NSScrollView()
+        scroll.documentView = stack
+        scroll.hasHorizontalScroller = false
+        scroll.hasVerticalScroller = false
+        scroll.drawsBackground = false
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scroll)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            stack.centerYAnchor.constraint(equalTo: scroll.contentView.centerYAnchor),
+            stack.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor),
         ])
 
         menu = NSMenu()
@@ -258,9 +272,6 @@ final class PaneToolbarView: NSView {
                 let pill = ToolbarPillView(actions: members)
                 pill.onActivate = { [weak self] in self?.onActivate?() }
                 stack.addArrangedSubview(pill)
-                // Droppable, so a bar too narrow for everything loses its
-                // trailing controls rather than stacking them on each other.
-                stack.setVisibilityPriority(.detachOnlyIfNecessary, for: pill)
                 continue
             }
             index += 1
@@ -289,7 +300,6 @@ final class PaneToolbarView: NSView {
                 button.setAccessibilityValue("off")
             }
             stack.addArrangedSubview(button)
-            stack.setVisibilityPriority(.detachOnlyIfNecessary, for: button)
         }
         needsDisplay = true
     }
