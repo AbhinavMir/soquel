@@ -9,16 +9,17 @@ Every command is also in the command palette (`⇧⌘P`), which shows its shortc
 | Split vertically | `⌘D` |
 | Split horizontally | `⇧⌘D` |
 | Rotate the split holding this pane | `⇧⌥⌘D` |
-| Close pane | `⇧⌘W` |
+| Close pane | `⌃⌘W` |
 | Focus pane by position | `⌘1`–`⌘4` |
 | Focus next / previous pane | `⌥⌘→` / `⌥⌘←` |
 | Swap panes | palette only |
 | Compare focused pane with the other | `⇧⌘K` |
 | New window | `⌘N` |
 | New tab | `⌘T` |
-| Close tab | `⌘W` |
+| Close tab | `⌥⌘W` |
 | Next / previous tab | `⌃⇥` / `⌃⇧⇥` |
-| Close window | `⌥⌘W` |
+| Close window | `⌘W` |
+| Quit | `⇧⌘W` or `⌘Q` |
 | Save workspace | `⇧⌘S` |
 
 Splitting divides the focused pane only, so vertical and horizontal splits mix in one window — split
@@ -26,8 +27,9 @@ the right-hand pane horizontally and the left one is untouched. Splitting the sa
 adds a sibling rather than nesting, since a divider inside a divider running the same way changes
 nothing.
 
-`⌘W` closes a tab, so the window takes `⌥⌘W`. One tab is the minimum: `⌘W` on the last tab of the
-last pane keeps it and says so, rather than taking the window and the session with it.
+`⌘W` closes the window and leaves the application running, as it does everywhere else on the Mac;
+`⇧⌘W` quits. Closing a tab is `⌥⌘W`, and one tab is the minimum: closing the last tab of the last
+pane keeps it and says so.
 
 ## Navigation
 

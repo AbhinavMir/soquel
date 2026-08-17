@@ -3,7 +3,7 @@
 A manual test pass for Soquel. Every line is one thing to do and one thing to check.
 Work top to bottom, or pick a section. Tick nothing you did not actually see happen.
 
-**Version under test:** 1.0.7
+**Version under test:** 1.0.9
 **Platform:** Apple silicon, macOS 13 or later
 
 ## How to report
@@ -179,7 +179,7 @@ cp plain.txt copy-of-plain.txt
 8.8 Folder tree (⇧⌘T). Expand three levels.
 8.9 Click a tree folder. The pane follows; focus does not jump back to Favourites.
 8.10 Remove a favourite whose folder was deleted. It goes cleanly.
-8.11 Eject a volume from the sidebar.
+8.11 Eject a volume from the sidebar: the ⏏ button on the row, and Eject in the context menu. A mounted disk image goes; the boot disk offers neither.
 
 ## 9. Panes and tabs
 
