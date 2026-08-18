@@ -77,6 +77,14 @@ final class GeneralSettingsView: NSView {
                get: { Prefs.keyboardFirst }, set: { Prefs.keyboardFirst = $0 }),
     ]
 
+    private static let git: [Toggle] = [
+        Toggle(title: "Git actions that change the repository (beta)",
+               note: "Adds branch switching to the branch list. Off, git is read-only, "
+                   + "which is what the rest of the app promises. On, a switch is refused "
+                   + "while there are uncommitted changes rather than stashed for you.",
+               get: { Prefs.gitActions }, set: { Prefs.gitActions = $0 }),
+    ]
+
     private static let copying: [Toggle] = [
         Toggle(title: "Verify copies with a checksum",
                note: "Every copied file is read back and compared with its source. Slower, "
@@ -109,6 +117,7 @@ final class GeneralSettingsView: NSView {
         var views: [NSView] = []
         views += section("Listing", Self.listing)
         views += section("Window", Self.window)
+        views += section("Git", Self.git)
         views += section("Copying", Self.copying)
 
         let stack = NSStackView(views: views)

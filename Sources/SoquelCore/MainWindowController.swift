@@ -864,6 +864,43 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Leaves every window out of screen sharing and recording, or puts them
     /// back. The status line says which, because a window that is invisible to
     /// everyone else looks exactly like one that is not.
+    /// The branches of the repository the focused pane is standing in.
+    @objc func menuShowBranches(_ sender: Any?) {
+        guard let list = focusedList else { return }
+        guard let root = gitRoot(for: list.url) else {
+            statusLeft.stringValue = "This folder is not in a git repository"
+            NSSound.beep()
+            return
+        }
+        GitBranchPanelController.shared.show(repository: root)
+    }
+
+    /// What the selected file looks like against the last commit. The list
+    /// already badges it as modified; this says how.
+    @objc func menuDiffAgainstHead(_ sender: Any?) {
+        guard let list = focusedList, let url = list.selectedURLs().first else {
+            statusLeft.stringValue = "Nothing selected to compare"
+            NSSound.beep()
+            return
+        }
+        guard let root = gitRoot(for: url.deletingLastPathComponent()) else {
+            statusLeft.stringValue = "This file is not in a git repository"
+            NSSound.beep()
+            return
+        }
+        GitRepo.diff(file: url, in: root) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let text) where text.isEmpty:
+                self.statusLeft.stringValue = "\(url.lastPathComponent) matches the last commit"
+            case .success(let text):
+                DiffPanelController.shared.show(unified: text, title: url.lastPathComponent)
+            case .failure(let error):
+                self.statusLeft.stringValue = error.localizedDescription
+            }
+        }
+    }
+
     /// Compares the two selected files, or opens a patch.
     ///
     /// One file that is itself a patch is shown as it stands; two files are

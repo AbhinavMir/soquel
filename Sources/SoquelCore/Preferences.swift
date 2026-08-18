@@ -13,8 +13,18 @@ enum Prefs {
         "columnViewWidth", "expandedTreeFolders",
         "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
         "syncBrowsing", "checkForUpdates", "lastUpdateCheck", "skippedUpdateVersion",
-        "sortOrderDefaultMigrated", "hideFromScreenSharing",
+        "sortOrderDefaultMigrated", "hideFromScreenSharing", "gitActions",
     ]
+
+    /// Whether git commands that change a repository are offered at all.
+    ///
+    /// Off by default. Everything Soquel did with git was display-only, and
+    /// switching a branch writes to the working tree — a different promise
+    /// from the one the rest of the app makes, and one to be opted into.
+    static var gitActions: Bool {
+        get { d.bool(forKey: "gitActions") }
+        set { d.set(newValue, forKey: "gitActions") }
+    }
 
     /// Whether the app's windows are left out of screen sharing and
     /// recording. Remembered, so it stays on for the length of a call rather

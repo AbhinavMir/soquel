@@ -39,6 +39,8 @@ enum SettingsIndex {
               keywords: "panes together follow mirror dual"),
         Entry(pane: "general", paneTitle: "General", title: "Keyboard-first keys",
               keywords: "vim vi j k h l keyboard navigation modal"),
+        Entry(pane: "general", paneTitle: "General", title: "Git actions that change the repository",
+              keywords: "git branch switch checkout beta write repository"),
         Entry(pane: "general", paneTitle: "General", title: "Verify copies with a checksum",
               keywords: "checksum verify copy integrity sha hash safe"),
 

@@ -306,6 +306,8 @@ enum CommandRegistry {
         .command(Command("tools.duplicates", "Find Duplicates…", #selector(M.menuFindDuplicates(_:)))),
         .command(Command("tools.runCommand", "Run a Command Here…", #selector(M.menuRunCommand(_:)))),
         .separator,
+        .command(Command("tools.branches", "Branches…", #selector(M.menuShowBranches(_:)), Shortcut("b", [.command, .shift]))),
+        .command(Command("tools.diffHead", "Diff Against HEAD", #selector(M.menuDiffAgainstHead(_:)))),
         .command(Command("tools.diffFiles", "Compare Two Files", #selector(M.menuDiffFiles(_:)), Shortcut("d", [.command, .option]))),
         .command(Command("tools.verifyCopies", "Verify Copies with a Checksum", #selector(M.menuToggleVerifyCopies(_:)))),
     ])

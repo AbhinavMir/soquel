@@ -22,7 +22,7 @@ final class BatchRenameController: NSObject, NSTableViewDataSource, NSTableViewD
     private var applyButton: NSButton!
 
     private enum RuleKind: String, CaseIterable {
-        case findReplace, prefix, suffix, sequence, changeCase, replaceExtension, trim, date
+        case findReplace, prefix, suffix, sequence, resequence, changeCase, replaceExtension, trim, date
 
         var title: String {
             switch self {
@@ -30,6 +30,7 @@ final class BatchRenameController: NSObject, NSTableViewDataSource, NSTableViewD
             case .prefix: return "Add prefix"
             case .suffix: return "Add suffix"
             case .sequence: return "Sequential numbering"
+            case .resequence: return "Renumber (keep the names)"
             case .changeCase: return "Change case"
             case .replaceExtension: return "Replace extension"
             case .trim: return "Trim whitespace"
@@ -176,6 +177,11 @@ final class BatchRenameController: NSObject, NSTableViewDataSource, NSTableViewD
             firstLabel.stringValue = "Name"; secondLabel.stringValue = "Start at"
             if secondField.stringValue.isEmpty { secondField.stringValue = "1" }
             setFieldsVisible(first: true, second: true, options: false)
+        case .resequence:
+            firstLabel.stringValue = "Start at"; secondLabel.stringValue = "Digits (0 keeps each)"
+            if firstField.stringValue.isEmpty { firstField.stringValue = "1" }
+            if secondField.stringValue.isEmpty { secondField.stringValue = "0" }
+            setFieldsVisible(first: true, second: true, options: false)
         case .changeCase:
             firstLabel.stringValue = "Style (lower, upper, title)"
             if firstField.stringValue.isEmpty { firstField.stringValue = "lower" }
@@ -219,6 +225,8 @@ final class BatchRenameController: NSObject, NSTableViewDataSource, NSTableViewD
         case .sequence:
             let start = Int(second) ?? 1
             return .sequence(prefix: first, start: start, padding: max(2, String(urls.count).count))
+        case .resequence:
+            return .resequence(start: Int(first) ?? 1, padding: Int(second) ?? 0)
         case .changeCase:
             let style = RenameRule.Case(rawValue: first.lowercased()) ?? .lower
             return .changeCase(style)

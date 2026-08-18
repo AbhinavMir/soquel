@@ -15,6 +15,14 @@ enum RenameRule: Equatable {
     case replaceExtension(String)
     case trimWhitespace
     case insertDate(format: String, useCreated: Bool)
+    /// Rewrites an existing number at the front of the name, keeping the rest
+    /// of it. `01_DAVIS_$22753.20_REC` renumbered to 3 is `03_DAVIS_$22753.20_REC`.
+    ///
+    /// The sequence rule replaces the whole name; this one is for a batch
+    /// that is already numbered and has a hole in it, or wants something
+    /// inserted in the middle. Files with no leading number are left alone —
+    /// a rule that invented numbers for them would renumber the wrong set.
+    case resequence(start: Int, padding: Int)
 
     enum Case: String, CaseIterable {
         case lower, upper, title
@@ -41,6 +49,27 @@ struct RenamePreview: Equatable {
 }
 
 enum BatchRename {
+    /// Splits `01_DAVIS_REC` into its number and everything after it.
+    ///
+    /// The separator stays with the rest, so whatever joined the number to
+    /// the name — an underscore, a dash, a dot, a space, or nothing — comes
+    /// back untouched.
+    static func leadingNumber(in stem: String) -> (digits: String, rest: String)? {
+        let digits = stem.prefix { $0.isNumber }
+        guard !digits.isEmpty else { return nil }
+        return (String(digits), String(stem.dropFirst(digits.count)))
+    }
+
+    /// Whether a set of names looks like a numbered batch, which is what the
+    /// panel uses to decide whether to offer renumbering at all.
+    static func isNumberedBatch(_ names: [String]) -> Bool {
+        let stems = names.map { ($0 as NSString).deletingPathExtension }
+        let numbered = stems.filter { leadingNumber(in: $0) != nil }
+        // Half of them is enough: a folder of records usually has a stray
+        // README or an index file sitting in with the numbered ones.
+        return numbered.count >= max(2, stems.count / 2)
+    }
+
     /// Applies rules in order and returns what each file would become.
     ///
     /// Collisions are detected across the whole batch, not just against what is
@@ -162,6 +191,17 @@ enum BatchRename {
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
             return (collapsed, ext)
+
+        case .resequence(let start, let padding):
+            guard let existing = Self.leadingNumber(in: stem) else {
+                // Nothing to renumber. Left exactly as it was, and the preview
+                // shows it unchanged rather than pretending it moved.
+                return (stem, ext)
+            }
+            let number = String(start + index)
+            let width = padding > 0 ? padding : existing.digits.count
+            let padded = String(repeating: "0", count: max(0, width - number.count)) + number
+            return (padded + existing.rest, ext)
 
         case .insertDate(let format, let useCreated):
             let formatter = DateFormatter()
