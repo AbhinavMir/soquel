@@ -59,6 +59,7 @@ pane keeps it and says so.
 | Undo | `⌘Z` |
 | Select all | `⌘A` |
 | Rename many | `⌃⌘R` |
+| Compare two files | `⌥⌘D` |
 | Look inside archive | `⇧⌘O` |
 | Add to Shelf / show Shelf | `⌃⌘A` / `⌃⌘B` |
 
@@ -84,7 +85,6 @@ Delete permanently always asks first. Undo covers rename, create, duplicate, tra
 | As list / icons / columns | `⌥⌘1` / `⌥⌘2` / `⌥⌘3` |
 | Bigger / smaller / default icons | `⌘+` / `⌘-` / `⌘0` |
 | Toggle hidden files | `⇧⌘.` |
-| Hide from screen sharing | `⌃⌘P` |
 | Toggle sidebar | `⌃⌘S` |
 | Show folder tree | `⇧⌘T` |
 | Refresh | `⌘R` |
@@ -94,6 +94,9 @@ Delete permanently always asks first. Undo covers rename, create, duplicate, tra
 | Quick Look | `Space` or `⌘Y` |
 | Preview and details panel | `⌥⌘I` |
 | Disk map | `⇧⌘U` |
+| Recents | `⇧⌘Y` |
+| Branches | `⇧⌘B` |
+| Hide from screen sharing | `⌃⌘P` |
 | Show transfers | `⌥⌘J` |
 | Edit settings.json | palette or View menu |
 | Reveal in Finder | `⇧⌘R` |
@@ -113,6 +116,15 @@ moves focus to the results.
 `⌘X`, `⌘C`, `⌘V`, `⌘A`, and `⌘Z` use the standard AppKit selectors. In a text field they edit text;
 in the file list they act on files. `h`, `j`, `k` and `l` are deliberately not menu shortcuts — the
 keyboard-first preset below handles them in the file list, so they never shadow typing in a field.
+
+## Git
+
+Reading a repository needs nothing turned on. Switching branches does: Settings › General ›
+"Git actions that change the repository (beta)". With it off, git stays display-only, which is
+what the rest of the application promises.
+
+A switch is refused while there are uncommitted changes, and the files are named. Nothing here
+stashes, forces or resets on your behalf.
 
 ## Keyboard-first preset
 

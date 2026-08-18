@@ -68,6 +68,10 @@ Status: `done` · `next` · `later` · `wont`
 | Selection shelf | `⌃⌘A` adds, `⌃⌘B` opens; files gathered from anywhere, delivered to the focused pane through the ordinary transfer engine |
 | Saved searches | Named queries in the sidebar; every option survives, and a search whose folder is gone runs in the current one |
 | Search by meaning | `⌃⌘F` — passages embedded with macOS's own sentence model and compared locally; finds a document by what it is about rather than the words it contains |
+| Compare two files | `⌥⌘D` — a unified diff with both sets of line numbers; `.diff` and `.patch` open in it |
+| Branches | `⇧⌘B` — local branches with ahead/behind, a diff against the current one, and an opt-in switch |
+| Renumber a batch | A rename rule for an already-numbered set: close a gap, start elsewhere, keep the names |
+| Recents | `⇧⌘Y` — files touched and actions taken; 2.2µs to record, written on a timer |
 | Keyboard-first preset | `j k h l`, `g g`, `G`, `⌃d`/`⌃u`, handled in the file list so text fields are untouched |
 
 ## Demand-ranked backlog
@@ -89,7 +93,10 @@ tail, and it is not ranked above the two issues below.
 
 - A theme sets the seven colour slots and the background. Fonts, metrics and icon sets are not themeable.
 - There is one theme and it lives in `theme.json`. Themes cannot be kept side by side, named, switched between, exported or installed — the `.soquel-theme` format that did that was deleted during the bug sweep, because two systems both claiming to own the colours is how the theme kept reverting. Issue #3 asks for named theme files again and contradicts this; the two have to be reconciled before it can start.
-- Git integration is display-only by design: no staging, diffing, or committing.
+- Git integration is display-only apart from one opted-in exception. Reading — status, badges,
+  branches, diffs — is always available. Switching branches writes to the working tree and is
+  behind Settings → General → "Git actions that change the repository (beta)", off by default.
+  Still no staging and no committing.
 - Content search reads UTF-8 text only and skips files over 8 MB; both are reported rather than silent.
 - `.gitignore` support covers ignore files inside the repository. `core.excludesFile`, `.git/info/exclude` and `$XDG_CONFIG_HOME/git/ignore` are not read.
 - Column set is fixed at name, extension, size, kind, dates and Git status. Owner, group, permissions and tags are shown in the preview panel rather than as columns.

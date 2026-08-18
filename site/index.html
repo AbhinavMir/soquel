@@ -175,10 +175,10 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.11/Soquel-1.0.11.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.1.0/Soquel-1.1.0.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note"><a href="#changelog">Version 1.0.11</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note"><a href="#changelog">Version 1.1.0</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
   <p class="note">Soquel is in beta. Version 2.0 will be the first alpha release.</p>
 
 </header>
@@ -419,6 +419,19 @@ footer a { color: var(--faint); }
     <dt>Copy path, six formats</dt>
     <dd>Absolute, file URL, filename, no extension, parent, shell-escaped.</dd>
   </div>
+  <div class="row" data-alt="diff compare patch difference changes two files unified">
+    <dt>Compare two files <kbd>⌥⌘D</kbd></dt>
+    <dd>A unified diff, with both sets of line numbers. Patches open in it too.</dd>
+  </div>
+  <div class="row" data-alt="git branch branches checkout switch ahead behind repository">
+    <dt>Branches <kbd>⇧⌘B</kbd></dt>
+    <dd>Every local branch, ahead and behind, and a diff against the current one.
+        Switching is a beta setting and refuses a dirty tree.</dd>
+  </div>
+  <div class="row" data-alt="recent recents history what did I just do opened moved renamed">
+    <dt>Recents <kbd>⇧⌘Y</kbd></dt>
+    <dd>The files you touched and the actions you took, newest first.</dd>
+  </div>
   <div class="row" data-alt="privacy screen share sharing recording zoom meet screenshot blackout hide private confidential">
     <dt>Hide from screen sharing <kbd>⌃⌘P</kbd></dt>
     <dd>Every window is left out of a screen share, a recording and a screenshot,
@@ -570,6 +583,26 @@ footer a { color: var(--faint); }
 
 <h2 id="changelog">Changelog</h2>
 <div class="log">
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.1.0</p>
+      <span class="rel-d">18 Aug 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.1.0">notes</a>
+    </div>
+    <ul>
+      <li>Compare two files <kbd>⌥⌘D</kbd>. A unified diff with both sets of line numbers.
+          A <code>.diff</code> or <code>.patch</code> opens as a diff instead of grey text.</li>
+      <li>Branches <kbd>⇧⌘B</kbd>. Every local branch with ahead and behind counts, and a diff
+          against the one you are on. Switching branches is a beta setting, off by default —
+          with it on a switch is refused while there are uncommitted changes rather than
+          stashing them for you.</li>
+      <li>Renumber a batch that is already numbered. Close a gap, start somewhere else, or
+          insert in the middle, keeping the rest of every name.</li>
+      <li>Recents <kbd>⇧⌘Y</kbd>. What you opened, moved, renamed and trashed. Recording costs
+          2.2 microseconds and the file is written on a timer, not per action.</li>
+    </ul>
+  </div>
 
   <div class="rel">
     <div class="rel-head">

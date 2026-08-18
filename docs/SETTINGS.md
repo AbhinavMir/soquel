@@ -9,6 +9,7 @@ hand, and anything you set by hand takes effect without a restart.
 | `settings.json` | Behaviour, view state, keyboard remaps, sidebar layout, toolbar contents, session |
 | `theme.json` | The colours in force, and the background image |
 | `workspaces.json` | Saved pane and tab layouts |
+| `recents.json` | Recently opened, moved, renamed and trashed files |
 
 Open the first one with **Edit settings.json** in the View menu or the command
 palette, or reveal it in Finder from the same menu.
@@ -31,6 +32,7 @@ Anything absent falls back to the default in the right-hand column.
 | Key | Type | Default |
 | --- | --- | --- |
 | `hideFromScreenSharing` | bool | `false` |
+| `gitActions` | bool | `false` |
 | `showHiddenFiles` | bool | `false` |
 | `foldersFirst` | bool | `false` |
 | `viewMode` | `"list"`, `"icon"`, `"column"` | `"list"` |
