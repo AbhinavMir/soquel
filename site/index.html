@@ -175,10 +175,10 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.10/Soquel-1.0.10.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.11/Soquel-1.0.11.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note"><a href="#changelog">Version 1.0.10</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note"><a href="#changelog">Version 1.0.11</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
   <p class="note">Soquel is in beta. Version 2.0 will be the first alpha release.</p>
 
 </header>
@@ -419,6 +419,11 @@ footer a { color: var(--faint); }
     <dt>Copy path, six formats</dt>
     <dd>Absolute, file URL, filename, no extension, parent, shell-escaped.</dd>
   </div>
+  <div class="row" data-alt="privacy screen share sharing recording zoom meet screenshot blackout hide private confidential">
+    <dt>Hide from screen sharing <kbd>⌃⌘P</kbd></dt>
+    <dd>Every window is left out of a screen share, a recording and a screenshot,
+        and stays on your own screen as it is.</dd>
+  </div>
   <div class="row" data-alt="dotfiles invisible show hidden">
     <dt>Hidden files <kbd>⇧⌘.</kbd></dt>
     <dd>Show or hide dotfiles.</dd>
@@ -565,6 +570,24 @@ footer a { color: var(--faint); }
 
 <h2 id="changelog">Changelog</h2>
 <div class="log">
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.0.11</p>
+      <span class="rel-d">17 Aug 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.0.11">notes</a>
+    </div>
+    <ul>
+      <li>Hide from screen sharing, on <kbd>⌃⌘P</kbd>. Every Soquel window is left out of
+          a screen share, a recording and a screenshot, and stays on your own screen
+          exactly as it is. macOS refuses to make an image of the window at all, so
+          nothing you forgot to hide can leak.</li>
+      <li>A General pane in Settings holding every switch that used to live only in the
+          command palette: hidden files, folders first, Git status, folder sizes, column
+          fitting, per-folder views, the preview panel, the folder tree, sync browsing,
+          keyboard-first keys and verified copies.</li>
+    </ul>
+  </div>
 
   <div class="rel">
     <div class="rel-head">

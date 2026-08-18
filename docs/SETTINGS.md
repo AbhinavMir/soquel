@@ -30,6 +30,7 @@ Anything absent falls back to the default in the right-hand column.
 
 | Key | Type | Default |
 | --- | --- | --- |
+| `hideFromScreenSharing` | bool | `false` |
 | `showHiddenFiles` | bool | `false` |
 | `foldersFirst` | bool | `false` |
 | `viewMode` | `"list"`, `"icon"`, `"column"` | `"list"` |

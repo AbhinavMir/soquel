@@ -84,6 +84,7 @@ Delete permanently always asks first. Undo covers rename, create, duplicate, tra
 | As list / icons / columns | `⌥⌘1` / `⌥⌘2` / `⌥⌘3` |
 | Bigger / smaller / default icons | `⌘+` / `⌘-` / `⌘0` |
 | Toggle hidden files | `⇧⌘.` |
+| Hide from screen sharing | `⌃⌘P` |
 | Toggle sidebar | `⌃⌘S` |
 | Show folder tree | `⇧⌘T` |
 | Refresh | `⌘R` |
@@ -115,8 +116,8 @@ keyboard-first preset below handles them in the file list, so they never shadow 
 
 ## Keyboard-first preset
 
-Off by default. Turn it on from the command palette (`Keyboard-First Keys`) or set
-`"keyboardFirst": true` in `settings.json`. These keys work only when the file list has focus, so
+Off by default. Turn it on in Settings → General, from the command palette
+(`Keyboard-First Keys`), or by setting `"keyboardFirst": true` in `settings.json`. These keys work only when the file list has focus, so
 they never interfere with typing in a field.
 
 | Keys | Action |
