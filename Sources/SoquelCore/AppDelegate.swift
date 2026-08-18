@@ -3,6 +3,7 @@ import AppKit
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowControllers: [MainWindowController] = []
     private var settingsObserver: NSObjectProtocol?
+    private var privacyObserver: NSObjectProtocol?
     private var shortcutObserver: NSObjectProtocol?
     // NSMenu holds its delegate weakly, so the app delegate keeps it alive.
     private let workspaceMenuDelegate = WorkspaceMenuDelegate()
@@ -43,6 +44,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Which application opens which file is cached; installing or removing
         // one is what makes that answer stale.
         AppLaunchGuard.startWatchingInstalledApplications()
+        // Panels, sheets and the settings window are built all over the app.
+        // Rather than remember to set each one, every window that becomes
+        // visible is checked as it appears.
+        privacyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { note in
+            PrivacyScreen.apply(to: note.object as? NSWindow)
+        }
+        PrivacyScreen.applyToAllWindows()
         let menu = makeMainMenu()
         NSApp.mainMenu = menu
         NSApp.windowsMenu = menu.items.compactMap(\.submenu).first { $0.title == "Window" }

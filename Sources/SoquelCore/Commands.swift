@@ -268,6 +268,7 @@ enum CommandRegistry {
         .command(Command("view.columnView", "As Columns", #selector(M.menuUseColumnView(_:)), Shortcut("3", [.command, .option]))),
         .separator,
         .command(Command("view.hidden", "Toggle Hidden Files", #selector(M.menuToggleHidden(_:)), Shortcut(".", [.command, .shift]))),
+        .command(Command("view.screenSharing", "Hide from Screen Sharing", #selector(M.menuToggleScreenSharing(_:)), Shortcut("p", [.command, .control]))),
         .command(Command("view.foldersFirst", "Folders First", #selector(M.menuToggleFoldersFirst(_:)))),
         .command(Command("view.gitStatus", "Show Git Status", #selector(M.menuToggleGitStatus(_:)))),
         .command(Command("view.folderSizes", "Calculate Folder Sizes", #selector(M.menuToggleFolderSizes(_:)))),

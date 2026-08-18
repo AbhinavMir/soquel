@@ -13,8 +13,16 @@ enum Prefs {
         "columnViewWidth", "expandedTreeFolders",
         "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
         "syncBrowsing", "checkForUpdates", "lastUpdateCheck", "skippedUpdateVersion",
-        "sortOrderDefaultMigrated",
+        "sortOrderDefaultMigrated", "hideFromScreenSharing",
     ]
+
+    /// Whether the app's windows are left out of screen sharing and
+    /// recording. Remembered, so it stays on for the length of a call rather
+    /// than needing to be set again for every window.
+    static var hideFromScreenSharing: Bool {
+        get { d.bool(forKey: "hideFromScreenSharing") }
+        set { d.set(newValue, forKey: "hideFromScreenSharing") }
+    }
 
     static var showHiddenFiles: Bool {
         get { d.bool(forKey: "showHiddenFiles") }

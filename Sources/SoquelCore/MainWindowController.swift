@@ -102,6 +102,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.minSize = NSSize(width: 640, height: 380)
         self.init(window: window)
         window.delegate = self
+        // Set before the window is shown: a window that appears in a capture
+        // for even one frame has already leaked what it was hiding.
+        PrivacyScreen.apply(to: window)
         window.alphaValue = Theme.windowOpacity
         build()
         restoreSession()
@@ -856,6 +859,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             }
             for pane in self.panes { pane.activeList?.reload() }
         }
+    }
+
+    /// Leaves every window out of screen sharing and recording, or puts them
+    /// back. The status line says which, because a window that is invisible to
+    /// everyone else looks exactly like one that is not.
+    @objc func menuToggleScreenSharing(_ sender: Any?) {
+        PrivacyScreen.isOn.toggle()
+        statusLeft.stringValue = PrivacyScreen.isOn
+            ? "Hidden from screen sharing — this window does not appear in a share or recording"
+            : "Visible to screen sharing again"
+        Log.info(.app, "Hide from screen sharing → \(PrivacyScreen.isOn)")
     }
 
     @objc func menuToggleHidden(_ sender: Any?) {
@@ -1745,6 +1759,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(menuToggleScreenSharing(_:)) {
+            item.state = PrivacyScreen.isOn ? .on : .off
+        }
         switch item.action {
         case #selector(menuGoBack): return focusedList?.canGoBack ?? false
         case #selector(menuGoForward): return focusedList?.canGoForward ?? false
