@@ -798,6 +798,10 @@ final class PaneViewController: NSViewController, FileListDelegate, NSSearchFiel
         columnBrowser.selectAllInDeepestColumn()
     }
 
+    func fileList(_ list: FileListViewController, openPatch url: URL) {
+        DiffPanelController.shared.show(patch: url)
+    }
+
     func fileListDidRequestInvertSelectionInColumns(_ list: FileListViewController) {
         columnBrowser.invertSelectionInDeepestColumn()
     }

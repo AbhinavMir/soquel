@@ -864,6 +864,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Leaves every window out of screen sharing and recording, or puts them
     /// back. The status line says which, because a window that is invisible to
     /// everyone else looks exactly like one that is not.
+    /// Compares the two selected files, or opens a patch.
+    ///
+    /// One file that is itself a patch is shown as it stands; two files are
+    /// compared with each other. Anything else says what it wanted.
+    @objc func menuDiffFiles(_ sender: Any?) {
+        guard let list = focusedList else { return }
+        let urls = list.selectedURLs().filter { !$0.hasDirectoryPath }
+
+        if urls.count == 1, Diff.isPatch(urls[0]) {
+            DiffPanelController.shared.show(patch: urls[0])
+            return
+        }
+        guard urls.count == 2 else {
+            statusLeft.stringValue = urls.count == 1
+                ? "Select a second file to compare with, or a .diff to read"
+                : "Select two files to compare"
+            NSSound.beep()
+            return
+        }
+        DiffPanelController.shared.show(urls[0], urls[1])
+    }
+
     @objc func menuToggleScreenSharing(_ sender: Any?) {
         PrivacyScreen.isOn.toggle()
         statusLeft.stringValue = PrivacyScreen.isOn

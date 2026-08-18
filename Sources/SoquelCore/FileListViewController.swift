@@ -13,6 +13,7 @@ protocol FileListDelegate: AnyObject {
     func fileListDidReload(_ list: FileListViewController)
     func fileListDidRequestSelectAllInColumns(_ list: FileListViewController)
     func fileListDidRequestInvertSelectionInColumns(_ list: FileListViewController)
+    func fileList(_ list: FileListViewController, openPatch url: URL)
     /// "/" puts the caret in the pane's filter box. The list used to own a
     /// second one of its own, so the window showed two identical fields.
     func fileListDidRequestFilter(_ list: FileListViewController)
@@ -1266,6 +1267,14 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         }
         if selected.count == 1, selected[0].opensAsFolder {
             navigate(to: selected[0].url.resolvingSymlinksInPath())
+            return
+        }
+
+        // A patch is a document about other files, and every editor shows it
+        // as grey text. Opening it where it can be read as a diff is what the
+        // double-click meant.
+        if selected.count == 1, !selected[0].opensAsFolder, Diff.isPatch(selected[0].url) {
+            delegate?.fileList(self, openPatch: selected[0].url)
             return
         }
 
