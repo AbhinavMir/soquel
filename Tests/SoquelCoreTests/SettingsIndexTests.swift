@@ -33,7 +33,7 @@ final class SettingsIndexTests: XCTestCase {
 
     /// Every entry points at a pane that exists, or the result goes nowhere.
     func testEveryEntryPointsAtARealPane() {
-        let panes = ["appearance", "window", "themes", "keyboard", "applications", "updates"]
+        let panes = ["general", "appearance", "window", "themes", "keyboard", "applications", "updates"]
         for entry in SettingsIndex.all {
             XCTAssertTrue(panes.contains(entry.pane), "\(entry.title) → \(entry.pane)")
             XCTAssertFalse(entry.title.isEmpty)

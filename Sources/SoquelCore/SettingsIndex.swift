@@ -19,6 +19,32 @@ enum SettingsIndex {
     }
 
     static let all: [Entry] = [
+        Entry(pane: "general", paneTitle: "General", title: "Show hidden files",
+              keywords: "dotfiles invisible hidden dot show"),
+        Entry(pane: "general", paneTitle: "General", title: "Folders first",
+              keywords: "sort order group folders directories top"),
+        Entry(pane: "general", paneTitle: "General", title: "Show Git status",
+              keywords: "git repository badge modified changed version control"),
+        Entry(pane: "general", paneTitle: "General", title: "Calculate folder sizes",
+              keywords: "size folder measure bytes disk how big"),
+        Entry(pane: "general", paneTitle: "General", title: "Fit columns automatically",
+              keywords: "column width auto size fit resize"),
+        Entry(pane: "general", paneTitle: "General", title: "Remember the view for each folder",
+              keywords: "per folder view sort remember icon list column"),
+        Entry(pane: "general", paneTitle: "General", title: "Show the preview panel",
+              keywords: "inspector preview details quick look panel"),
+        Entry(pane: "general", paneTitle: "General", title: "Show the folder tree",
+              keywords: "sidebar tree hierarchy expand folders"),
+        Entry(pane: "general", paneTitle: "General", title: "Sync browsing",
+              keywords: "panes together follow mirror dual"),
+        Entry(pane: "general", paneTitle: "General", title: "Keyboard-first keys",
+              keywords: "vim vi j k h l keyboard navigation modal"),
+        Entry(pane: "general", paneTitle: "General", title: "Verify copies with a checksum",
+              keywords: "checksum verify copy integrity sha hash safe"),
+
+        Entry(pane: "window", paneTitle: "Window", title: "Hide from screen sharing",
+              keywords: "privacy screen share recording zoom meet screenshot hide blackout private"),
+
         Entry(pane: "appearance", paneTitle: "Appearance", title: "Highlights",
               keywords: "accent colour color focus bar path git"),
         Entry(pane: "appearance", paneTitle: "Appearance", title: "Selected row",

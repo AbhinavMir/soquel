@@ -167,6 +167,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         tabs = NSTabView()
         tabs.translatesAutoresizingMaskIntoConstraints = false
 
+        let general = NSTabViewItem(identifier: "general")
+        general.label = "General"
+        general.view = Self.paneContainer(GeneralSettingsView())
+
         let appearance = NSTabViewItem(identifier: "appearance")
         appearance.label = "Appearance"
         appearance.view = Self.paneContainer(AppearanceSettingsView())
@@ -191,6 +195,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         updates.label = "Updates"
         updates.view = Self.paneContainer(UpdateSettingsView())
 
+        tabs.addTabViewItem(general)
         tabs.addTabViewItem(appearance)
         tabs.addTabViewItem(windowPane)
         tabs.addTabViewItem(themes)

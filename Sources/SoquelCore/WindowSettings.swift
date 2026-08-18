@@ -14,6 +14,8 @@ final class WindowSettingsView: NSView {
     private var imageReadout: NSTextField!
     private var fitControl: NSPopUpButton!
     private var imageRow: NSStackView!
+    private var privacyCheckbox: NSButton!
+    private var privacyObserver: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -85,7 +87,31 @@ final class WindowSettingsView: NSView {
         imageRow.orientation = .horizontal
         imageRow.spacing = 8
 
+        privacyCheckbox = NSButton(
+            checkboxWithTitle: "Hide from screen sharing and recording",
+            target: self, action: #selector(privacyChanged)
+        )
+        privacyCheckbox.state = PrivacyScreen.isOn ? .on : .off
+
+        let privacyNote = text("Every Soquel window is left out of a screen share, a recording "
+            + "and a screenshot. It stays on your own screen exactly as it is. "
+            + "Also on ⌃⌘P, and in the View menu.", size: 11)
+        privacyNote.textColor = .secondaryLabelColor
+        privacyNote.lineBreakMode = .byWordWrapping
+        privacyNote.maximumNumberOfLines = 3
+        privacyNote.preferredMaxLayoutWidth = 520
+
+        // The setting can be toggled from the menu or the shortcut while this
+        // pane is open, and a checkbox that disagrees with the window is worse
+        // than no checkbox.
+        privacyObserver = NotificationCenter.default.addObserver(
+            forName: .soquelScreenSharingChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.privacyCheckbox.state = PrivacyScreen.isOn ? .on : .off
+        }
+
         let stack = NSStackView(views: [
+            text("Privacy", weight: .semibold), privacyCheckbox, privacyNote,
             text("Transparency", weight: .semibold), opacityRow, note,
             text("Background image", weight: .semibold), chooseRow, imageRow,
         ])
@@ -93,6 +119,7 @@ final class WindowSettingsView: NSView {
         stack.alignment = .leading
         stack.spacing = 10
         stack.setCustomSpacing(20, after: note)
+        stack.setCustomSpacing(20, after: privacyNote)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(stack)
@@ -109,6 +136,14 @@ final class WindowSettingsView: NSView {
     private func updateImageControls() {
         imageRow.isHidden = Theme.background.imageURL == nil
         pathLabel.stringValue = Theme.background.imageURL?.lastPathComponent ?? "None"
+    }
+
+    deinit {
+        if let privacyObserver { NotificationCenter.default.removeObserver(privacyObserver) }
+    }
+
+    @objc private func privacyChanged() {
+        PrivacyScreen.isOn = privacyCheckbox.state == .on
     }
 
     @objc private func opacityChanged() {
