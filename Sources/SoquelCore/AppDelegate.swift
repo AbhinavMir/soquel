@@ -159,6 +159,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Writes are coalesced, so the last quarter second of changes — which
         // includes the session just saved above — is still only in memory.
         Settings.writeNow()
+        Recents.write()
     }
 
     @objc func showWelcome(_ sender: Any?) {

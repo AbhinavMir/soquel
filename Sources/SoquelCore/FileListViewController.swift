@@ -1298,6 +1298,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
 
         // Asked once for the whole selection rather than once per file, and
         // only when the application is one of the slow ones.
+        Recents.record(.opened, files)
         AppLaunchGuard.confirm(opening: files, with: nil, in: view.window) { [weak self] in
             guard let self else { return }
             // Handed over rather than waited on: NSWorkspace.open returns
@@ -1616,6 +1617,7 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         do {
             let newURL = try OperationEngine.shared.rename(original, to: newName)
             UndoStack.shared.pushRename(from: original, to: newURL)
+            Recents.record(.renamed, original, to: newURL)
             // The commit runs a turn after the editor closed, and the click
             // that closed it may have selected another file. Only a selection
             // still on the old name follows the file to its new one; a click
@@ -1842,6 +1844,8 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // lose them. The rest still go through the Trash and stay undoable.
         let permanent = urls.filter { !TrashPolicy.outcome(for: $0).isRecoverable }
         let recoverable = urls.filter { TrashPolicy.outcome(for: $0).isRecoverable }
+        if !recoverable.isEmpty { Recents.record(.trashed, recoverable) }
+        if !permanent.isEmpty { Recents.record(.deleted, permanent) }
 
         let finish: (OperationResult) -> Void = { [weak self] result in
             guard let self else { return }

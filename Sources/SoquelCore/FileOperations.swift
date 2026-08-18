@@ -309,6 +309,11 @@ final class OperationEngine {
                 }
             }
 
+            // Recorded once for the whole transfer rather than per file: the
+            // useful memory is "I moved those there", not four thousand rows.
+            if !result.succeeded.isEmpty {
+                Recents.record(move ? .moved : .copied, result.succeeded, to: directory)
+            }
             DispatchQueue.main.async {
                 job.finish()
                 TransferQueue.shared.notify()

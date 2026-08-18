@@ -864,6 +864,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Leaves every window out of screen sharing and recording, or puts them
     /// back. The status line says which, because a window that is invisible to
     /// everyone else looks exactly like one that is not.
+    /// What you have recently opened, moved, renamed or trashed.
+    @objc func menuShowRecents(_ sender: Any?) {
+        RecentsPanelController.shared.show(for: self)
+    }
+
     /// The branches of the repository the focused pane is standing in.
     @objc func menuShowBranches(_ sender: Any?) {
         guard let list = focusedList else { return }
