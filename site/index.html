@@ -163,6 +163,8 @@ footer {
   font-size: 13.5px; color: var(--faint); text-align: center;
 }
 footer a { color: var(--faint); }
+  .withdrawn { border-left: 3px solid #c0392b; padding: .6rem .9rem; margin: .6rem 0;
+      background: rgba(192,57,43,.08); border-radius: 4px; font-size: .92rem; }
 </style>
 </head>
 <body>
@@ -175,10 +177,10 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.1.0/Soquel-1.1.0.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.0.11/Soquel-1.0.11.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note"><a href="#changelog">Version 1.1.0</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note"><a href="#changelog">Version 1.0.11</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
   <p class="note">Soquel is in beta. Version 2.0 will be the first alpha release.</p>
 
 </header>
@@ -586,10 +588,14 @@ footer a { color: var(--faint); }
 
   <div class="rel">
     <div class="rel-head">
-      <p class="rel-v">1.1.0</p>
+      <p class="rel-v">1.1.0 — withdrawn</p>
       <span class="rel-d">18 Aug 2026</span>
       <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.1.0">notes</a>
     </div>
+    <p class="withdrawn"><strong>Withdrawn — do not use.</strong> In the Branches panel,
+       Diff with Current on a branch whose name begins with a dash can empty one of your
+       files. Git reads the name as an option rather than a branch. Use 1.0.11 until the
+       fix is out.</p>
     <ul>
       <li>Compare two files <kbd>⌥⌘D</kbd>. A unified diff with both sets of line numbers.
           A <code>.diff</code> or <code>.patch</code> opens as a diff instead of grey text.</li>
