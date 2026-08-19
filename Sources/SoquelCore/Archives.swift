@@ -485,7 +485,15 @@ final class ArchiveViewerController: NSObject, NSTableViewDataSource, NSTableVie
             // still gets the folder it made shown.
             if let entry {
                 let extracted = destination.appendingPathComponent(Archive.relativePath(of: entry))
-                if FileManager.default.fileExists(atPath: extracted.path) {
+                    .standardized
+                // An entry called "../../escape.txt" resolves above the
+                // extraction folder. unzip is not fooled by it — the file
+                // lands flattened inside — but this path was, and the
+                // fileExists test then passed exactly when an unrelated file
+                // sat where the entry pointed, revealing that instead.
+                let inside = extracted.path == destination.standardized.path
+                    || extracted.path.hasPrefix(destination.standardized.path + "/")
+                if inside, FileManager.default.fileExists(atPath: extracted.path) {
                     controller?.reveal(extracted)
                     return
                 }

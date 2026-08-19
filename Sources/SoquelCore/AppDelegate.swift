@@ -70,6 +70,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Does nothing at all unless Settings → Updates is on.
         UpdateCheck.checkInBackgroundIfDue()
+        // Separate from the update check and not gated on it: this one asks
+        // whether the build already on this disk has been withdrawn.
+        BuildAdvisory.checkOnLaunch()
 
         // First launch only. A file manager that cannot read Desktop or
         // Documents looks broken rather than unpermitted, so it is worth one

@@ -21,6 +21,8 @@ enum GitRepo {
         case notARepository
         case disabled
         case dirtyTree([String])
+        /// A ref whose name git would read as an option rather than a ref.
+        case unusableRef(String)
         case git(String)
 
         var errorDescription: String? {
@@ -32,10 +34,25 @@ enum GitRepo {
                 let more = files.count > 3 ? " and \(files.count - 3) more" : ""
                 return "There are uncommitted changes in \(names)\(more). "
                     + "Commit or stash them first — Soquel will not do it for you."
+            case .unusableRef(let name):
+                return "“\(name)” cannot be used as a branch name here: a name "
+                    + "beginning with a dash is read by git as an option, not a branch."
             case .git(let message):
                 return message.isEmpty ? "git refused" : message
             }
         }
+    }
+
+    /// Whether a name can be handed to git as a ref.
+    ///
+    /// git itself refuses to *create* a branch whose name starts with a dash,
+    /// but `update-ref` will, and a repository can arrive from anywhere. Such
+    /// a name reaching an argument list is read as an option, not a ref, and
+    /// git has options that write files — `--output=<file>` truncates whatever
+    /// it names. Every ref is checked here as well as separated by `--` below,
+    /// because either alone is one mistake away from the same hole.
+    static func isSafeRef(_ name: String) -> Bool {
+        !name.isEmpty && !name.hasPrefix("-")
     }
 
     /// Runs git and hands back what it printed. Never on the main thread.
@@ -104,8 +121,12 @@ enum GitRepo {
     /// Files that differ between two refs, as a unified diff.
     static func diff(_ from: String, _ to: String, in root: URL,
                      completion: @escaping (Result<String, Error>) -> Void) {
+        guard isSafeRef(from), isSafeRef(to) else {
+            completion(.failure(Failure.unusableRef([from, to].first { !isSafeRef($0) } ?? "")))
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = run(["diff", "--no-color", from, to], in: root)
+            let result = run(["diff", "--no-color", from, to, "--"], in: root)
             DispatchQueue.main.async {
                 guard result.status == 0 else {
                     completion(.failure(Failure.git(result.error.trimmingCharacters(in: .whitespacesAndNewlines))))
@@ -159,13 +180,17 @@ enum GitRepo {
             completion(.failure(Failure.disabled))
             return
         }
+        guard isSafeRef(branch) else {
+            completion(.failure(Failure.unusableRef(branch)))
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let dirty = dirtyPaths(in: root)
             guard dirty.isEmpty else {
                 DispatchQueue.main.async { completion(.failure(Failure.dirtyTree(dirty))) }
                 return
             }
-            let result = run(["checkout", branch], in: root)
+            let result = run(["checkout", branch, "--"], in: root)
             let message = (result.error + result.out).trimmingCharacters(in: .whitespacesAndNewlines)
             Log.info(.app, "git checkout \(branch) in \(root.path) → \(result.status): \(message)")
             DispatchQueue.main.async {

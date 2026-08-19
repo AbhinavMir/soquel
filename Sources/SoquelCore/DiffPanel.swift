@@ -128,18 +128,40 @@ final class DiffPanelController: NSWindowController {
     }
 
     /// Shows a patch file as it stands.
+    ///
+    /// Reading and parsing happen off the main thread, as they do in
+    /// `Diff.compare`. They used to run on it, so a large patch froze the
+    /// window that was meant to be showing it.
     func show(patch url: URL) {
         present(title: url.lastPathComponent)
         generation += 1
-        apply(Diff.read(patch: url))
+        let token = generation
+        spinner.startAnimation(nil)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Diff.read(patch: url)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.generation == token else { return }
+                self.spinner.stopAnimation(nil)
+                self.apply(result)
+            }
+        }
     }
 
     /// Shows a diff that has already been produced, for the git side.
     func show(unified text: String, title: String) {
         present(title: title)
         generation += 1
-        let parsed = Diff.parse(unified: text)
-        apply(Diff.Result(lines: parsed, note: parsed.isEmpty ? "No differences" : nil))
+        let token = generation
+        spinner.startAnimation(nil)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let parsed = Diff.parse(unified: text)
+            let result = Diff.Result(lines: parsed, note: parsed.isEmpty ? "No differences" : nil)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.generation == token else { return }
+                self.spinner.stopAnimation(nil)
+                self.apply(result)
+            }
+        }
     }
 
     private func present(title: String) {

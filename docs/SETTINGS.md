@@ -11,6 +11,16 @@ hand, and anything you set by hand takes effect without a restart.
 | `workspaces.json` | Saved pane and tab layouts |
 | `recents.json` | Recently opened, moved, renamed and trashed files |
 
+## The one request that is not opt-in
+
+`checkForBadBuilds` is on by default, and it is the only thing Soquel asks a
+server without being told to. It reads `https://trysoquel.com/advisories.json`
+— one static file, the same for every reader — and compares the versions in it
+with this build. Nothing about the machine is sent, and no server is told what
+is installed; the comparison happens here. It is on by default because a
+withdrawn build can lose files, and a warning nobody switched on warns nobody.
+Settings › Updates turns it off, and off is respected.
+
 Open the first one with **Edit settings.json** in the View menu or the command
 palette, or reveal it in Finder from the same menu.
 
@@ -63,6 +73,8 @@ Anything absent falls back to the default in the right-hand column.
 | `expandedTreeFolders` | array of paths | `[]` |
 | `verifyTransfers` | bool | `false` |
 | `checkForUpdates` | bool | `false` |
+| `checkForBadBuilds` | bool | `true` |
+| `acknowledgedAdvisory` | string | unset |
 | `confirmHeavyLaunches` | bool | `true` |
 | `heavyApplications`, `launchWithoutAsking` | arrays of bundle ids | built-in list, `[]` |
 | `applicationKinds` | object, file kind → bundle id | `{}` |

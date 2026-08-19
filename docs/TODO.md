@@ -72,6 +72,7 @@ Status: `done` · `next` · `later` · `wont`
 | Branches | `⇧⌘B` — local branches with ahead/behind, a diff against the current one, and an opt-in switch |
 | Renumber a batch | A rename rule for an already-numbered set: close a gap, start elsewhere, keep the names |
 | Recents | `⇧⌘Y` — files touched and actions taken; 2.2µs to record, written on a timer |
+| Faulty-build notice | Reads one published list of withdrawn versions; if this build is on it, says what breaks and offers one click to install the fix and one to go back to the last good version. The download is checked against the developer signature before anything is replaced |
 | Keyboard-first preset | `j k h l`, `g g`, `G`, `⌃d`/`⌃u`, handled in the file list so text fields are untouched |
 
 ## Demand-ranked backlog

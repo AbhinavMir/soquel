@@ -1,0 +1,13 @@
+{
+  "$comment": "Versions of Soquel that were withdrawn. Read by the running app on launch when Settings > Updates > 'Warn me if this build is known to be faulty' is on, which it is by default. Exact versions only, never ranges.",
+  "advisories": [
+    {
+      "affects": ["1.1.0"],
+      "severity": "critical",
+      "summary": "Opening the Branches panel and pressing Diff with Current can empty one of your files.",
+      "detail": "A branch whose name begins with a dash was passed to git as an option instead of as a branch. Git reads --output=<file> as an instruction to write over that file, so the click emptied it. Any file you can write could be hit, and there is no undo. It needs a repository that carries such a branch, so a repository you cloned rather than one you made. 1.1.1 refuses those names and no longer lets a branch name be read as an option.",
+      "fixedIn": "1.1.1",
+      "rollBackTo": "1.0.11"
+    }
+  ]
+}

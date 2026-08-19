@@ -604,3 +604,86 @@ final class RegressionTests: XCTestCase {
     }
 
 }
+
+// MARK: - Fuzz run, 19 August 2026
+
+extension RegressionTests {
+    /// F1. A branch name beginning with a dash reached git as an option. Git
+    /// has `--output=<file>`, which truncates whatever it names, so one click
+    /// on "Diff with Current" emptied a file of the user's. Proven against
+    /// 1.1.0: an md5 of dc8ebb45… became d41d8cd9…, the empty file.
+    func testRefsThatGitWouldReadAsOptionsAreRefused() {
+        XCTAssertFalse(GitRepo.isSafeRef("--output=/tmp/victim.txt"))
+        XCTAssertFalse(GitRepo.isSafeRef("--force"))
+        XCTAssertFalse(GitRepo.isSafeRef("-D"))
+        XCTAssertFalse(GitRepo.isSafeRef("--"))
+        XCTAssertFalse(GitRepo.isSafeRef(""))
+        XCTAssertTrue(GitRepo.isSafeRef("main"))
+        XCTAssertTrue(GitRepo.isSafeRef("feature/dash-in-middle"))
+    }
+
+    /// F4. Every blank line was dropped, not just the trailing one, and the
+    /// line numbers after it ran low by one per blank line. Patches that have
+    /// been through anything that strips trailing whitespace hit this.
+    func testBlankLinesKeepTheirPlaceAndTheirNumbering() {
+        let patch = [
+            "--- a/f", "+++ b/f", "@@ -1,6 +1,6 @@",
+            " alpha", "", " bravo", "-charlie", "+CHARLIE", " delta", ""
+        ].joined(separator: "\n")
+        let lines = Diff.parse(unified: patch)
+
+        let blank = lines.filter { $0.kind == .context && $0.text.isEmpty }
+        XCTAssertEqual(blank.count, 1, "the blank line belongs in the output")
+        XCTAssertEqual(blank.first?.oldNumber, 2)
+
+        let removed = lines.first { $0.kind == .removed }
+        XCTAssertEqual(removed?.text, "charlie")
+        XCTAssertEqual(removed?.oldNumber, 4, "charlie is the fourth line, not the third")
+
+        let delta = lines.last { $0.kind == .context }
+        XCTAssertEqual(delta?.text, "delta")
+        XCTAssertEqual(delta?.oldNumber, 5)
+
+        XCTAssertFalse(lines.contains { $0.kind == .context && $0.text.isEmpty && $0.oldNumber == nil },
+                       "no trailing empty row from the final newline")
+    }
+
+    /// F5. The blank-line test re-split the whole patch on every empty line,
+    /// which made the parse quadratic — 8.3s for 16,000 lines, on the main
+    /// thread. Four times the input must not cost sixteen times the work.
+    func testParsingALargePatchStaysLinear() {
+        func time(_ rows: Int) -> TimeInterval {
+            let body = (0..<rows).map { _ in " code\n\n" }.joined()
+            let text = "--- a/f\n+++ b/f\n@@ -1,1 +1,1 @@\n" + body
+            let start = Date()
+            _ = Diff.parse(unified: text)
+            return -start.timeIntervalSinceNow
+        }
+        _ = time(500)
+        let small = time(2_000)
+        let large = time(8_000)
+        // Four times the rows. Linear is 4x; the old code was 16x and worse.
+        XCTAssertLessThan(large, max(small * 8, 0.5),
+                          "parse cost is growing faster than the input")
+    }
+
+    /// F6. `compare` refuses a file over 8 MB. Opening a .diff did not, so a
+    /// 126 MB patch was read whole and parsed on the main thread.
+    func testAPatchFileOverTheSizeLimitIsRefused() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let patch = folder.appendingPathComponent("huge.diff")
+        // Sparse, so the test does not write 9 MB.
+        let handle = FileManager.default.createFile(atPath: patch.path, contents: nil)
+        XCTAssertTrue(handle)
+        let file = try FileHandle(forWritingTo: patch)
+        try file.truncate(atOffset: UInt64(Diff.sizeLimit) + 1)
+        try file.close()
+
+        let result = Diff.read(patch: patch)
+        XCTAssertTrue(result.isEmpty)
+        XCTAssertEqual(result.note, "huge.diff: Larger than 8 MB")
+    }
+}

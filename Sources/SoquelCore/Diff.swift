@@ -120,7 +120,19 @@ enum Diff {
         var oldNumber = 0
         var newNumber = 0
 
-        for raw in text.components(separatedBy: "\n") {
+        // Split once. This used to re-split the whole text inside the loop to
+        // find the last element, which made the parse quadratic: a
+        // 16,000-line patch took 8.3 seconds, and it is parsed on the main
+        // thread.
+        var rows = text.components(separatedBy: "\n")
+        // A text ending in a newline leaves one empty string behind. Only that
+        // one is dropped. The old test compared every line against it, so a
+        // blank line anywhere in the patch was thrown away — and because the
+        // skip also missed the counter increments below, every line number
+        // after it was reported one too low, and one more per blank line.
+        if rows.last == "" { rows.removeLast() }
+
+        for raw in rows {
             if raw.hasPrefix("@@") {
                 (oldNumber, newNumber) = hunkStart(raw) ?? (oldNumber, newNumber)
                 lines.append(Line(kind: .hunk, text: raw, oldNumber: nil, newNumber: nil))
@@ -131,10 +143,6 @@ enum Diff {
                 lines.append(Line(kind: .header, text: raw, oldNumber: nil, newNumber: nil))
                 continue
             }
-            // The last line of the output is an empty string from the final
-            // newline; it is not a context line and would draw as a blank row.
-            if raw.isEmpty, raw == text.components(separatedBy: "\n").last { continue }
-
             switch raw.first {
             case "+":
                 lines.append(Line(kind: .added, text: String(raw.dropFirst()), oldNumber: nil, newNumber: newNumber))
@@ -169,6 +177,12 @@ enum Diff {
 
     /// Reads a `.diff` or `.patch` file that somebody else produced.
     static func read(patch url: URL) -> Result {
+        // The same ceiling `compare` applies. Without it a 126 MB .diff was
+        // read whole and parsed into a Line per line, on the main thread.
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        guard size <= sizeLimit else {
+            return Result(lines: [], note: "\(url.lastPathComponent): Larger than 8 MB")
+        }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             return Result(lines: [], note: "Could not read \(url.lastPathComponent)")
         }

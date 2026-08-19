@@ -92,6 +92,10 @@ enum SettingsIndex {
 
         Entry(pane: "updates", paneTitle: "Updates", title: "Tell me about new versions",
               keywords: "update check github release version upgrade network"),
+
+        Entry(pane: "updates", paneTitle: "Updates", title: "Warn me about a faulty build",
+              keywords: "advisory recall withdrawn bad build faulty broken downgrade roll back "
+                  + "revert reinstall install fix version safety"),
     ]
 
     /// Entries matching every word typed.
