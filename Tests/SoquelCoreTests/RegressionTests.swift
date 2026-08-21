@@ -687,3 +687,34 @@ extension RegressionTests {
         XCTAssertEqual(result.note, "huge.diff: Larger than 8 MB")
     }
 }
+
+extension RegressionTests {
+    /// The Git column shows one letter and its header is one character wide.
+    /// The tooltip used to be the one-word label, and "Untracked" on its own
+    /// does not tell somebody who does not already know what "?" means.
+    func testEveryGitBadgeExplainsItself() {
+        for state in [GitState.modified, .added, .deleted, .renamed,
+                      .untracked, .ignored, .conflicted, .clean] {
+            let explanation = state.explanation
+            XCTAssertFalse(explanation.isEmpty, "\(state) has no explanation")
+            XCTAssertGreaterThan(explanation.count, state.label.count,
+                                 "\(state) explains no more than its one-word label")
+        }
+        XCTAssertTrue(GitState.untracked.explanation.contains("git add"),
+                      "the untracked tooltip must say what starts tracking")
+        XCTAssertTrue(GitState.untracked.explanation.contains(".gitignore"))
+    }
+
+    /// The header carries the whole legend, because a one-letter column has
+    /// nowhere else to put it.
+    func testTheColumnHeaderCarriesTheWholeLegend() {
+        let legend = GitState.legend
+        for state in [GitState.modified, .added, .deleted, .renamed,
+                      .untracked, .ignored, .conflicted] {
+            XCTAssertTrue(legend.contains(state.badge), "legend omits \(state.badge)")
+            XCTAssertTrue(legend.contains(state.label), "legend omits \(state.label)")
+        }
+        XCTAssertFalse(legend.contains("Unchanged"),
+                       "a clean file draws no badge, so it does not belong in the legend")
+    }
+}

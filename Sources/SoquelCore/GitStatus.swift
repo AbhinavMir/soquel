@@ -32,6 +32,43 @@ enum GitState: String {
         }
     }
 
+    /// What the letter means, in a sentence, for the tooltip.
+    ///
+    /// The one-word label was what the tooltip used to say, and "Untracked"
+    /// on its own does not tell somebody who does not already know what "?"
+    /// means. Each of these says what Git thinks and what would change it.
+    var explanation: String {
+        switch self {
+        case .modified:
+            return "Modified — changed since the last commit, and not staged yet."
+        case .added:
+            return "Added — staged, and will go into the next commit."
+        case .deleted:
+            return "Deleted — gone from the working tree, still in the last commit."
+        case .renamed:
+            return "Renamed — Git matched it to a file that used to have another name."
+        case .untracked:
+            return "Untracked — Git is not following this file. "
+                + "“git add” starts tracking it; .gitignore hides it."
+        case .ignored:
+            return "Ignored — a rule in .gitignore tells Git to leave it alone."
+        case .conflicted:
+            return "Conflict — a merge or rebase left both sides in the file. "
+                + "It has to be resolved by hand."
+        case .clean:
+            return "Unchanged since the last commit."
+        }
+    }
+
+    /// The whole column explained at once, for the header.
+    static var legend: String {
+        let states: [GitState] = [.modified, .added, .deleted, .renamed,
+                                  .untracked, .ignored, .conflicted]
+        let rows = states.map { "\($0.badge)  \($0.label)" }.joined(separator: "\n")
+        return "Git status\n\n" + rows
+            + "\n\nA folder is marked when anything inside it is."
+    }
+
     /// Porcelain v1 uses two columns: index state, then working-tree state.
     /// The working tree wins for display because it is what the user just did.
     static func from(porcelainCode code: String) -> GitState? {

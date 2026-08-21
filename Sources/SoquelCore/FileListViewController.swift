@@ -530,6 +530,12 @@ final class FileListViewController: NSViewController, NSTextFieldDelegate, NSSea
         // and never followed a keyboard sort. The sort lives in `sortOrder`;
         // updateSortIndicators draws it, and the accessibility sort direction
         // follows the drawn image.
+        // The Git column's header is one character wide and its cells hold a
+        // single letter, so the header carries the whole legend. Somebody who
+        // does not already know what "?" means has nowhere else to find out.
+        if id == "git" {
+            column.headerToolTip = GitState.legend
+        }
         if let saved = Self.savedWidth(for: id) {
             column.width = Swift.max(Swift.min(saved, column.maxWidth), column.minWidth)
         }
@@ -2562,7 +2568,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.textField?.font = Theme.rowNumeric
             cell.textField?.alignment = .center
             cell.restingTextColor = state == .clean ? .tertiaryLabelColor : Theme.accent
-            cell.toolTip = state == .clean ? nil : state.label
+            cell.toolTip = state == .clean ? nil : state.explanation
         case "created":
             cell.textField?.stringValue = item.created == .distantPast ? "—" : Self.dateFormatter.string(from: item.created)
             cell.textField?.font = Theme.rowNumeric

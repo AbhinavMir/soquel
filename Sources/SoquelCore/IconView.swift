@@ -86,7 +86,7 @@ final class FileIconItem: NSCollectionViewItem {
         label.stringValue = item.name
         restingLabelColor = item.isHidden ? .secondaryLabelColor : .labelColor
         badge.stringValue = gitState.badge
-        badge.toolTip = gitState == .clean ? nil : gitState.label
+        badge.toolTip = gitState == .clean ? nil : gitState.explanation
 
         // isSelected is set by the collection view before the tile is handed a
         // file, and its observer runs against the previous file's resting
