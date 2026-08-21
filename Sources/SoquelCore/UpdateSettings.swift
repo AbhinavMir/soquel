@@ -2,9 +2,13 @@ import AppKit
 
 /// Settings → Updates.
 final class UpdateSettingsView: NSView {
+    private var autoDetail: NSTextField!
     private var toggle: NSButton!
     private var status: NSTextField!
     private var checkButton: NSButton!
+    private var channelPicker: NSPopUpButton!
+    private var channelDetail: NSTextField!
+    private var autoInstallToggle: NSButton!
     private var recallToggle: NSButton!
     private var recallStatus: NSTextField!
 
@@ -41,6 +45,38 @@ final class UpdateSettingsView: NSView {
         detail.lineBreakMode = .byWordWrapping
         detail.maximumNumberOfLines = 3
         detail.translatesAutoresizingMaskIntoConstraints = false
+
+        channelPicker = NSPopUpButton()
+        channelPicker.addItems(withTitles: UpdateChannel.allCases.map(\.title))
+        channelPicker.selectItem(at: UpdateChannel.allCases.firstIndex(of: .current) ?? 0)
+        channelPicker.target = self
+        channelPicker.action = #selector(channelChanged)
+        channelPicker.translatesAutoresizingMaskIntoConstraints = false
+
+        channelDetail = NSTextField(labelWithString: UpdateChannel.current.detail)
+        channelDetail.font = Theme.rowSecondary
+        channelDetail.textColor = .secondaryLabelColor
+        channelDetail.lineBreakMode = .byWordWrapping
+        channelDetail.maximumNumberOfLines = 4
+        channelDetail.translatesAutoresizingMaskIntoConstraints = false
+
+        autoInstallToggle = NSButton(
+            checkboxWithTitle: "Install updates without asking",
+            target: self, action: #selector(autoInstallChanged)
+        )
+        autoInstallToggle.state = AutoUpdate.installsAutomatically ? .on : .off
+        autoInstallToggle.translatesAutoresizingMaskIntoConstraints = false
+
+        let autoDetail = NSTextField(labelWithString:
+            "Downloads the release, checks it is signed by Soquel's developer, replaces this "
+            + "copy and offers to restart. An unsigned download is deleted and nothing is "
+            + "installed — automatic never means unchecked.")
+        autoDetail.font = Theme.rowSecondary
+        autoDetail.textColor = .secondaryLabelColor
+        autoDetail.lineBreakMode = .byWordWrapping
+        autoDetail.maximumNumberOfLines = 4
+        autoDetail.translatesAutoresizingMaskIntoConstraints = false
+        self.autoDetail = autoDetail
 
         checkButton = NSButton(title: "Check Now", target: self, action: #selector(checkNow))
         checkButton.translatesAutoresizingMaskIntoConstraints = false
@@ -85,7 +121,8 @@ final class UpdateSettingsView: NSView {
         version.textColor = .secondaryLabelColor
         version.translatesAutoresizingMaskIntoConstraints = false
 
-        [title, toggle, detail, checkButton, status,
+        [title, toggle, detail, channelPicker, channelDetail, autoInstallToggle, autoDetail,
+         checkButton, status,
          recallToggle, recallDetail, recallButton, recallStatus, version].forEach(addSubview)
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: topAnchor, constant: 14),
@@ -99,7 +136,21 @@ final class UpdateSettingsView: NSView {
             detail.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 34),
             detail.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
 
-            checkButton.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 16),
+            channelPicker.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 14),
+            channelPicker.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 34),
+
+            channelDetail.topAnchor.constraint(equalTo: channelPicker.bottomAnchor, constant: 6),
+            channelDetail.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 34),
+            channelDetail.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+
+            autoInstallToggle.topAnchor.constraint(equalTo: channelDetail.bottomAnchor, constant: 14),
+            autoInstallToggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 34),
+
+            autoDetail.topAnchor.constraint(equalTo: autoInstallToggle.bottomAnchor, constant: 6),
+            autoDetail.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 50),
+            autoDetail.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+
+            checkButton.topAnchor.constraint(equalTo: autoDetail.bottomAnchor, constant: 16),
             checkButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
 
             status.centerYAnchor.constraint(equalTo: checkButton.centerYAnchor),
@@ -150,6 +201,19 @@ final class UpdateSettingsView: NSView {
         updateStatus()
     }
 
+    @objc private func channelChanged() {
+        let picked = UpdateChannel.allCases[channelPicker.indexOfSelectedItem]
+        UpdateChannel.current = picked
+        channelDetail.stringValue = picked.detail
+        // A channel change means the last check answered a different question.
+        AutoUpdate.lastChecked = nil
+        status.stringValue = "Now following \(picked.title.lowercased())."
+    }
+
+    @objc private func autoInstallChanged() {
+        AutoUpdate.installsAutomatically = autoInstallToggle.state == .on
+    }
+
     @objc private func recallChanged() {
         BuildAdvisory.isEnabled = recallToggle.state == .on
         recallStatus.stringValue = BuildAdvisory.isEnabled ? "" : "Off. You will not be warned."
@@ -176,18 +240,16 @@ final class UpdateSettingsView: NSView {
     @objc private func checkNow() {
         checkButton.isEnabled = false
         status.stringValue = "Asking github.com…"
-        UpdateCheck.check { [weak self] result in
+        AutoUpdate.check { [weak self] release in
             guard let self else { return }
             self.checkButton.isEnabled = true
-            switch result {
-            case .upToDate:
-                self.status.stringValue = "\(UpdateCheck.currentVersion) is the latest."
-            case .failed(let reason):
-                self.status.stringValue = "Could not check: \(reason)"
-            case .available(let release):
-                self.status.stringValue = "\(release.version) is out."
-                UpdateCheck.announce(release)
+            guard let release else {
+                self.status.stringValue =
+                    "\(UpdateCheck.currentVersion) is the newest on this channel."
+                return
             }
+            self.status.stringValue = "\(release.version) is out."
+            AutoUpdate.offer(release)
         }
     }
 }

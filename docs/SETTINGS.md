@@ -11,6 +11,25 @@ hand, and anything you set by hand takes effect without a restart.
 | `workspaces.json` | Saved pane and tab layouts |
 | `recents.json` | Recently opened, moved, renamed and trashed files |
 
+## Version numbers
+
+The three numbers say who a release is for.
+
+| Example | Means |
+| --- | --- |
+| `2.0.0` | A big release. The shape of the application changed. |
+| `1.2.0` | A sequential release. Finished work, for everybody. |
+| `1.2.1` | A nightly. The day's work, for people who want it early. |
+
+So the middle number moves for sequential releases and the last one moves for
+nightlies. `updateChannel` picks which of the two this copy follows. On
+`stable` you are offered 1.2.0, 1.3.0 and 2.0.0 and never a nightly. On
+`nightly` you are offered those and 1.2.1, 1.2.2 in between.
+
+The channel decides by the number, not by GitHub's prerelease flag: a
+sequential release marked beta while it is being tried out is still
+sequential, and reaches the stable channel.
+
 ## The one request that is not opt-in
 
 `checkForBadBuilds` is on by default, and it is the only thing Soquel asks a
@@ -74,6 +93,10 @@ Anything absent falls back to the default in the right-hand column.
 | `verifyTransfers` | bool | `false` |
 | `checkForUpdates` | bool | `false` |
 | `checkForBadBuilds` | bool | `true` |
+| `updateChannel` | `"stable"`, `"nightly"` | `"stable"` |
+| `autoInstallUpdates` | bool | `false` |
+| `catchFinderLaunch` | bool | `false` |
+| `followFinderTarget` | bool | `false` |
 | `acknowledgedAdvisory` | string | unset |
 | `confirmHeavyLaunches` | bool | `true` |
 | `heavyApplications`, `launchWithoutAsking` | arrays of bundle ids | built-in list, `[]` |

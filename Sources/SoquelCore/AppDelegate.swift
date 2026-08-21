@@ -69,7 +69,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         // Does nothing at all unless Settings → Updates is on.
-        UpdateCheck.checkInBackgroundIfDue()
+        AutoUpdate.checkOnLaunch()
         // Separate from the update check and not gated on it: this one asks
         // whether the build already on this disk has been withdrawn.
         BuildAdvisory.checkOnLaunch()

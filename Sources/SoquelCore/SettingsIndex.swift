@@ -90,6 +90,12 @@ enum SettingsIndex {
         Entry(pane: "applications", paneTitle: "Applications", title: "Ask before slow apps",
               keywords: "xcode android studio warn confirm launch heavy"),
 
+        Entry(pane: "updates", paneTitle: "Updates", title: "Sequential releases or nightly builds",
+              keywords: "channel nightly stable beta sequential release track version"),
+
+        Entry(pane: "updates", paneTitle: "Updates", title: "Install updates without asking",
+              keywords: "auto automatic update install download upgrade unattended"),
+
         Entry(pane: "defaultapp", paneTitle: "Default App", title: "Open Soquel when Finder starts",
               keywords: "finder default replace dock reveal takeover file manager quit"),
 
