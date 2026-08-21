@@ -38,6 +38,8 @@
 	<string>14</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Soquel asks Finder which folder it was opening, so it can show that folder instead.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

@@ -90,6 +90,15 @@ enum SettingsIndex {
         Entry(pane: "applications", paneTitle: "Applications", title: "Ask before slow apps",
               keywords: "xcode android studio warn confirm launch heavy"),
 
+        Entry(pane: "defaultapp", paneTitle: "Default App", title: "Open Soquel when Finder starts",
+              keywords: "finder default replace dock reveal takeover file manager quit"),
+
+        Entry(pane: "defaultapp", paneTitle: "Default App", title: "Hide the desktop icons",
+              keywords: "desktop icons finder wallpaper hide createdesktop"),
+
+        Entry(pane: "defaultapp", paneTitle: "Default App", title: "Open a disk in Soquel",
+              keywords: "volume disk mount usb drive default handler"),
+
         Entry(pane: "updates", paneTitle: "Updates", title: "Tell me about new versions",
               keywords: "update check github release version upgrade network"),
 

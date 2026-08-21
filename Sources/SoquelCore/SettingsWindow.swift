@@ -191,6 +191,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         windowPane.label = "Window"
         windowPane.view = Self.paneContainer(WindowSettingsView())
 
+        let defaultApp = NSTabViewItem(identifier: "defaultapp")
+        defaultApp.label = "Default App"
+        defaultApp.view = Self.paneContainer(DefaultAppSettingsView())
+
         let updates = NSTabViewItem(identifier: "updates")
         updates.label = "Updates"
         updates.view = Self.paneContainer(UpdateSettingsView())
@@ -201,6 +205,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         tabs.addTabViewItem(themes)
         tabs.addTabViewItem(keyboard)
         tabs.addTabViewItem(applications)
+        tabs.addTabViewItem(defaultApp)
         tabs.addTabViewItem(updates)
 
         search = NSSearchField()
