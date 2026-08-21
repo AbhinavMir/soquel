@@ -18,13 +18,24 @@ enum Installer {
         "identifier \"app.soquel.Soquel\" and anchor apple generic and "
         + "certificate leaf[subject.OU] = \"P4ANTPX4G4\""
 
-    static func downloadURL(for version: String) -> URL {
-        URL(string: "https://github.com/AbhinavMir/soquel/releases/download/"
-            + "v\(version)/Soquel-\(version).dmg")!
+    /// The disk image for a version, or nil when the version is not one.
+    ///
+    /// The string can arrive from the advisory list, which is fetched over the
+    /// network, and it used to be pasted straight into a URL and into two file
+    /// paths. `../../../../tmp/evil` put the staging copy at
+    /// `/tmp/evil-incoming.app`, outside the folder holding the application.
+    /// Everything downstream now goes through `Version`, which accepts digits
+    /// and dots and nothing else.
+    static func downloadURL(for version: String) -> URL? {
+        guard let parsed = Version(version) else { return nil }
+        return URL(string: "https://github.com/AbhinavMir/soquel/releases/download/"
+            + "v\(parsed)/Soquel-\(parsed).dmg")
     }
 
-    enum Failure: LocalizedError {
+    enum Failure: LocalizedError, Equatable {
         case download(String)
+        case unusableVersion(String)
+        case cancelled
         case notSigned
         case mount(String)
         case install(String)
@@ -32,6 +43,9 @@ enum Installer {
         var errorDescription: String? {
             switch self {
             case .download(let why): return "The download failed: \(why)"
+            case .unusableVersion(let text):
+                return "“\(text)” is not a version number, so there is nothing to fetch."
+            case .cancelled: return "Stopped before anything was replaced."
             case .notSigned:
                 return "The downloaded copy is not signed by Soquel's developer. "
                     + "It has been deleted and nothing was installed."
@@ -64,16 +78,30 @@ enum Installer {
     ///
     /// Progress is reported so a click does not look like nothing happening.
     /// The completion carries either the version now installed, or why not.
+    @discardableResult
     static func install(version: String,
                         progress: @escaping (String) -> Void,
-                        completion: @escaping (Swift.Result<String, Error>) -> Void) {
-        let url = downloadURL(for: version)
+                        completion: @escaping (Swift.Result<String, Error>) -> Void) -> Job {
+        let job = Job()
+        guard let parsed = Version(version), let url = downloadURL(for: version) else {
+            completion(.failure(Failure.unusableVersion(version)))
+            return job
+        }
+        let version = parsed.description
         progress("Downloading Soquel \(version)…")
 
-        URLSession.shared.downloadTask(with: url) { temporary, response, error in
+        let task = URLSession.shared.downloadTask(with: url) { temporary, response, error in
             func fail(_ error: Error) {
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
+            // Checked at each point where stopping is still free. Past the
+            // swap there is no stopping: the application has been replaced.
+            func stopped() -> Bool {
+                guard job.isCancelled else { return false }
+                fail(Failure.cancelled)
+                return true
+            }
+            if stopped() { return }
             if let error { return fail(Failure.download(error.localizedDescription)) }
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                 return fail(Failure.download("the server answered \(http.statusCode)"))
@@ -88,6 +116,7 @@ enum Installer {
             catch { return fail(Failure.download(error.localizedDescription)) }
             defer { try? FileManager.default.removeItem(at: image) }
 
+            if stopped() { return }
             DispatchQueue.main.async { progress("Checking the signature…") }
 
             let mountPoint = FileManager.default.temporaryDirectory
@@ -114,6 +143,9 @@ enum Installer {
                 return fail(Failure.notSigned)
             }
 
+            // The last point at which stopping costs nothing. After the swap
+            // below the running application is already the new one.
+            if stopped() { return }
             DispatchQueue.main.async { progress("Installing Soquel \(version)…") }
 
             let destination = installedLocation
@@ -132,7 +164,37 @@ enum Installer {
             }
 
             DispatchQueue.main.async { completion(.success(version)) }
-        }.resume()
+        }
+        job.task = task
+        task.resume()
+        return job
+    }
+
+    /// A running install, so the button that says Cancel can cancel.
+    ///
+    /// It used to say Cancel and do nothing: the alert closed, the download
+    /// carried on, and the application was replaced anyway.
+    final class Job {
+        private let lock = NSLock()
+        private var cancelled = false
+        fileprivate var task: URLSessionDownloadTask?
+
+        var isCancelled: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return cancelled
+        }
+
+        /// Stops the download, and stops the install at the next point where
+        /// stopping is still free. Once the swap has happened it is too late
+        /// and this does nothing, which is the honest behaviour — the copy on
+        /// disk is already the new one.
+        func cancel() {
+            lock.lock()
+            cancelled = true
+            let running = task
+            lock.unlock()
+            running?.cancel()
+        }
     }
 
     /// Starts the newly installed copy and stands down.

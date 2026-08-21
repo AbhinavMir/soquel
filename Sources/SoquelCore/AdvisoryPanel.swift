@@ -66,13 +66,27 @@ enum AdvisoryPanel {
         progress.accessoryView = spinner
 
         let window = progress.window
-        DispatchQueue.main.async { NSApp.runModal(for: window) }
+        // The alert's own button ends the modal session and hands back which
+        // one was pressed. That return value used to be discarded, so Cancel
+        // closed the window and the install carried on to replace the
+        // application regardless.
+        var job: Installer.Job?
+        DispatchQueue.main.async {
+            let response = NSApp.runModal(for: window)
+            if response == .alertFirstButtonReturn { job?.cancel() }
+        }
 
-        Installer.install(version: version) { step in
+        job = Installer.install(version: version) { step in
             progress.informativeText = step
         } completion: { result in
             NSApp.stopModal()
             window.orderOut(nil)
+
+            if case .failure(let error) = result,
+               (error as? Installer.Failure) == .cancelled {
+                // Asked for and got. Nothing to report.
+                return
+            }
 
             switch result {
             case .success(let installed):

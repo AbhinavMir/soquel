@@ -76,10 +76,10 @@ final class BuildAdvisoryTests: XCTestCase {
     /// The download must come from the release page for that exact version.
     func testDownloadURLMatchesHowReleasesAreNamed() {
         XCTAssertEqual(
-            Installer.downloadURL(for: "1.1.1").absoluteString,
+            Installer.downloadURL(for: "1.1.1")?.absoluteString,
             "https://github.com/AbhinavMir/soquel/releases/download/v1.1.1/Soquel-1.1.1.dmg")
         XCTAssertEqual(
-            Installer.downloadURL(for: "1.0.11").absoluteString,
+            Installer.downloadURL(for: "1.0.11")?.absoluteString,
             "https://github.com/AbhinavMir/soquel/releases/download/v1.0.11/Soquel-1.0.11.dmg")
     }
 

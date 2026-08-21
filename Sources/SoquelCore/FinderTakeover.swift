@@ -109,9 +109,11 @@ enum FinderTakeover {
 
     private static func finish(_ finder: NSRunningApplication, at path: String?) {
         if let path {
-            let url = URL(fileURLWithPath: path)
-            // A file was revealed; show the folder holding it and select it.
-            NotificationCenter.default.post(name: .soquelRevealRequested, object: url)
+            // Shown here rather than posted and forgotten. This used to post a
+            // notification that nothing observed, so the switch did nothing at
+            // all — and it is the switch that asks for permission to control
+            // Finder, so it was asking for that permission and buying nothing.
+            show(URL(fileURLWithPath: path))
         }
         // terminate() rather than a quit AppleEvent: it needs no permission,
         // and it is a clean exit, which is what keeps launchd from restarting
@@ -119,6 +121,21 @@ enum FinderTakeover {
         if !finder.terminate() {
             Log.info(.app, "Finder refused to quit")
         }
+    }
+
+    /// Opens what Finder was going to open, in whichever window is in front.
+    static func show(_ url: URL) {
+        let controller = NSApp.keyWindow?.windowController as? MainWindowController
+            ?? NSApp.windows.compactMap { $0.windowController as? MainWindowController }.first
+        guard let controller else {
+            // No window to show it in — one is made, because the whole point
+            // is that Finder does not get to be the one that opens.
+            NSWorkspace.shared.open(url)
+            return
+        }
+        controller.reveal(url)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Asking Finder

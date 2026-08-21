@@ -95,3 +95,70 @@ final class FinderTakeoverTests: XCTestCase {
         XCTAssertFalse(FinderTakeover.isRunning)
     }
 }
+
+/// Findings from the fuzz run of 21 August 2026.
+extension FinderTakeoverTests {
+    /// A version string can arrive from the advisory list, which is fetched
+    /// over the network. It used to be pasted straight into a URL and into two
+    /// file paths, so "../../../../tmp/evil" put the staging copy at
+    /// /tmp/evil-incoming.app, outside the folder holding the application.
+    func testOnlyARealVersionCanReachTheFilesystem() {
+        for rubbish in ["../../../../tmp/evil", "../../Users/x/Desktop/y", "..", "/etc/passwd",
+                        "1.1.1/../..", "", " ", "a b", "$(whoami)", "nightly"] {
+            XCTAssertNil(Installer.downloadURL(for: rubbish),
+                         "\(rubbish.debugDescription) was accepted as a version")
+        }
+        XCTAssertEqual(Installer.downloadURL(for: "1.2.1")?.absoluteString,
+            "https://github.com/AbhinavMir/soquel/releases/download/v1.2.1/Soquel-1.2.1.dmg")
+        // A version that parses is normalised before it is used, so trailing
+        // rubbish is dropped rather than carried into a URL or a file path.
+        XCTAssertEqual(Installer.downloadURL(for: "v1.2")?.absoluteString,
+            "https://github.com/AbhinavMir/soquel/releases/download/v1.2.0/Soquel-1.2.0.dmg")
+        for messy in ["1.1.1\n", "1.1.1-beta2", " 1.1.1 "] {
+            XCTAssertEqual(Installer.downloadURL(for: messy)?.absoluteString,
+                "https://github.com/AbhinavMir/soquel/releases/download/v1.1.1/Soquel-1.1.1.dmg",
+                "\(messy.debugDescription) was not normalised")
+        }
+    }
+
+    /// The progress dialog's Cancel button used to be decoration: the alert
+    /// closed, the download carried on, and the application was replaced.
+    func testAnInstallCanActuallyBeCancelled() {
+        let done = expectation(description: "install reports back")
+        var outcome: Swift.Result<String, Error>?
+        let job = Installer.install(version: "1.2.1") { _ in } completion: { result in
+            outcome = result
+            done.fulfill()
+        }
+        job.cancel()
+        XCTAssertTrue(job.isCancelled)
+        wait(for: [done], timeout: 30)
+
+        guard case .failure(let error)? = outcome else {
+            return XCTFail("a cancelled install reported success")
+        }
+        // Either the cancellation was seen, or URLSession reported the
+        // cancelled task. Both mean nothing was replaced.
+        let failure = error as? Installer.Failure
+        let cancelled = failure == .cancelled
+            || (error as NSError).code == NSURLErrorCancelled
+            || { if case .download = failure { return true } else { return false } }()
+        XCTAssertTrue(cancelled, "cancelling gave \(error)")
+    }
+
+    /// A version that is not a version must fail before any network or disk
+    /// work starts, and must say so.
+    func testAnUnusableVersionFailsImmediately() {
+        let done = expectation(description: "reports back")
+        var outcome: Swift.Result<String, Error>?
+        Installer.install(version: "../../etc") { _ in } completion: {
+            outcome = $0
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        guard case .failure(let error)? = outcome else {
+            return XCTFail("a bogus version was accepted")
+        }
+        XCTAssertEqual(error as? Installer.Failure, .unusableVersion("../../etc"))
+    }
+}
