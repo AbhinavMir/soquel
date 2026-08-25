@@ -43,6 +43,8 @@ enum SettingsIndex {
               keywords: "git branch switch checkout beta write repository"),
         Entry(pane: "general", paneTitle: "General", title: "Verify copies with a checksum",
               keywords: "checksum verify copy integrity sha hash safe"),
+        Entry(pane: "general", paneTitle: "General", title: "Install the soquel command",
+              keywords: "cli command line shell terminal path usr local bin launch open folder"),
 
         Entry(pane: "window", paneTitle: "Window", title: "Hide from screen sharing",
               keywords: "privacy screen share recording zoom meet screenshot hide blackout private"),

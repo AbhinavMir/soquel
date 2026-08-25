@@ -1,6 +1,8 @@
 # Working state
 
-Branch: `main`, clean and pushed. 833 tests pass in ~15s.
+Branch: `main`, preparing the 1.4.0 release. 886 tests pass; the release build succeeds.
+
+The release adds Settings → General → Install “soquel” Command. It installs an executable launcher at `/usr/local/bin/soquel`, uses Launch Services to open Soquel with zero or more folder arguments, asks for administrator approval only when `/usr/local/bin` is not writable, refuses to replace an unrelated existing command without confirmation, and is covered by four focused tests.
 
 **1.0.8 is shipped.** Signed, notarised, stapled, disk image on the GitHub
 release, landing page live at trysoquel.com with the 1.0.8 changelog entry.

@@ -8,6 +8,7 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertTrue(SettingsIndex.search("transparent").contains { $0.title == "Window opacity" })
         XCTAssertTrue(SettingsIndex.search("wallpaper").contains { $0.pane == "window" })
         XCTAssertTrue(SettingsIndex.search("vim").contains { $0.pane == "keyboard" })
+        XCTAssertTrue(SettingsIndex.search("cli").contains { $0.title == "Install the soquel command" })
         XCTAssertTrue(SettingsIndex.search("duti").contains { $0.pane == "applications" })
         XCTAssertTrue(SettingsIndex.search("windows 95").contains { $0.pane == "themes" })
     }

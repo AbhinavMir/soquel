@@ -17,6 +17,8 @@ final class GeneralSettingsView: NSView {
     }
 
     private var boxes: [(button: NSButton, toggle: Toggle)] = []
+    private var commandLineButton: NSButton!
+    private var commandLineNote: NSTextField!
     private var observer: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
@@ -120,6 +122,17 @@ final class GeneralSettingsView: NSView {
         views += section("Git", Self.git)
         views += section("Copying", Self.copying)
 
+        commandLineButton = NSButton(
+            title: "", target: self, action: #selector(installCommandLineTool)
+        )
+        commandLineNote = label("", size: 11)
+        commandLineNote.textColor = .secondaryLabelColor
+        commandLineNote.lineBreakMode = .byWordWrapping
+        commandLineNote.maximumNumberOfLines = 3
+        commandLineNote.preferredMaxLayoutWidth = 500
+        refreshCommandLineSection()
+        views += [label("Command line", weight: .semibold), commandLineButton, commandLineNote]
+
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -143,6 +156,44 @@ final class GeneralSettingsView: NSView {
 
     private func refresh() {
         for entry in boxes { entry.button.state = entry.toggle.get() ? .on : .off }
+        refreshCommandLineSection()
+    }
+
+    private func refreshCommandLineSection() {
+        guard commandLineButton != nil, commandLineNote != nil else { return }
+        if CommandLineTool.isInstalled() {
+            commandLineButton.title = "Reinstall “soquel” Command…"
+            commandLineNote.stringValue = "Installed at /usr/local/bin/soquel. Run “soquel” or "
+                + "“soquel <folder>” from Terminal."
+        } else {
+            commandLineButton.title = "Install “soquel” Command…"
+            commandLineNote.stringValue = "Adds /usr/local/bin/soquel so Soquel can be opened "
+                + "from Terminal, optionally at one or more folders."
+        }
+    }
+
+    @objc private func installCommandLineTool() {
+        if CommandLineTool.exists(), !CommandLineTool.isInstalled() {
+            let alert = NSAlert()
+            alert.messageText = "Replace the Existing “soquel” Command?"
+            alert.informativeText = "Another file already exists at /usr/local/bin/soquel."
+            alert.addButton(withTitle: "Replace")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        commandLineButton.isEnabled = false
+        commandLineButton.title = "Installing…"
+        CommandLineTool.install { [weak self] result in
+            guard let self else { return }
+            self.commandLineButton.isEnabled = true
+            self.refreshCommandLineSection()
+            if case .failure(let error) = result {
+                let alert = NSAlert(error: error)
+                alert.messageText = "Could Not Install the Command"
+                alert.runModal()
+            }
+        }
     }
 
     @objc private func toggleChanged(_ sender: NSButton) {

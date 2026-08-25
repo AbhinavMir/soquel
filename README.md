@@ -16,7 +16,8 @@ Questions or bugs: atg271@gmail.com
 Download `Soquel.dmg` from [Releases](https://github.com/AbhinavMir/soquel/releases), open it, drag
 Soquel to Applications. macOS 13 or later.
 
-Signed and notarised, so it opens with a normal double-click.
+Signed and notarised, so it opens with a normal double-click. To launch it from Terminal, open
+Settings → General and choose “Install `soquel` Command”. Then run `soquel` or `soquel <folder>`.
 
 From source:
 
