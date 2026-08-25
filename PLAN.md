@@ -1,12 +1,8 @@
 # Working state
 
-Branch: `main`, with the 1.4.0 release candidate signed, notarised and stapled. 886 tests pass. The next operation is tagging, pushing and publishing `build/Soquel-1.4.0.dmg`.
+Branch: `main`, clean and pushed after the release record commit. 886 tests pass.
 
-The release adds Settings → General → Install “soquel” Command. It installs an executable launcher at `/usr/local/bin/soquel`, uses Launch Services to open Soquel with zero or more folder arguments, asks for administrator approval only when `/usr/local/bin` is not writable, refuses to replace an unrelated existing command without confirmation, and is covered by four focused tests.
-
-**1.0.8 is shipped.** Signed, notarised, stapled, disk image on the GitHub
-release, landing page live at trysoquel.com with the 1.0.8 changelog entry.
-Still beta; 2.0 is still reserved for the first alpha.
+**1.4.0 is shipped.** Signed, notarised, stapled, and published at the GitHub release; the landing page and its 1.4.0 changelog entry are live at trysoquel.com. The release adds Settings → General → Install “soquel” Command. It installs an executable launcher at `/usr/local/bin/soquel`, uses Launch Services to open Soquel with zero or more folder arguments, asks for administrator approval only when `/usr/local/bin` is not writable, and refuses to replace an unrelated existing command without confirmation. Still beta; 2.0 is still reserved for the first alpha.
 
 The release carries the August 2026 deep QA sweep (146 defects found by reading
 every line of SoquelCore) plus 106 more found by driving the installed app
@@ -30,6 +26,7 @@ is what the sweep deleted.
 
 ## Released since 1.0.1
 
+- **1.4.0** — installs the `soquel` terminal command from Settings, launching the app with zero or more folder arguments.
 - **1.0.2** — eleven features from the research backlog (folder Quick Look, sync
   browsing, duplicate finder, verified copy, symlinks, per-folder views, transfer retry,
   tags, network trash warning, uninstaller, Run a Command Here), plus an opt-in update
