@@ -1,6 +1,6 @@
 # Working state
 
-Branch: `main`, preparing the 1.4.0 release. 886 tests pass; the release build succeeds.
+Branch: `main`, with the 1.4.0 release candidate signed, notarised and stapled. 886 tests pass. The next operation is tagging, pushing and publishing `build/Soquel-1.4.0.dmg`.
 
 The release adds Settings → General → Install “soquel” Command. It installs an executable launcher at `/usr/local/bin/soquel`, uses Launch Services to open Soquel with zero or more folder arguments, asks for administrator approval only when `/usr/local/bin` is not writable, refuses to replace an unrelated existing command without confirmation, and is covered by four focused tests.
 
