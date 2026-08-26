@@ -12,6 +12,9 @@ final class CleanFolderPanelController: NSWindowController {
     private var payload: CleanSanitiser.Payload!
     private var plan: CleanFolder.Plan?
     private var chosen = Set<String>()
+    /// Held while its sheet is up; a window controller with nothing referring
+    /// to it is released and takes the sheet with it.
+    private var pickerHolder: ProviderPickerController?
 
     private var headline: NSTextField!
     private var detail: NSTextField!
@@ -158,7 +161,7 @@ final class CleanFolderPanelController: NSWindowController {
 
     @objc private func suggest() {
         let ready = LLMProvider.isReady()
-        guard ready.ok else { return askForSetup(ready.missing) }
+        guard ready.ok else { return pickProvider() }
         goButton.isEnabled = false
         spinner.startAnimation(nil)
         headline.stringValue = "Asking…"
@@ -170,7 +173,7 @@ final class CleanFolderPanelController: NSWindowController {
             case .failure(let error):
                 self.headline.stringValue = "No arrangement was suggested"
                 self.detail.stringValue = error.localizedDescription
-                if case CleanFolder.Failure.notReady(let why) = error { self.askForSetup(why) }
+                if case CleanFolder.Failure.notReady = error { self.pickProvider() }
             case .success(let plan):
                 self.plan = plan
                 self.chosen = Set(plan.usable.map(\.source.path))
@@ -186,50 +189,16 @@ final class CleanFolderPanelController: NSWindowController {
         }
     }
 
-    /// Says what is missing and offers the key field there and then, rather
-    /// than sending somebody to a settings pane to work out which of three
-    /// things it was.
-    private func askForSetup(_ missing: String?) {
-        let provider = LLMProvider.current
-        let alert = NSAlert()
-        alert.messageText = "Clean This Folder is not set up yet"
-        alert.informativeText = (missing ?? "")
-            + "\n\nThis is the only part of Soquel that sends the contents of your files "
-            + "anywhere. It goes to \(provider.name) and nowhere else. A model running on this "
-            + "machine — Ollama, LM Studio, llama.cpp — needs no key and sends nothing over a "
-            + "network at all.\n\n“Show What Would Be Sent” prints the exact text first."
-
-        if provider.needsKey, APICredentials.key(for: provider.id) == nil {
-            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-            field.placeholderString = "key for \(provider.name)"
-            alert.accessoryView = field
-            alert.addButton(withTitle: "Save Key")
-            alert.addButton(withTitle: "Open Settings")
-            alert.addButton(withTitle: "Cancel")
-            switch alert.runModal() {
-            case .alertFirstButtonReturn:
-                guard APICredentials.looksLikeAKey(field.stringValue) else {
-                    let bad = NSAlert()
-                    bad.messageText = "That does not look like a key"
-                    bad.informativeText = "A key has no spaces and is longer than that. Nothing was saved."
-                    bad.runModal()
-                    return
-                }
-                APICredentials.store(field.stringValue, for: provider.id)
-                suggest()
-            case .alertSecondButtonReturn:
-                SettingsWindowController.shared.show(pane: "clean")
-            default:
-                break
-            }
-            return
+    /// Asks where to send the question, with the icons, and carries straight
+    /// on once something is chosen.
+    private func pickProvider() {
+        let picker = ProviderPickerController { [weak self] chose in
+            guard chose else { return }
+            self?.suggest()
         }
-
-        alert.addButton(withTitle: "Open Settings")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
-            SettingsWindowController.shared.show(pane: "clean")
-        }
+        guard let sheet = picker.window, let parent = window else { return }
+        pickerHolder = picker
+        parent.beginSheet(sheet) { [weak self] _ in self?.pickerHolder = nil }
     }
 
     // MARK: - Moving

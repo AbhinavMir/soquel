@@ -484,3 +484,38 @@ extension CleanFolderTests {
         }
     }
 }
+
+/// The picker shows an icon and a line per provider, and that data has to be
+/// there for every one of them.
+extension CleanFolderTests {
+    func testEveryProviderHasAnIconAndALine() {
+        for provider in LLMProvider.presets {
+            XCTAssertFalse(provider.symbol.isEmpty, "\(provider.id) has no icon")
+            XCTAssertNotNil(NSImage(systemSymbolName: provider.symbol, accessibilityDescription: nil),
+                            "\(provider.id) names an SF Symbol that does not exist: \(provider.symbol)")
+            XCTAssertFalse(provider.tagline.isEmpty, "\(provider.id) has no tagline")
+            XCTAssertLessThan(provider.tagline.count, 70,
+                              "\(provider.id)'s tagline will not fit on a tile")
+        }
+    }
+
+    /// The local ones say so on the tile, because that is the whole reason to
+    /// pick them.
+    func testLocalProvidersSayTheySendNothing() {
+        for provider in LLMProvider.presets where provider.isLocal {
+            XCTAssertTrue(provider.tagline.lowercased().contains("no key"),
+                          "\(provider.id) does not say it needs no key")
+        }
+    }
+
+    /// Names are shown on a 140-point tile, so the parenthetical suffixes the
+    /// menu used are trimmed off.
+    func testTileNamesAreShortEnoughToRead() {
+        for provider in LLMProvider.presets {
+            let shown = provider.name
+                .replacingOccurrences(of: " (on this machine)", with: "")
+                .replacingOccurrences(of: " (many models, one key)", with: "")
+            XCTAssertLessThan(shown.count, 22, "\(provider.id) will be truncated on its tile")
+        }
+    }
+}

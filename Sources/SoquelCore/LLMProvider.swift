@@ -34,51 +34,68 @@ struct LLMProvider: Equatable {
     let keyURL: String?
     /// True for a server expected on this machine.
     let isLocal: Bool
+    /// An SF Symbol. Deliberately not a logo: shipping other people's marks
+    /// means shipping their trademarks, and fetching them means a network
+    /// request to draw a settings pane.
+    let symbol: String
+    /// The one line under the name in the picker — what choosing this gets you.
+    let tagline: String
 
     static let presets: [LLMProvider] = [
         LLMProvider(id: "ollama", name: "Ollama (on this machine)",
                     endpoint: "http://localhost:11434/v1/chat/completions",
                     wire: .openai, needsKey: false, suggestedModel: "llama3.1",
-                    keyURL: nil, isLocal: true),
+                    keyURL: nil, isLocal: true,
+                    symbol: "desktopcomputer", tagline: "Runs here. No key, nothing leaves this machine."),
         LLMProvider(id: "lmstudio", name: "LM Studio (on this machine)",
                     endpoint: "http://localhost:1234/v1/chat/completions",
                     wire: .openai, needsKey: false, suggestedModel: "",
-                    keyURL: nil, isLocal: true),
+                    keyURL: nil, isLocal: true,
+                    symbol: "laptopcomputer", tagline: "Runs here. No key, nothing leaves this machine."),
         LLMProvider(id: "llamacpp", name: "llama.cpp server (on this machine)",
                     endpoint: "http://localhost:8080/v1/chat/completions",
                     wire: .openai, needsKey: false, suggestedModel: "",
-                    keyURL: nil, isLocal: true),
+                    keyURL: nil, isLocal: true,
+                    symbol: "terminal", tagline: "Runs here. No key, nothing leaves this machine."),
         LLMProvider(id: "openrouter", name: "OpenRouter (many models, one key)",
                     endpoint: "https://openrouter.ai/api/v1/chat/completions",
                     wire: .openai, needsKey: true, suggestedModel: "anthropic/claude-opus-4.5",
-                    keyURL: "https://openrouter.ai/keys", isLocal: false),
+                    keyURL: "https://openrouter.ai/keys", isLocal: false,
+                    symbol: "arrow.triangle.branch", tagline: "One key, hundreds of models — GLM, Llama, Claude, GPT."),
         LLMProvider(id: "anthropic", name: "Anthropic",
                     endpoint: "https://api.anthropic.com/v1/messages",
                     wire: .anthropic, needsKey: true, suggestedModel: "claude-opus-5",
-                    keyURL: "https://console.anthropic.com/settings/keys", isLocal: false),
+                    keyURL: "https://console.anthropic.com/settings/keys", isLocal: false,
+                    symbol: "sparkle", tagline: "Claude, straight from the source."),
         LLMProvider(id: "openai", name: "OpenAI",
                     endpoint: "https://api.openai.com/v1/chat/completions",
                     wire: .openai, needsKey: true, suggestedModel: "gpt-4o",
-                    keyURL: "https://platform.openai.com/api-keys", isLocal: false),
+                    keyURL: "https://platform.openai.com/api-keys", isLocal: false,
+                    symbol: "circle.hexagongrid", tagline: "GPT models."),
         LLMProvider(id: "glm", name: "GLM (Zhipu)",
                     endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
                     wire: .openai, needsKey: true, suggestedModel: "glm-4-plus",
-                    keyURL: "https://open.bigmodel.cn", isLocal: false),
+                    keyURL: "https://open.bigmodel.cn", isLocal: false,
+                    symbol: "globe.asia.australia", tagline: "Zhipu’s GLM models."),
         LLMProvider(id: "deepseek", name: "DeepSeek",
                     endpoint: "https://api.deepseek.com/v1/chat/completions",
                     wire: .openai, needsKey: true, suggestedModel: "deepseek-chat",
-                    keyURL: "https://platform.deepseek.com", isLocal: false),
+                    keyURL: "https://platform.deepseek.com", isLocal: false,
+                    symbol: "chevron.down.circle", tagline: "DeepSeek’s models, cheaply."),
         LLMProvider(id: "groq", name: "Groq",
                     endpoint: "https://api.groq.com/openai/v1/chat/completions",
                     wire: .openai, needsKey: true, suggestedModel: "",
-                    keyURL: "https://console.groq.com/keys", isLocal: false),
+                    keyURL: "https://console.groq.com/keys", isLocal: false,
+                    symbol: "bolt", tagline: "Open models, answered fast."),
         LLMProvider(id: "together", name: "Together",
                     endpoint: "https://api.together.xyz/v1/chat/completions",
                     wire: .openai, needsKey: true, suggestedModel: "",
-                    keyURL: "https://api.together.xyz/settings/api-keys", isLocal: false),
+                    keyURL: "https://api.together.xyz/settings/api-keys", isLocal: false,
+                    symbol: "square.stack.3d.up", tagline: "Open models, hosted."),
         LLMProvider(id: "custom", name: "Anything else",
                     endpoint: "", wire: .openai, needsKey: false, suggestedModel: "",
-                    keyURL: nil, isLocal: false),
+                    keyURL: nil, isLocal: false,
+                    symbol: "slider.horizontal.3", tagline: "Any address that speaks either format."),
     ]
 
     static func preset(id: String) -> LLMProvider? { presets.first { $0.id == id } }
@@ -117,7 +134,8 @@ struct LLMProvider: Equatable {
                 wire: provider.id == "custom" ? customWire : provider.wire,
                 needsKey: provider.id == "custom" ? !customEndpoint.contains("localhost") : provider.needsKey,
                 suggestedModel: provider.suggestedModel,
-                keyURL: provider.keyURL, isLocal: provider.isLocal)
+                keyURL: provider.keyURL, isLocal: provider.isLocal,
+                symbol: provider.symbol, tagline: provider.tagline)
         }
         return provider
     }

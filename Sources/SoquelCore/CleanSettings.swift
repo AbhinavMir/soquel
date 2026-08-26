@@ -13,10 +13,12 @@ final class CleanSettingsView: NSView {
     private var globalsList: NSTextField!
     private var betaDetail: NSTextField!
     private var providerDetail: NSTextField!
-    private var providerPicker: NSPopUpButton!
-    private var endpointField: NSTextField!
-    private var modelField: NSComboBox!
+    private var providerRow: NSStackView!
+    private var providerIcon: NSImageView!
+    private var providerName: NSTextField!
+    private var changeButton: NSButton!
     private var detected: NSTextField!
+    private var pickerHolder: ProviderPickerController?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -64,12 +66,18 @@ final class CleanSettingsView: NSView {
             secondary: true, lines: 4)
         self.betaDetail = betaDetail
 
-        providerPicker = NSPopUpButton()
-        providerPicker.addItems(withTitles: LLMProvider.presets.map(\.name))
-        providerPicker.selectItem(at: LLMProvider.presets.firstIndex { $0.id == LLMProvider.chosenID } ?? 0)
-        providerPicker.target = self
-        providerPicker.action = #selector(providerChanged)
-        providerPicker.translatesAutoresizingMaskIntoConstraints = false
+        providerIcon = NSImageView()
+        providerIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+        providerIcon.translatesAutoresizingMaskIntoConstraints = false
+
+        providerName = label("")
+        changeButton = NSButton(title: "Change…", target: self, action: #selector(changeProvider))
+        changeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        providerRow = NSStackView(views: [providerIcon, providerName, changeButton])
+        providerRow.orientation = .horizontal
+        providerRow.spacing = 8
+        providerRow.translatesAutoresizingMaskIntoConstraints = false
 
         let providerDetail = label(
             "Anything that speaks Anthropic's API or the /chat/completions shape that OpenAI "
@@ -80,20 +88,6 @@ final class CleanSettingsView: NSView {
         self.providerDetail = providerDetail
 
         detected = label("", secondary: true, lines: 2)
-
-        endpointField = NSTextField()
-        endpointField.placeholderString = "https://…/v1/chat/completions"
-        endpointField.target = self
-        endpointField.action = #selector(endpointChanged)
-        endpointField.translatesAutoresizingMaskIntoConstraints = false
-
-        modelField = NSComboBox()
-        modelField.placeholderString = "model name"
-        modelField.isEditable = true
-        modelField.completes = true
-        modelField.target = self
-        modelField.action = #selector(modelChanged)
-        modelField.translatesAutoresizingMaskIntoConstraints = false
 
         keyStatus = label("")
         keyButton = NSButton(title: "Set API Key…", target: self, action: #selector(setKey))
@@ -112,8 +106,7 @@ final class CleanSettingsView: NSView {
         globalsList = label("", secondary: true, lines: 8)
 
         let views = [intro, promise, betaToggle!, betaDetail,
-                     providerPicker!, providerDetail, detected!,
-                     endpointField!, modelField!,
+                     providerRow!, providerDetail, detected!,
                      keyStatus!, keyButton!, removeButton!,
                      globalsTitle, globalsDetail, globalsList!]
         views.forEach(addSubview)
@@ -140,35 +133,19 @@ final class CleanSettingsView: NSView {
         refresh()
     }
 
-    @objc private func providerChanged() {
-        let provider = LLMProvider.presets[providerPicker.indexOfSelectedItem]
-        LLMProvider.chosenID = provider.id
-        // A preset carries its own address, so an override from a previous
-        // choice must not follow it across.
-        LLMProvider.customEndpoint = ""
-        LLMProvider.model = ""
-        refresh()
-        loadModels()
-    }
-
-    @objc private func endpointChanged() {
-        LLMProvider.customEndpoint = endpointField.stringValue
-        refresh()
-        loadModels()
-    }
-
-    @objc private func modelChanged() {
-        LLMProvider.model = modelField.stringValue
-        refresh()
-    }
-
-    /// Asks the server what it has, so a name can be picked instead of
-    /// remembered. Servers that do not answer leave the field a plain one.
-    private func loadModels() {
-        modelField.removeAllItems()
-        LLMProvider.models(for: LLMProvider.current) { [weak self] names in
-            guard let self, !names.isEmpty else { return }
-            self.modelField.addItems(withObjectValues: names)
+    /// The same picker the feature shows on first use, so there is one place
+    /// where this is chosen rather than two that can disagree.
+    @objc private func changeProvider() {
+        let picker = ProviderPickerController { [weak self] _ in
+            self?.pickerHolder = nil
+            self?.refresh()
+        }
+        pickerHolder = picker
+        guard let sheet = picker.window else { return }
+        if let parent = window ?? NSApp.keyWindow {
+            parent.beginSheet(sheet, completionHandler: nil)
+        } else {
+            picker.showWindow(nil)
         }
     }
 
@@ -193,15 +170,17 @@ final class CleanSettingsView: NSView {
     private func refresh() {
         let on = Prefs.cleanFolder
         betaToggle.state = on ? .on : .off
-        for view in [keyStatus, keyButton, removeButton, providerPicker,
-                     providerDetail, detected, endpointField, modelField] {
+        for view in [keyStatus, keyButton, removeButton, providerRow,
+                     providerDetail, detected] {
             view?.isHidden = !on
         }
         guard on else { globalsList.stringValue = ""; return }
 
         let provider = LLMProvider.current
-        endpointField.stringValue = provider.endpoint
-        modelField.stringValue = LLMProvider.currentModel
+        providerIcon.image = NSImage(systemSymbolName: provider.symbol,
+                                     accessibilityDescription: provider.name)
+        providerIcon.contentTintColor = Theme.accent
+        providerName.stringValue = "\(provider.name) · \(LLMProvider.currentModel)"
         lookForLocal()
 
         guard provider.needsKey else {
@@ -230,6 +209,10 @@ final class CleanSettingsView: NSView {
     }
 
     @objc private func setKey() {
+        changeProvider()
+    }
+
+    @objc private func setKeyLegacy() {
         let alert = NSAlert()
         let provider = LLMProvider.current
         alert.messageText = "Key for \(provider.name)"
