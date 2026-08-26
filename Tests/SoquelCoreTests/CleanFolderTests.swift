@@ -519,3 +519,24 @@ extension CleanFolderTests {
         }
     }
 }
+
+/// The picker is one row, and the order in it is the recommendation.
+extension CleanFolderTests {
+    func testLocalProvidersComeFirstInThePicker() {
+        let ordered = LLMProvider.presets.sorted { ($0.isLocal ? 0 : 1) < ($1.isLocal ? 0 : 1) }
+        let firstHosted = ordered.firstIndex { !$0.isLocal } ?? ordered.count
+        let lastLocal = ordered.lastIndex { $0.isLocal } ?? -1
+        XCTAssertLessThan(lastLocal, firstHosted,
+                          "a provider needing a key is shown before one that does not")
+        XCTAssertEqual(ordered.prefix(3).filter(\.isLocal).count, 3,
+                       "the three that run here are not the first three")
+    }
+
+    /// The key row is shown for exactly the providers that need one.
+    func testOnlyKeyNeedingProvidersAskForAKey() {
+        for provider in LLMProvider.presets {
+            XCTAssertEqual(provider.needsKey, !provider.isLocal && provider.id != "custom",
+                           "\(provider.id) disagrees about whether it wants a key")
+        }
+    }
+}

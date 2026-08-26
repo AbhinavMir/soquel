@@ -22,7 +22,7 @@ final class ProviderPickerController: NSWindowController {
     init(onDone: @escaping (Bool) -> Void) {
         self.onDone = onDone
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 610),
+            contentRect: NSRect(x: 0, y: 0, width: 660, height: 400),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Where should Clean This Folder ask?"
         super.init(window: window)
@@ -43,18 +43,18 @@ final class ProviderPickerController: NSWindowController {
 
         let blurb = NSTextField(labelWithString:
             "This is the only part of Soquel that sends the contents of your files anywhere. "
-            + "Pick something running on your own machine and nothing leaves it at all.")
+            + "The first three run on your own machine — no key, and nothing leaves it at all. "
+            + "The rest need a key.")
         blurb.font = Theme.rowSecondary
         blurb.textColor = .secondaryLabelColor
         blurb.lineBreakMode = .byWordWrapping
         blurb.maximumNumberOfLines = 3
         blurb.translatesAutoresizingMaskIntoConstraints = false
 
-        // Local first, and said so, because it is the recommendation.
-        let localHeading = heading("On this machine — no key, nothing sent")
-        let localGrid = grid(LLMProvider.presets.filter(\.isLocal))
-        let hostedHeading = heading("Somewhere else — needs a key")
-        let hostedGrid = grid(LLMProvider.presets.filter { !$0.isLocal })
+        // One row, scrolling. The ones that run here come first, because they
+        // are the recommendation and because "no key" is the shortest path to
+        // using this at all.
+        let row = strip(LLMProvider.presets.sorted { ($0.isLocal ? 0 : 1) < ($1.isLocal ? 0 : 1) })
 
         keyLabel = NSTextField(labelWithString: "")
         keyLabel.font = Theme.rowSecondary
@@ -96,8 +96,7 @@ final class ProviderPickerController: NSWindowController {
         cancel.keyEquivalent = "\u{1b}"
         cancel.translatesAutoresizingMaskIntoConstraints = false
 
-        [title, blurb, localHeading, localGrid, hostedHeading, hostedGrid,
-         keyRow!, footnote!, doneButton!, cancel].forEach(content.addSubview)
+        [title, blurb, row, keyRow!, footnote!, doneButton!, cancel].forEach(content.addSubview)
         window?.contentView = content
 
         NSLayoutConstraint.activate([
@@ -108,21 +107,12 @@ final class ProviderPickerController: NSWindowController {
             blurb.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             blurb.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
 
-            localHeading.topAnchor.constraint(equalTo: blurb.bottomAnchor, constant: 16),
-            localHeading.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            row.topAnchor.constraint(equalTo: blurb.bottomAnchor, constant: 16),
+            row.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            row.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            row.heightAnchor.constraint(equalToConstant: 126),
 
-            localGrid.topAnchor.constraint(equalTo: localHeading.bottomAnchor, constant: 8),
-            localGrid.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            localGrid.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -20),
-
-            hostedHeading.topAnchor.constraint(equalTo: localGrid.bottomAnchor, constant: 18),
-            hostedHeading.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-
-            hostedGrid.topAnchor.constraint(equalTo: hostedHeading.bottomAnchor, constant: 8),
-            hostedGrid.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            hostedGrid.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -20),
-
-            keyRow.topAnchor.constraint(equalTo: hostedGrid.bottomAnchor, constant: 18),
+            keyRow.topAnchor.constraint(equalTo: row.bottomAnchor, constant: 18),
             keyRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             keyRow.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -20),
 
@@ -137,33 +127,33 @@ final class ProviderPickerController: NSWindowController {
         ])
     }
 
-    private func heading(_ text: String) -> NSTextField {
-        let field = NSTextField(labelWithString: text)
-        field.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        field.textColor = .secondaryLabelColor
-        field.translatesAutoresizingMaskIntoConstraints = false
-        return field
-    }
-
-    private func grid(_ providers: [LLMProvider]) -> NSView {
-        let rows = stride(from: 0, to: providers.count, by: 4).map { start -> NSStackView in
-            let slice = Array(providers[start..<min(start + 4, providers.count)])
-            let row = NSStackView(views: slice.map { provider in
-                let tile = ProviderTile(provider: provider) { [weak self] in self?.select(provider.id) }
-                tiles[provider.id] = tile
-                return tile
-            })
-            row.orientation = .horizontal
-            row.spacing = 10
-            row.alignment = .top
-            return row
-        }
-        let stack = NSStackView(views: rows)
-        stack.orientation = .vertical
+    /// One scrolling row of tiles. Eleven of them do not fit across a sheet
+    /// anybody wants to look at, and wrapping them into a block turns a list
+    /// into a puzzle.
+    private func strip(_ providers: [LLMProvider]) -> NSView {
+        let stack = NSStackView(views: providers.map { provider in
+            let tile = ProviderTile(provider: provider) { [weak self] in self?.select(provider.id) }
+            tiles[provider.id] = tile
+            return tile
+        })
+        stack.orientation = .horizontal
         stack.spacing = 10
-        stack.alignment = .leading
+        stack.alignment = .top
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+
+        let scroll = NSScrollView()
+        scroll.documentView = stack
+        scroll.hasHorizontalScroller = true
+        scroll.hasVerticalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
         stack.translatesAutoresizingMaskIntoConstraints = false
-        return stack
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            stack.heightAnchor.constraint(equalToConstant: 116),
+        ])
+        return scroll
     }
 
     // MARK: - Choosing
@@ -173,9 +163,12 @@ final class ProviderPickerController: NSWindowController {
         for (tileID, tile) in tiles { tile.isChosen = tileID == id }
         guard let provider = LLMProvider.preset(id: id) else { return }
 
-        keyField.isHidden = !provider.needsKey
+        // The whole row goes, rather than a disabled field sitting there: a
+        // provider that wants nothing should not look like one that wants
+        // something you have not given it.
+        keyRow.isHidden = !provider.needsKey
         keyLink.isHidden = provider.keyURL == nil
-        keyLabel.stringValue = provider.needsKey ? "Key" : "No key needed."
+        keyLabel.stringValue = "Key"
         if provider.needsKey, APICredentials.key(for: id) != nil {
             keyField.placeholderString = "a key is already saved — leave blank to keep it"
         } else {
