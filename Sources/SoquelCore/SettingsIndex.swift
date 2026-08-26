@@ -98,6 +98,12 @@ enum SettingsIndex {
         Entry(pane: "updates", paneTitle: "Updates", title: "Install updates without asking",
               keywords: "auto automatic update install download upgrade unattended"),
 
+        Entry(pane: "clean", paneTitle: "Clean", title: "API key for Clean This Folder",
+              keywords: "api key anthropic claude clean tidy arrange organise organize secret keychain"),
+
+        Entry(pane: "clean", paneTitle: "Clean", title: "Global folders",
+              keywords: "global folder destination file into context clean move anywhere"),
+
         Entry(pane: "defaultapp", paneTitle: "Default App", title: "Open Soquel when Finder starts",
               keywords: "finder default replace dock reveal takeover file manager quit"),
 

@@ -30,6 +30,33 @@ The channel decides by the number, not by GitHub's prerelease flag: a
 sequential release marked beta while it is being tried out is still
 sequential, and reaches the stable channel.
 
+## Clean This Folder
+
+`⌃⌘L` is the only feature that sends the contents of files anywhere. It reads
+one folder — names, and the first 4 KB of each text file — and asks Anthropic's
+API how the folder should be arranged. Nothing moves until the plan is on
+screen and the rows are ticked.
+
+Three things are true of it and are worth stating plainly:
+
+- **The API key is in your Keychain, not in `settings.json`.** That file is
+  plain text, meant to be edited by hand, and is what somebody pastes into a
+  bug report. Settings › Clean sets and removes the key.
+- **Some files are never opened.** `.env` and anything ending `.pem`, `.key`,
+  `.p12` and the rest of the list in `CleanSanitiser.neverRead` are listed by
+  name and not read. Hidden files are not gathered at all.
+- **Anything that looks like a key, token or password is replaced with
+  `[removed]` before the request is made, and your files on disk are never
+  changed by any of it.** "Show What Would Be Sent" prints the exact text.
+
+`globalFolders` are folders that files may be filed into from anywhere. A file
+in `~/test1` can be moved to `~/test2/abc` when that folder is global, with
+nothing written about it — the mark is the instruction. A plan may never put a
+file anywhere except the folder being cleaned or one of these.
+
+`folderContext` is a sentence per folder saying what it is for. It is given to
+the model when that folder is cleaned and when it is a candidate destination.
+
 ## The one request that is not opt-in
 
 `checkForBadBuilds` is on by default, and it is the only thing Soquel asks a
@@ -93,6 +120,8 @@ Anything absent falls back to the default in the right-hand column.
 | `verifyTransfers` | bool | `false` |
 | `checkForUpdates` | bool | `false` |
 | `checkForBadBuilds` | bool | `true` |
+| `folderContext` | object, path → sentence | `{}` |
+| `globalFolders` | array of paths | `[]` |
 | `updateChannel` | `"stable"`, `"nightly"` | `"stable"` |
 | `autoInstallUpdates` | bool | `false` |
 | `catchFinderLaunch` | bool | `false` |

@@ -191,6 +191,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         windowPane.label = "Window"
         windowPane.view = Self.paneContainer(WindowSettingsView())
 
+        let clean = NSTabViewItem(identifier: "clean")
+        clean.label = "Clean"
+        clean.view = Self.paneContainer(CleanSettingsView())
+
         let defaultApp = NSTabViewItem(identifier: "defaultapp")
         defaultApp.label = "Default App"
         defaultApp.view = Self.paneContainer(DefaultAppSettingsView())
@@ -205,6 +209,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSSe
         tabs.addTabViewItem(themes)
         tabs.addTabViewItem(keyboard)
         tabs.addTabViewItem(applications)
+        tabs.addTabViewItem(clean)
         tabs.addTabViewItem(defaultApp)
         tabs.addTabViewItem(updates)
 

@@ -1341,6 +1341,45 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Scans the focused pane's folder and shows where the space went.
+    /// Clean This Folder. The panel does the asking; nothing is sent or moved
+    /// until it is looked at.
+    @objc func menuCleanFolder(_ sender: Any?) {
+        guard let url = focusedList?.url else { NSSound.beep(); return }
+        let panel = CleanFolderPanelController(folder: url, host: self)
+        panel.window.map { window?.beginSheet($0, completionHandler: nil) }
+    }
+
+    /// A sentence about what a folder is for, used when it is cleaned and when
+    /// it is a candidate destination.
+    @objc func menuFolderContext(_ sender: Any?) {
+        guard let url = focusedList?.url else { NSSound.beep(); return }
+        let alert = NSAlert()
+        alert.messageText = "What is “\(url.lastPathComponent)” for?"
+        alert.informativeText = "One sentence. Clean This Folder is given it whenever this folder "
+            + "is cleaned, and whenever it is somewhere files could be filed into."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        field.stringValue = FolderContext.note(for: url) ?? ""
+        field.placeholderString = "invoices, one per month, named by date"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            FolderContext.setNote(field.stringValue, for: url)
+        }
+    }
+
+    /// Marks a folder as somewhere things may be filed from anywhere else.
+    @objc func menuToggleGlobalFolder(_ sender: Any?) {
+        guard let url = focusedList?.url else { NSSound.beep(); return }
+        let now = !FolderContext.isGlobal(url)
+        FolderContext.setGlobal(now, for: url)
+        if let pane = focusedPane {
+            self.pane(pane, didReportStatus: now
+                ? "“\(url.lastPathComponent)” is a global folder — files can be filed here from anywhere."
+                : "“\(url.lastPathComponent)” is no longer a global folder.")
+        }
+    }
+
     @objc func menuShowDiskMap(_ sender: Any?) {
         guard let url = focusedList?.url else { return }
         let panel = DiskMapPanelController.shared
