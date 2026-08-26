@@ -234,24 +234,107 @@ final class CleanFolderTests: XCTestCase {
     func testTheKeyIsNotKeptInSettings() {
         XCTAssertNil(Settings.object(forKey: "anthropicAPIKey"))
         XCTAssertNil(Settings.object(forKey: "apiKey"))
+        XCTAssertNil(Settings.object(forKey: "cleanKey"))
+        // Loose on purpose: every provider names its keys differently.
         XCTAssertFalse(APICredentials.looksLikeAKey("hello"))
-        XCTAssertFalse(APICredentials.looksLikeAKey("sk-ant-"))
+        XCTAssertFalse(APICredentials.looksLikeAKey("has a space in it"))
         XCTAssertTrue(APICredentials.looksLikeAKey("sk-ant-api03-abcdefghijklmnop"))
+        XCTAssertTrue(APICredentials.looksLikeAKey("sk-or-v1-abcdefghijklmnop"))
+        XCTAssertTrue(APICredentials.looksLikeAKey("gsk_abcdefghijklmnopqrst"))
     }
 
-    /// The request has to be the shape the API expects.
-    func testTheRequestIsWellFormed() throws {
+    /// Each wire has its own shape, and both have to be valid JSON.
+    func testBothWiresAreWellFormed() throws {
         let folder = try scratch()
         defer { try? FileManager.default.removeItem(at: folder) }
         write("hello", "a.txt", in: folder)
-        let body = CleanFolder.requestBody(for: folder, payload: CleanSanitiser.gather(folder))
-        XCTAssertEqual(body["model"] as? String, "claude-opus-5")
-        XCTAssertNotNil(body["max_tokens"])
-        XCTAssertEqual((body["thinking"] as? [String: Any])?["type"] as? String, "adaptive")
-        XCTAssertNil(body["budget_tokens"], "budget_tokens is rejected on this model")
-        let choice = body["tool_choice"] as? [String: Any]
-        XCTAssertEqual(choice?["name"] as? String, "propose_structure")
-        XCTAssertNotNil(try? JSONSerialization.data(withJSONObject: body))
+        let payload = CleanSanitiser.gather(folder)
+
+        let anthropic = LLMProvider.preset(id: "anthropic")!
+        let a = CleanFolder.requestBody(for: folder, payload: payload,
+                                        provider: anthropic, model: "claude-opus-5")
+        XCTAssertEqual(a["model"] as? String, "claude-opus-5")
+        XCTAssertEqual((a["thinking"] as? [String: Any])?["type"] as? String, "adaptive")
+        XCTAssertNil(a["budget_tokens"], "budget_tokens is rejected on this model")
+        XCTAssertNotNil(a["system"], "the anthropic wire takes system as a field")
+        XCTAssertEqual((a["tool_choice"] as? [String: Any])?["name"] as? String, "propose_structure")
+        XCTAssertNotNil(try? JSONSerialization.data(withJSONObject: a))
+
+        let ollama = LLMProvider.preset(id: "ollama")!
+        let o = CleanFolder.requestBody(for: folder, payload: payload,
+                                        provider: ollama, model: "llama3.1")
+        XCTAssertEqual(o["model"] as? String, "llama3.1")
+        XCTAssertNil(o["system"], "the chat wire takes system as a message, not a field")
+        let messages = o["messages"] as? [[String: Any]]
+        XCTAssertEqual(messages?.first?["role"] as? String, "system")
+        let function = ((o["tools"] as? [[String: Any]])?.first?["function"]) as? [String: Any]
+        XCTAssertEqual(function?["name"] as? String, "propose_structure")
+        XCTAssertNotNil(function?["parameters"], "the chat wire calls the schema parameters")
+        XCTAssertNotNil(try? JSONSerialization.data(withJSONObject: o))
+    }
+
+    /// The key goes in a different header on each wire, and a local server is
+    /// sent none at all.
+    func testTheKeyGoesInTheRightHeaderAndLocalGetsNone() throws {
+        let folder = try scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        write("hello", "a.txt", in: folder)
+        let payload = CleanSanitiser.gather(folder)
+
+        let ollama = LLMProvider.preset(id: "ollama")!
+        let local = CleanFolder.request(for: folder, payload: payload, provider: ollama, model: "x")
+        XCTAssertNil(local?.value(forHTTPHeaderField: "Authorization"),
+                     "a key was sent to a server on this machine")
+        XCTAssertNil(local?.value(forHTTPHeaderField: "x-api-key"))
+        XCTAssertEqual(local?.url?.host, "localhost")
+
+        let anthropic = LLMProvider.preset(id: "anthropic")!
+        APICredentials.store("test-key-abcdefghij", for: anthropic.id)
+        defer { APICredentials.remove(for: anthropic.id) }
+        let hosted = CleanFolder.request(for: folder, payload: payload, provider: anthropic, model: "x")
+        XCTAssertEqual(hosted?.value(forHTTPHeaderField: "x-api-key"), "test-key-abcdefghij")
+        XCTAssertEqual(hosted?.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+        XCTAssertNil(hosted?.value(forHTTPHeaderField: "Authorization"))
+
+        let router = LLMProvider.preset(id: "openrouter")!
+        APICredentials.store("sk-or-v1-abcdefghij", for: router.id)
+        defer { APICredentials.remove(for: router.id) }
+        let bearer = CleanFolder.request(for: folder, payload: payload, provider: router, model: "x")
+        XCTAssertEqual(bearer?.value(forHTTPHeaderField: "Authorization"), "Bearer sk-or-v1-abcdefghij")
+    }
+
+    /// One key per provider, so switching between them does not mean pasting
+    /// a key again.
+    func testKeysAreRememberedPerProvider() {
+        defer {
+            APICredentials.remove(for: "anthropic")
+            APICredentials.remove(for: "openrouter")
+        }
+        APICredentials.store("key-for-anthropic-1", for: "anthropic")
+        APICredentials.store("key-for-openrouter-2", for: "openrouter")
+        XCTAssertEqual(APICredentials.key(for: "anthropic"), "key-for-anthropic-1")
+        XCTAssertEqual(APICredentials.key(for: "openrouter"), "key-for-openrouter-2")
+        APICredentials.remove(for: "anthropic")
+        XCTAssertNil(APICredentials.key(for: "anthropic"))
+        XCTAssertEqual(APICredentials.key(for: "openrouter"), "key-for-openrouter-2",
+                       "removing one provider's key took another's with it")
+    }
+
+    /// Every preset has to be usable as written.
+    func testEveryPresetIsCoherent() {
+        for provider in LLMProvider.presets where provider.id != "custom" {
+            XCTAssertFalse(provider.endpoint.isEmpty, "\(provider.id) has no address")
+            XCTAssertNotNil(URL(string: provider.endpoint), "\(provider.id) has an unusable address")
+            XCTAssertEqual(provider.isLocal, provider.endpoint.contains("localhost"),
+                           "\(provider.id) disagrees with itself about being local")
+            XCTAssertEqual(provider.needsKey, !provider.isLocal,
+                           "\(provider.id) asks for a key it does not need, or the reverse")
+            if provider.needsKey { XCTAssertNotNil(provider.keyURL, "\(provider.id) says where to get no key") }
+        }
+        XCTAssertEqual(LLMProvider.preset(id: "anthropic")?.wire, .anthropic)
+        for id in ["ollama", "lmstudio", "llamacpp", "openrouter", "glm", "deepseek", "groq"] {
+            XCTAssertEqual(LLMProvider.preset(id: id)?.wire, .openai, "\(id) is on the wrong wire")
+        }
     }
 
     /// Global folders and context are what let a file leave the folder at all.
@@ -333,5 +416,71 @@ extension CleanFolderTests {
         Prefs.cleanFolder = false
         XCTAssertTrue(ToolbarCatalogue.enabledIDs.contains("clean"),
                       "the stored choice was thrown away when the beta went off")
+    }
+}
+
+/// Answers come back in three shapes and all three have to read.
+extension CleanFolderTests {
+    private func folderWithInvoice() throws -> URL {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: folder.appendingPathComponent("invoice.pdf").path, contents: Data("x".utf8))
+        return folder
+    }
+
+    /// The chat wire returns arguments as a *string* of JSON, not an object.
+    func testAChatWireToolCallReads() throws {
+        let folder = try folderWithInvoice()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let json = """
+        {"choices":[{"message":{"role":"assistant","tool_calls":[{"type":"function","function":{
+          "name":"propose_structure",
+          "arguments":"{\\"summary\\":\\"Group them.\\",\\"moves\\":[{\\"file\\":\\"invoice.pdf\\",\\"destination\\":\\"invoices/invoice.pdf\\",\\"reason\\":\\"an invoice\\"}]}"
+        }}]}}]}
+        """
+        guard case .success(let plan) = CleanFolder.parse(Data(json.utf8), folder: folder) else {
+            return XCTFail("a chat-wire tool call did not parse")
+        }
+        XCTAssertEqual(plan.summary, "Group them.")
+        XCTAssertEqual(plan.usable.count, 1)
+    }
+
+    /// A small local model often ignores the tool and writes the JSON into its
+    /// reply, sometimes in a fenced block with a sentence in front. Refusing
+    /// that would mean telling somebody their own hardware is not good enough
+    /// when the answer is right there.
+    func testAPlanWrittenInProseStillReads() throws {
+        let folder = try folderWithInvoice()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let inner = #"{"summary":"Group them.","moves":[{"file":"invoice.pdf","destination":"invoices/invoice.pdf","reason":"an invoice"}]}"#
+        let reply = "Sure! Here is the plan:\n\n```json\n\(inner)\n```\n\nHope that helps."
+        let json = try String(
+            data: JSONSerialization.data(withJSONObject:
+                ["choices": [["message": ["role": "assistant", "content": reply]]]]),
+            encoding: .utf8)!
+        guard case .success(let plan) = CleanFolder.parse(Data(json.utf8), folder: folder) else {
+            return XCTFail("a plan written in prose did not parse")
+        }
+        XCTAssertEqual(plan.usable.count, 1)
+        XCTAssertEqual(plan.summary, "Group them.")
+    }
+
+    /// Braces inside strings must not end the object early.
+    func testBracesInsideStringsDoNotConfuseTheReader() {
+        let text = "before {\"summary\":\"a } brace\",\"moves\":[]} after"
+        let object = CleanFolder.firstJSONObject(in: text)
+        XCTAssertEqual(object?["summary"] as? String, "a } brace")
+    }
+
+    /// Prose with no plan in it is still not a plan.
+    func testProseWithNoPlanIsRefused() throws {
+        let folder = try folderWithInvoice()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let json = #"{"choices":[{"message":{"content":"I would put the invoices together."}}]}"#
+        if case .success = CleanFolder.parse(Data(json.utf8), folder: folder) {
+            XCTFail("prose with no plan was treated as one")
+        }
     }
 }

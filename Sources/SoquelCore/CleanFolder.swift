@@ -7,8 +7,6 @@ import Foundation
 /// the person ticks what they want, and the ordinary transfer engine does the
 /// work so the whole thing lands on the undo stack.
 enum CleanFolder {
-    static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
-    static let model = "claude-opus-5"
 
     /// One proposed move.
     struct Step: Equatable {
@@ -38,6 +36,7 @@ enum CleanFolder {
     }
 
     enum Failure: LocalizedError {
+        case notReady(String)
         case noKey
         case http(Int, String)
         case network(String)
@@ -46,6 +45,7 @@ enum CleanFolder {
 
         var errorDescription: String? {
             switch self {
+            case .notReady(let why): return why
             case .noKey:
                 return "No API key. Settings › Clean adds one."
             case .http(let code, let message):
@@ -124,39 +124,95 @@ enum CleanFolder {
         return text
     }
 
-    static func requestBody(for folder: URL, payload: CleanSanitiser.Payload) -> [String: Any] {
-        [
-            "model": model,
-            "max_tokens": 16000,
-            "thinking": ["type": "adaptive"],
-            "output_config": ["effort": "high"],
-            "system": systemPrompt(for: folder),
-            "tools": [tool],
-            "tool_choice": ["type": "tool", "name": "propose_structure"],
-            "messages": [[
-                "role": "user",
-                "content": "Folder: \(folder.path)\n\nContents, with the first "
-                    + "\(CleanSanitiser.headBytes) bytes of each text file:\n\n"
-                    + CleanSanitiser.preview(payload)
-            ]]
-        ]
+    static func userMessage(for folder: URL, payload: CleanSanitiser.Payload) -> String {
+        "Folder: \(folder.path)\n\nContents, with the first "
+            + "\(CleanSanitiser.headBytes) bytes of each text file:\n\n"
+            + CleanSanitiser.preview(payload)
+    }
+
+    /// The request, in whichever shape the chosen provider speaks.
+    ///
+    /// The two differ in more than the URL: the key goes in a different header,
+    /// the system prompt is a field in one and a message in the other, and a
+    /// tool's schema is called `input_schema` in one and `parameters` in the
+    /// other. Everything else here is the same question.
+    static func requestBody(for folder: URL, payload: CleanSanitiser.Payload,
+                            provider: LLMProvider = .current,
+                            model: String = LLMProvider.currentModel) -> [String: Any] {
+        let system = systemPrompt(for: folder)
+        let user = userMessage(for: folder, payload: payload)
+
+        switch provider.wire {
+        case .anthropic:
+            return [
+                "model": model,
+                "max_tokens": 16000,
+                "thinking": ["type": "adaptive"],
+                "output_config": ["effort": "high"],
+                "system": system,
+                "tools": [tool],
+                "tool_choice": ["type": "tool", "name": "propose_structure"],
+                "messages": [["role": "user", "content": user]]
+            ]
+        case .openai:
+            return [
+                "model": model,
+                "max_tokens": 16000,
+                "messages": [
+                    ["role": "system", "content": system],
+                    ["role": "user", "content": user]
+                ],
+                "tools": [[
+                    "type": "function",
+                    "function": [
+                        "name": "propose_structure",
+                        "description": "Propose where each file should go.",
+                        "parameters": tool["input_schema"] as Any
+                    ]
+                ]],
+                "tool_choice": [
+                    "type": "function",
+                    "function": ["name": "propose_structure"]
+                ]
+            ]
+        }
+    }
+
+    static func request(for folder: URL, payload: CleanSanitiser.Payload,
+                        provider: LLMProvider = .current,
+                        model: String = LLMProvider.currentModel) -> URLRequest? {
+        guard let url = provider.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 300
+        let key = APICredentials.key(for: provider.id)
+        switch provider.wire {
+        case .anthropic:
+            key.map { request.setValue($0, forHTTPHeaderField: "x-api-key") }
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .openai:
+            // A local server wants no key and is given none.
+            key.map { request.setValue("Bearer \($0)", forHTTPHeaderField: "Authorization") }
+        }
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: requestBody(for: folder, payload: payload,
+                                        provider: provider, model: model))
+        return request
     }
 
     static func propose(folder: URL, payload: CleanSanitiser.Payload,
                         session: URLSession = .shared,
                         completion: @escaping (Result<Plan, Error>) -> Void) {
-        guard let key = APICredentials.key() else {
-            completion(.failure(Failure.noKey))
+        let ready = LLMProvider.isReady()
+        guard ready.ok else {
+            completion(.failure(Failure.notReady(ready.missing ?? "Not set up yet.")))
             return
         }
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(key, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.timeoutInterval = 120
-        request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody(for: folder, payload: payload))
-
+        guard let request = request(for: folder, payload: payload) else {
+            completion(.failure(Failure.notReady("That address cannot be used.")))
+            return
+        }
         session.dataTask(with: request) { data, response, error in
             func finish(_ result: Result<Plan, Error>) {
                 DispatchQueue.main.async { completion(result) }
@@ -164,8 +220,15 @@ enum CleanFolder {
             if let error { return finish(.failure(Failure.network(error.localizedDescription))) }
             guard let data else { return finish(.failure(Failure.network("nothing came back"))) }
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                // Both wires wrap the reason in "error", though one nests it
+                // under "message" and some servers answer with plain text.
                 let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
-                    .flatMap { ($0?["error"] as? [String: Any])?["message"] as? String }
+                    .flatMap { root -> String? in
+                        if let error = root?["error"] as? [String: Any] {
+                            return error["message"] as? String
+                        }
+                        return root?["error"] as? String
+                    }
                     ?? String(decoding: data.prefix(200), as: UTF8.self)
                 return finish(.failure(Failure.http(http.statusCode, message)))
             }
@@ -180,12 +243,9 @@ enum CleanFolder {
     /// the reason it cannot be used, rather than dropped — a plan that quietly
     /// loses entries reads as a plan the model did not make.
     static func parse(_ data: Data, folder: URL) -> Result<Plan, Error> {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = root["content"] as? [[String: Any]]
-        else { return .failure(Failure.unreadable("no content")) }
-
-        guard let call = content.first(where: { $0["type"] as? String == "tool_use" }),
-              let input = call["input"] as? [String: Any]
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return .failure(Failure.unreadable("the answer was not JSON")) }
+        guard let input = toolInput(in: root)
         else { return .failure(Failure.unreadable("the model did not answer with a plan")) }
 
         let summary = input["summary"] as? String ?? "A suggested arrangement."
@@ -204,6 +264,66 @@ enum CleanFolder {
         }
         guard !steps.isEmpty else { return .failure(Failure.unreadable("the plan held no usable moves")) }
         return .success(Plan(steps: steps, summary: summary))
+    }
+
+    /// Digs the arguments out of whichever shape came back.
+    ///
+    /// Three shapes are accepted. Anthropic puts a `tool_use` block in
+    /// `content`. The `/chat/completions` shape puts a `tool_calls` entry on
+    /// the message, with its arguments as a *string* of JSON rather than an
+    /// object. And a small model running locally often ignores the tool
+    /// altogether and writes the JSON into its reply, which is worth reading
+    /// rather than refusing — the alternative is telling somebody their own
+    /// hardware is not good enough when the answer is right there.
+    static func toolInput(in root: [String: Any]) -> [String: Any]? {
+        // Anthropic.
+        if let content = root["content"] as? [[String: Any]],
+           let call = content.first(where: { $0["type"] as? String == "tool_use" }),
+           let input = call["input"] as? [String: Any] {
+            return input
+        }
+        let message = (root["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]
+        // OpenAI-shaped tool call. Arguments arrive as a JSON string.
+        if let calls = message?["tool_calls"] as? [[String: Any]],
+           let arguments = (calls.first?["function"] as? [String: Any])?["arguments"] as? String,
+           let parsed = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any] {
+            return parsed
+        }
+        // The model answered in prose. Take the outermost JSON object it wrote.
+        let text = (message?["content"] as? String)
+            ?? (root["content"] as? [[String: Any]])?
+                .first(where: { $0["type"] as? String == "text" })?["text"] as? String
+        if let text, let object = firstJSONObject(in: text),
+           object["moves"] != nil {
+            return object
+        }
+        return nil
+    }
+
+    /// The first balanced `{...}` in a string, so a plan wrapped in a fenced
+    /// code block or a sentence of preamble still reads.
+    static func firstJSONObject(in text: String) -> [String: Any]? {
+        let characters = Array(text)
+        guard let start = characters.firstIndex(of: "{") else { return nil }
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for index in start..<characters.count {
+            let character = characters[index]
+            if escaped { escaped = false; continue }
+            if character == "\\" { escaped = true; continue }
+            if character == "\"" { inString.toggle(); continue }
+            if inString { continue }
+            if character == "{" { depth += 1 }
+            if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    let slice = String(characters[start...index])
+                    return try? JSONSerialization.jsonObject(with: Data(slice.utf8)) as? [String: Any]
+                }
+            }
+        }
+        return nil
     }
 
     static func step(file: String, destination: String, reason: String,

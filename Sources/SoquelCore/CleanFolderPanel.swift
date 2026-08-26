@@ -157,7 +157,8 @@ final class CleanFolderPanelController: NSWindowController {
     // MARK: - Asking
 
     @objc private func suggest() {
-        guard APICredentials.isSet else { return askForKey() }
+        let ready = LLMProvider.isReady()
+        guard ready.ok else { return askForSetup(ready.missing) }
         goButton.isEnabled = false
         spinner.startAnimation(nil)
         headline.stringValue = "Asking…"
@@ -169,7 +170,7 @@ final class CleanFolderPanelController: NSWindowController {
             case .failure(let error):
                 self.headline.stringValue = "No arrangement was suggested"
                 self.detail.stringValue = error.localizedDescription
-                if case CleanFolder.Failure.noKey = error { self.askForKey() }
+                if case CleanFolder.Failure.notReady(let why) = error { self.askForSetup(why) }
             case .success(let plan):
                 self.plan = plan
                 self.chosen = Set(plan.usable.map(\.source.path))
@@ -185,32 +186,50 @@ final class CleanFolderPanelController: NSWindowController {
         }
     }
 
-    private func askForKey() {
+    /// Says what is missing and offers the key field there and then, rather
+    /// than sending somebody to a settings pane to work out which of three
+    /// things it was.
+    private func askForSetup(_ missing: String?) {
+        let provider = LLMProvider.current
         let alert = NSAlert()
-        alert.messageText = "Clean This Folder needs an API key"
-        alert.informativeText = """
-        This is the only part of Soquel that sends the contents of your files anywhere. \
-        It goes to Anthropic's API with the key you give here, and nowhere else.
+        alert.messageText = "Clean This Folder is not set up yet"
+        alert.informativeText = (missing ?? "")
+            + "\n\nThis is the only part of Soquel that sends the contents of your files "
+            + "anywhere. It goes to \(provider.name) and nowhere else. A model running on this "
+            + "machine — Ollama, LM Studio, llama.cpp — needs no key and sends nothing over a "
+            + "network at all.\n\n“Show What Would Be Sent” prints the exact text first."
 
-        The key is kept in your Keychain, not in settings.json. Settings › Clean can remove it \
-        at any time. “Show What Would Be Sent” shows the exact text before anything is sent.
-        """
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "sk-ant-…"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save Key")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let typed = field.stringValue
-        guard APICredentials.looksLikeAKey(typed) else {
-            let bad = NSAlert()
-            bad.messageText = "That does not look like an API key"
-            bad.informativeText = "A key from console.anthropic.com starts with “sk-ant-”. Nothing was saved."
-            bad.runModal()
+        if provider.needsKey, APICredentials.key(for: provider.id) == nil {
+            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+            field.placeholderString = "key for \(provider.name)"
+            alert.accessoryView = field
+            alert.addButton(withTitle: "Save Key")
+            alert.addButton(withTitle: "Open Settings")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                guard APICredentials.looksLikeAKey(field.stringValue) else {
+                    let bad = NSAlert()
+                    bad.messageText = "That does not look like a key"
+                    bad.informativeText = "A key has no spaces and is longer than that. Nothing was saved."
+                    bad.runModal()
+                    return
+                }
+                APICredentials.store(field.stringValue, for: provider.id)
+                suggest()
+            case .alertSecondButtonReturn:
+                SettingsWindowController.shared.show(pane: "clean")
+            default:
+                break
+            }
             return
         }
-        APICredentials.store(typed)
-        suggest()
+
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            SettingsWindowController.shared.show(pane: "clean")
+        }
     }
 
     // MARK: - Moving

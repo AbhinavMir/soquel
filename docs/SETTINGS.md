@@ -44,7 +44,33 @@ screen and the rows are ticked.
 
 Three things are true of it and are worth stating plainly:
 
-- **The API key is in your Keychain, not in `settings.json`.** That file is
+### Where the question goes
+
+Any service, or nothing at all. Two wire formats cover the field: Anthropic's
+own `/v1/messages`, and the `/chat/completions` shape OpenAI defined, which
+Ollama, LM Studio, llama.cpp, OpenRouter, GLM, DeepSeek, Groq and Together all
+answer to. Anything speaking either can be typed in as a custom provider.
+
+| Preset | Wire | Key |
+| --- | --- | --- |
+| Ollama, LM Studio, llama.cpp | chat | none — runs here |
+| OpenRouter | chat | one key, many models |
+| Anthropic | anthropic | yes |
+| OpenAI, GLM, DeepSeek, Groq, Together | chat | yes |
+| Anything else | either, your choice | your choice |
+
+**The default is Ollama**, because a model on this machine sends nothing over a
+network at all, which for a feature that reads your files is the best answer
+available. Settings › Clean probes the local ports and says which of them is
+actually running, and asks a server for its model list so a name can be picked
+rather than remembered.
+
+A plan is read from a tool call in either wire, and — for small local models
+that ignore the tool and write JSON into their reply — from the first complete
+JSON object in the text.
+
+- **The API key is in your Keychain, not in `settings.json`.** One key per
+  provider, so switching between them does not mean pasting a key again. That file is
   plain text, meant to be edited by hand, and is what somebody pastes into a
   bug report. Settings › Clean sets and removes the key.
 - **Some files are never opened.** `.env` and anything ending `.pem`, `.key`,
@@ -126,6 +152,10 @@ Anything absent falls back to the default in the right-hand column.
 | `verifyTransfers` | bool | `false` |
 | `checkForUpdates` | bool | `false` |
 | `checkForBadBuilds` | bool | `true` |
+| `cleanProvider` | string, provider id | `"ollama"` |
+| `cleanEndpoint` | string | preset's own |
+| `cleanWire` | `"anthropic"`, `"openai"` | `"openai"` |
+| `cleanModel` | string | preset's suggestion |
 | `folderContext` | object, path → sentence | `{}` |
 | `globalFolders` | array of paths | `[]` |
 | `updateChannel` | `"stable"`, `"nightly"` | `"stable"` |

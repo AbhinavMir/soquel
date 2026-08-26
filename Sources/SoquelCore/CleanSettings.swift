@@ -12,6 +12,11 @@ final class CleanSettingsView: NSView {
     private var removeButton: NSButton!
     private var globalsList: NSTextField!
     private var betaDetail: NSTextField!
+    private var providerDetail: NSTextField!
+    private var providerPicker: NSPopUpButton!
+    private var endpointField: NSTextField!
+    private var modelField: NSComboBox!
+    private var detected: NSTextField!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -59,6 +64,37 @@ final class CleanSettingsView: NSView {
             secondary: true, lines: 4)
         self.betaDetail = betaDetail
 
+        providerPicker = NSPopUpButton()
+        providerPicker.addItems(withTitles: LLMProvider.presets.map(\.name))
+        providerPicker.selectItem(at: LLMProvider.presets.firstIndex { $0.id == LLMProvider.chosenID } ?? 0)
+        providerPicker.target = self
+        providerPicker.action = #selector(providerChanged)
+        providerPicker.translatesAutoresizingMaskIntoConstraints = false
+
+        let providerDetail = label(
+            "Anything that speaks Anthropic's API or the /chat/completions shape that OpenAI "
+            + "defined — which is Ollama, LM Studio, llama.cpp, OpenRouter, GLM, DeepSeek, Groq "
+            + "and most of the rest. A model on this machine needs no key and sends nothing over "
+            + "a network, which for a feature that reads your files is the best answer there is.",
+            secondary: true, lines: 5)
+        self.providerDetail = providerDetail
+
+        detected = label("", secondary: true, lines: 2)
+
+        endpointField = NSTextField()
+        endpointField.placeholderString = "https://…/v1/chat/completions"
+        endpointField.target = self
+        endpointField.action = #selector(endpointChanged)
+        endpointField.translatesAutoresizingMaskIntoConstraints = false
+
+        modelField = NSComboBox()
+        modelField.placeholderString = "model name"
+        modelField.isEditable = true
+        modelField.completes = true
+        modelField.target = self
+        modelField.action = #selector(modelChanged)
+        modelField.translatesAutoresizingMaskIntoConstraints = false
+
         keyStatus = label("")
         keyButton = NSButton(title: "Set API Key…", target: self, action: #selector(setKey))
         keyButton.translatesAutoresizingMaskIntoConstraints = false
@@ -75,7 +111,10 @@ final class CleanSettingsView: NSView {
             secondary: true, lines: 6)
         globalsList = label("", secondary: true, lines: 8)
 
-        let views = [intro, promise, betaToggle!, betaDetail, keyStatus!, keyButton!, removeButton!,
+        let views = [intro, promise, betaToggle!, betaDetail,
+                     providerPicker!, providerDetail, detected!,
+                     endpointField!, modelField!,
+                     keyStatus!, keyButton!, removeButton!,
                      globalsTitle, globalsDetail, globalsList!]
         views.forEach(addSubview)
 
@@ -101,6 +140,49 @@ final class CleanSettingsView: NSView {
         refresh()
     }
 
+    @objc private func providerChanged() {
+        let provider = LLMProvider.presets[providerPicker.indexOfSelectedItem]
+        LLMProvider.chosenID = provider.id
+        // A preset carries its own address, so an override from a previous
+        // choice must not follow it across.
+        LLMProvider.customEndpoint = ""
+        LLMProvider.model = ""
+        refresh()
+        loadModels()
+    }
+
+    @objc private func endpointChanged() {
+        LLMProvider.customEndpoint = endpointField.stringValue
+        refresh()
+        loadModels()
+    }
+
+    @objc private func modelChanged() {
+        LLMProvider.model = modelField.stringValue
+        refresh()
+    }
+
+    /// Asks the server what it has, so a name can be picked instead of
+    /// remembered. Servers that do not answer leave the field a plain one.
+    private func loadModels() {
+        modelField.removeAllItems()
+        LLMProvider.models(for: LLMProvider.current) { [weak self] names in
+            guard let self, !names.isEmpty else { return }
+            self.modelField.addItems(withObjectValues: names)
+        }
+    }
+
+    private func lookForLocal() {
+        LLMProvider.findLocal { [weak self] found in
+            guard let self else { return }
+            self.detected.stringValue = found.isEmpty
+                ? "Nothing found running on this machine."
+                : "Running here now: " + found.map(\.name)
+                    .map { $0.replacingOccurrences(of: " (on this machine)", with: "") }
+                    .joined(separator: ", ") + "."
+        }
+    }
+
     @objc private func betaChanged() {
         Prefs.cleanFolder = betaToggle.state == .on
         // The toolbar and the menus read the setting, and both need telling.
@@ -111,14 +193,31 @@ final class CleanSettingsView: NSView {
     private func refresh() {
         let on = Prefs.cleanFolder
         betaToggle.state = on ? .on : .off
-        for view in [keyStatus, keyButton, removeButton] { view?.isHidden = !on }
+        for view in [keyStatus, keyButton, removeButton, providerPicker,
+                     providerDetail, detected, endpointField, modelField] {
+            view?.isHidden = !on
+        }
         guard on else { globalsList.stringValue = ""; return }
-        let set = APICredentials.isSet
+
+        let provider = LLMProvider.current
+        endpointField.stringValue = provider.endpoint
+        modelField.stringValue = LLMProvider.currentModel
+        lookForLocal()
+
+        guard provider.needsKey else {
+            keyStatus.stringValue = "No key needed — this one runs on your machine."
+            keyStatus.textColor = .secondaryLabelColor
+            keyButton.isHidden = true
+            removeButton.isHidden = true
+            return
+        }
+        keyButton.isHidden = false
+        let set = APICredentials.isSet(for: provider.id)
         keyStatus.stringValue = set
-            ? "A key is stored in your Keychain."
-            : "No key. Clean This Folder will ask for one when you first use it."
+            ? "A key for \(provider.name) is in your Keychain."
+            : "No key for \(provider.name)." + (provider.keyURL.map { " Get one at \($0)" } ?? "")
         keyStatus.textColor = set ? .secondaryLabelColor : Theme.danger
-        keyButton.title = set ? "Replace Key…" : "Set API Key…"
+        keyButton.title = set ? "Replace Key…" : "Set Key…"
         removeButton.isHidden = !set
 
         let destinations = FolderContext.destinations()
@@ -132,11 +231,12 @@ final class CleanSettingsView: NSView {
 
     @objc private func setKey() {
         let alert = NSAlert()
-        alert.messageText = "API key"
-        alert.informativeText = "From console.anthropic.com. Kept in your Keychain, never in "
-            + "settings.json, and used only by Clean This Folder."
+        let provider = LLMProvider.current
+        alert.messageText = "Key for \(provider.name)"
+        alert.informativeText = (provider.keyURL.map { "From \($0). " } ?? "")
+            + "Kept in your Keychain, never in settings.json, and used only by Clean This Folder. "
+            + "One key is remembered per provider."
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "sk-ant-…"
         alert.accessoryView = field
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
@@ -144,16 +244,16 @@ final class CleanSettingsView: NSView {
         guard APICredentials.looksLikeAKey(field.stringValue) else {
             let bad = NSAlert()
             bad.messageText = "That does not look like an API key"
-            bad.informativeText = "A key starts with “sk-ant-”. Nothing was saved."
+            bad.informativeText = "A key has no spaces and is longer than that. Nothing was saved."
             bad.runModal()
             return
         }
-        APICredentials.store(field.stringValue)
+        APICredentials.store(field.stringValue, for: provider.id)
         refresh()
     }
 
     @objc private func removeKey() {
-        APICredentials.remove()
+        APICredentials.remove(for: LLMProvider.current.id)
         refresh()
     }
 }
