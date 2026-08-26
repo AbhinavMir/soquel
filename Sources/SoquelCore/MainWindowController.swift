@@ -1344,6 +1344,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Clean This Folder. The panel does the asking; nothing is sent or moved
     /// until it is looked at.
     @objc func menuCleanFolder(_ sender: Any?) {
+        guard Prefs.cleanFolder else { NSSound.beep(); return }
         guard let url = focusedList?.url else { NSSound.beep(); return }
         let panel = CleanFolderPanelController(folder: url, host: self)
         panel.window.map { window?.beginSheet($0, completionHandler: nil) }
@@ -1866,6 +1867,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             item.state = PrivacyScreen.isOn ? .on : .off
         }
         switch item.action {
+        // The whole of Clean This Folder is behind one switch. Hidden rather
+        // than greyed: it is the only feature that sends file contents
+        // anywhere, and a disabled item invites somebody to go looking for how
+        // to enable it before they have read what it does.
+        case #selector(menuCleanFolder(_:)), #selector(menuFolderContext(_:)),
+             #selector(menuToggleGlobalFolder(_:)):
+            item.isHidden = !Prefs.cleanFolder
+            if item.action == #selector(menuToggleGlobalFolder(_:)),
+               let url = focusedList?.url {
+                item.state = FolderContext.isGlobal(url) ? .on : .off
+            }
+            return Prefs.cleanFolder && focusedList?.url != nil
         case #selector(menuGoBack): return focusedList?.canGoBack ?? false
         case #selector(menuGoForward): return focusedList?.canGoForward ?? false
         case #selector(menuUndo), #selector(undo):

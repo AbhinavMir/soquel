@@ -32,6 +32,11 @@ sequential, and reaches the stable channel.
 
 ## Clean This Folder
 
+**Off by default.** Settings › Clean turns it on. With it off there is no
+`⌃⌘L`, no menu item, no toolbar button and nothing in the command palette, and
+no key is asked for. Turning it on adds a ✦ button you can put in the toolbar
+by right-clicking the bar.
+
 `⌃⌘L` is the only feature that sends the contents of files anywhere. It reads
 one folder — names, and the first 4 KB of each text file — and asks Anthropic's
 API how the folder should be arranged. Nothing moves until the plan is on
@@ -89,6 +94,7 @@ Anything absent falls back to the default in the right-hand column.
 | --- | --- | --- |
 | `hideFromScreenSharing` | bool | `false` |
 | `gitActions` | bool | `false` |
+| `cleanFolder` | bool | `false` |
 | `showHiddenFiles` | bool | `false` |
 | `foldersFirst` | bool | `false` |
 | `viewMode` | `"list"`, `"icon"`, `"column"` | `"list"` |
@@ -136,7 +142,7 @@ Toolbar action ids are `back`, `forward`, `up`, `listView`, `iconView`,
 `columnView`, `hidden`, `folderSizes`, `gitStatus`, `inspector`, `folderTree`,
 `foldersFirst`, `find`, `findContents`, `newFolder`, `split`, `terminal`,
 `editor`, `reveal`, `transfers`, `palette`, `favourite`, `copyPath`, `openWith`,
-`diskMap`, `shelf`, `compare`. The three view modes draw as one segmented pill
+`diskMap`, `shelf`, `compare`, and `clean` while that beta is on. The three view modes draw as one segmented pill
 when they sit next to each other.
 
 ## Example

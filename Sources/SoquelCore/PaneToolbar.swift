@@ -112,7 +112,14 @@ enum ToolbarCatalogue {
                       #selector(M.menuCompareFolders(_:))),
         ToolbarAction("transfers", "Show Transfers", "arrow.left.arrow.right", #selector(M.menuShowTransfers(_:))),
         ToolbarAction("palette", "Command Palette", "command", #selector(M.menuCommandPalette(_:))),
+        ToolbarAction("clean", "Clean This Folder", "sparkles", #selector(M.menuCleanFolder(_:))),
     ]
+
+    /// Actions that only exist while a beta is on. Hidden rather than
+    /// disabled: a button that cannot do anything is worse than no button.
+    static var available: [ToolbarAction] {
+        all.filter { $0.id != "clean" || Prefs.cleanFolder }
+    }
 
     static func action(id: String) -> ToolbarAction? { all.first { $0.id == id } }
 
@@ -258,7 +265,11 @@ final class PaneToolbarView: NSView {
         // Consecutive actions from the same group become one pill; everything
         // else stays a plain button.
         var index = 0
-        let ids = ToolbarCatalogue.enabledIDs
+        // Filtered here rather than in `enabledIDs`, so a button belonging to
+        // a beta that is off is not drawn but is also not forgotten: turning
+        // the beta back on brings it back where it was.
+        let available = Set(ToolbarCatalogue.available.map(\.id))
+        let ids = ToolbarCatalogue.enabledIDs.filter { available.contains($0) }
         while index < ids.count {
             guard let action = ToolbarCatalogue.action(id: ids[index]) else { index += 1; continue }
 
@@ -486,7 +497,7 @@ extension PaneToolbarView: NSMenuDelegate {
         menu.addItem(withTitle: "Show in Toolbar", action: nil, keyEquivalent: "").isEnabled = false
 
         let enabled = Set(ToolbarCatalogue.enabledIDs)
-        for action in ToolbarCatalogue.all {
+        for action in ToolbarCatalogue.available {
             let item = NSMenuItem(title: action.title, action: #selector(toggleAction(_:)), keyEquivalent: "")
             item.representedObject = action.id
             item.state = enabled.contains(action.id) ? .on : .off

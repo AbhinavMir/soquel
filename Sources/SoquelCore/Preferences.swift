@@ -14,7 +14,20 @@ enum Prefs {
         "editorBundleID", "sessionPanes", "sessionActiveTabs", "welcomeShown",
         "syncBrowsing", "checkForUpdates", "lastUpdateCheck", "skippedUpdateVersion",
         "sortOrderDefaultMigrated", "hideFromScreenSharing", "gitActions",
+        "cleanFolder",
     ]
+
+    /// Whether Clean This Folder is offered at all.
+    ///
+    /// Off by default, and the toggle is the whole gate: with it off the
+    /// command, the menu item and the toolbar button are all absent, and no
+    /// key is asked for. It is the only feature that sends the contents of
+    /// files off the machine, which is a different promise from the one the
+    /// rest of the application makes and is not one to make quietly.
+    static var cleanFolder: Bool {
+        get { d.bool(forKey: "cleanFolder") }
+        set { d.set(newValue, forKey: "cleanFolder") }
+    }
 
     /// Whether git commands that change a repository are offered at all.
     ///

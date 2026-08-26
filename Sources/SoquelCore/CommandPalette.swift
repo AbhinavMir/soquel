@@ -46,7 +46,7 @@ final class CommandPalette: NSObject, NSTableViewDataSource, NSTableViewDelegate
     /// remapping the user has made.
     private func buildCommands() -> [PaletteCommand] {
         CommandRegistry.all
-            .filter(\.inPalette)
+            .filter { $0.inPalette && $0.isAvailable() }
             .map { command in
                 PaletteCommand(
                     title: command.title,

@@ -77,6 +77,9 @@ struct Command {
     let representedObject: String?
     /// False for commands that only make sense from a menu (Quit, Hide).
     let inPalette: Bool
+    /// Whether the command exists at all right now. A beta that is off has no
+    /// command, rather than a command that beeps.
+    let isAvailable: () -> Bool
 
     init(
         _ id: String,
@@ -84,8 +87,10 @@ struct Command {
         _ selector: Selector,
         _ defaultShortcut: Shortcut? = nil,
         representedObject: String? = nil,
-        inPalette: Bool = true
+        inPalette: Bool = true,
+        isAvailable: @escaping () -> Bool = { true }
     ) {
+        self.isAvailable = isAvailable
         self.id = id
         self.title = title
         self.selector = selector
@@ -283,9 +288,9 @@ enum CommandRegistry {
         .command(Command("view.editSettings", "Edit settings.json", #selector(M.menuEditSettingsFile(_:)), inPalette: true)),
         .command(Command("view.revealSettings", "Reveal settings.json in Finder", #selector(M.menuRevealSettingsFile(_:)), inPalette: true)),
         .command(Command("view.diskMap", "Disk Map…", #selector(M.menuShowDiskMap(_:)), Shortcut("u", [.command, .shift]))),
-        .command(Command("tools.clean", "Clean This Folder…", #selector(M.menuCleanFolder(_:)), Shortcut("l", [.command, .control]))),
-        .command(Command("tools.folderContext", "What This Folder Is For…", #selector(M.menuFolderContext(_:)), inPalette: true)),
-        .command(Command("tools.globalFolder", "Mark as a Global Folder", #selector(M.menuToggleGlobalFolder(_:)), inPalette: true)),
+        .command(Command("tools.clean", "Clean This Folder…", #selector(M.menuCleanFolder(_:)), Shortcut("l", [.command, .control]), isAvailable: { Prefs.cleanFolder })),
+        .command(Command("tools.folderContext", "What This Folder Is For…", #selector(M.menuFolderContext(_:)), inPalette: true, isAvailable: { Prefs.cleanFolder })),
+        .command(Command("tools.globalFolder", "Mark as a Global Folder", #selector(M.menuToggleGlobalFolder(_:)), inPalette: true, isAvailable: { Prefs.cleanFolder })),
         .command(Command("view.inspector", "Show Preview", #selector(M.menuToggleInspector(_:)), Shortcut("i", [.command, .option]))),
         .command(Command("view.folderTree", "Show Folder Tree", #selector(M.menuToggleFolderTree(_:)), Shortcut("t", [.command, .shift]))),
         .command(Command("view.syncBrowsing", "Sync Browsing", #selector(M.menuToggleSyncBrowsing(_:)))),

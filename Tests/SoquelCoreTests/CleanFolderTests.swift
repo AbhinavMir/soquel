@@ -276,3 +276,62 @@ final class CleanFolderTests: XCTestCase {
         XCTAssertFalse(FolderContext.isGlobal(folder))
     }
 }
+
+/// The beta gate. With it off the feature must not exist anywhere.
+extension CleanFolderTests {
+    func testTheFeatureIsOffByDefault() {
+        let saved = Prefs.cleanFolder
+        defer { Prefs.cleanFolder = saved }
+        Prefs.cleanFolder = false
+        XCTAssertFalse(Prefs.cleanFolder)
+    }
+
+    func testNothingIsOfferedWhileTheBetaIsOff() {
+        let saved = Prefs.cleanFolder
+        defer { Prefs.cleanFolder = saved }
+
+        let ids = ["tools.clean", "tools.folderContext", "tools.globalFolder"]
+        Prefs.cleanFolder = false
+        for id in ids {
+            let command = CommandRegistry.all.first { $0.id == id }
+            XCTAssertNotNil(command, "\(id) is not registered at all")
+            XCTAssertFalse(command?.isAvailable() ?? true, "\(id) is offered with the beta off")
+        }
+        XCTAssertFalse(ToolbarCatalogue.available.contains { $0.id == "clean" },
+                       "the toolbar button is offered with the beta off")
+
+        Prefs.cleanFolder = true
+        for id in ids {
+            XCTAssertTrue(CommandRegistry.all.first { $0.id == id }?.isAvailable() ?? false,
+                          "\(id) is missing with the beta on")
+        }
+        XCTAssertTrue(ToolbarCatalogue.available.contains { $0.id == "clean" })
+    }
+
+    /// The button is a sparkle, and it is in the catalogue so it can be put in
+    /// the bar by right-clicking it.
+    func testTheToolbarButtonIsASparkle() {
+        let saved = Prefs.cleanFolder
+        defer { Prefs.cleanFolder = saved }
+        Prefs.cleanFolder = true
+        let action = ToolbarCatalogue.action(id: "clean")
+        XCTAssertEqual(action?.symbol, "sparkles")
+        XCTAssertEqual(action?.title, "Clean This Folder")
+    }
+
+    /// A button belonging to a beta that is off must be hidden, not forgotten:
+    /// turning the beta back on brings it back where it was.
+    func testTurningTheBetaOffDoesNotForgetTheButton() {
+        let savedBeta = Prefs.cleanFolder
+        let savedIDs = Settings.stringArray(forKey: "toolbarActions")
+        defer {
+            Prefs.cleanFolder = savedBeta
+            Settings.set(savedIDs, forKey: "toolbarActions")
+        }
+        Prefs.cleanFolder = true
+        ToolbarCatalogue.enabledIDs = ["up", "clean", "palette"]
+        Prefs.cleanFolder = false
+        XCTAssertTrue(ToolbarCatalogue.enabledIDs.contains("clean"),
+                      "the stored choice was thrown away when the beta went off")
+    }
+}

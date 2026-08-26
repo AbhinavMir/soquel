@@ -6,10 +6,12 @@ import AppKit
 /// rather than only behind the panel, because a key somebody gave once should be
 /// removable without going looking for the feature that asked for it.
 final class CleanSettingsView: NSView {
+    private var betaToggle: NSButton!
     private var keyStatus: NSTextField!
     private var keyButton: NSButton!
     private var removeButton: NSButton!
     private var globalsList: NSTextField!
+    private var betaDetail: NSTextField!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -45,6 +47,18 @@ final class CleanSettingsView: NSView {
             + "with “[removed]”. Your files on disk are never changed by any of this.",
             secondary: true)
 
+        betaToggle = NSButton(checkboxWithTitle: "Clean This Folder (beta)",
+                              target: self, action: #selector(betaChanged))
+        betaToggle.state = Prefs.cleanFolder ? .on : .off
+        betaToggle.translatesAutoresizingMaskIntoConstraints = false
+
+        let betaDetail = label(
+            "Off by default. With it off there is no ⌃⌘L, no menu item, no toolbar button and no "
+            + "command in the palette, and no key is asked for. Turning it on adds a ✦ button you "
+            + "can put in the toolbar by right-clicking it.",
+            secondary: true, lines: 4)
+        self.betaDetail = betaDetail
+
         keyStatus = label("")
         keyButton = NSButton(title: "Set API Key…", target: self, action: #selector(setKey))
         keyButton.translatesAutoresizingMaskIntoConstraints = false
@@ -61,7 +75,7 @@ final class CleanSettingsView: NSView {
             secondary: true, lines: 6)
         globalsList = label("", secondary: true, lines: 8)
 
-        let views = [intro, promise, keyStatus!, keyButton!, removeButton!,
+        let views = [intro, promise, betaToggle!, betaDetail, keyStatus!, keyButton!, removeButton!,
                      globalsTitle, globalsDetail, globalsList!]
         views.forEach(addSubview)
 
@@ -87,7 +101,18 @@ final class CleanSettingsView: NSView {
         refresh()
     }
 
+    @objc private func betaChanged() {
+        Prefs.cleanFolder = betaToggle.state == .on
+        // The toolbar and the menus read the setting, and both need telling.
+        NotificationCenter.default.post(name: .soquelToolbarChanged, object: nil)
+        refresh()
+    }
+
     private func refresh() {
+        let on = Prefs.cleanFolder
+        betaToggle.state = on ? .on : .off
+        for view in [keyStatus, keyButton, removeButton] { view?.isHidden = !on }
+        guard on else { globalsList.stringValue = ""; return }
         let set = APICredentials.isSet
         keyStatus.stringValue = set
             ? "A key is stored in your Keychain."
