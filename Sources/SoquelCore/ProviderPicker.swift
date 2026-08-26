@@ -49,6 +49,9 @@ final class ProviderPickerController: NSWindowController {
         blurb.textColor = .secondaryLabelColor
         blurb.lineBreakMode = .byWordWrapping
         blurb.maximumNumberOfLines = 3
+        // As in CleanFolderPanel: a wrapping label with no bound reports its
+        // whole string as its intrinsic width and stretches the sheet.
+        blurb.preferredMaxLayoutWidth = 600
         blurb.translatesAutoresizingMaskIntoConstraints = false
 
         // One row, scrolling. The ones that run here come first, because they
@@ -86,6 +89,7 @@ final class ProviderPickerController: NSWindowController {
         footnote.textColor = .secondaryLabelColor
         footnote.lineBreakMode = .byWordWrapping
         footnote.maximumNumberOfLines = 2
+        footnote.preferredMaxLayoutWidth = 600
         footnote.translatesAutoresizingMaskIntoConstraints = false
 
         doneButton = NSButton(title: "Use This", target: self, action: #selector(done))

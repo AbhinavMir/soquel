@@ -1343,6 +1343,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Scans the focused pane's folder and shows where the space went.
     /// Clean This Folder. The panel does the asking; nothing is sent or moved
     /// until it is looked at.
+    /// Held only while the picker is shown from SOQUEL_OPEN.
+    private var providerPickerHolder: ProviderPickerController?
+
     @objc func menuCleanFolder(_ sender: Any?) {
         guard Prefs.cleanFolder else { NSSound.beep(); return }
         guard let url = focusedList?.url else { NSSound.beep(); return }
@@ -1601,6 +1604,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         case "settings": menuSettings(nil)
         case "server": menuConnectToServer(nil)
         case "palette": menuCommandPalette(nil)
+        case "clean": menuCleanFolder(nil)
+        case "provider":
+            let picker = ProviderPickerController { _ in }
+            picker.window.map { window?.beginSheet($0, completionHandler: nil) }
+            providerPickerHolder = picker
         default: Log.warn(.app, "No panel called “\(name)”")
         }
     }

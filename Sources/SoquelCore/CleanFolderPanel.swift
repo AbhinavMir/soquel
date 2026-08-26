@@ -31,6 +31,7 @@ final class CleanFolderPanelController: NSWindowController {
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = "Clean “\(folder.lastPathComponent)”"
         window.minSize = NSSize(width: 560, height: 380)
+        window.maxSize = NSSize(width: 1000, height: 900)
         super.init(window: window)
         PrivacyScreen.apply(to: window)
         build()
@@ -47,6 +48,10 @@ final class CleanFolderPanelController: NSWindowController {
         headline.font = Theme.rowName
         headline.lineBreakMode = .byWordWrapping
         headline.maximumNumberOfLines = 2
+        // Without this a wrapping label's intrinsic width is the whole string,
+        // and the window grows to fit it rather than the text wrapping. The
+        // panel opened 1087 points wide instead of 720.
+        headline.preferredMaxLayoutWidth = 640
         headline.translatesAutoresizingMaskIntoConstraints = false
 
         detail = NSTextField(labelWithString: "")
@@ -54,6 +59,7 @@ final class CleanFolderPanelController: NSWindowController {
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byWordWrapping
         detail.maximumNumberOfLines = 6
+        detail.preferredMaxLayoutWidth = 660
         detail.translatesAutoresizingMaskIntoConstraints = false
 
         spinner = NSProgressIndicator()
