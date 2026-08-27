@@ -581,3 +581,69 @@ extension CleanFolderTests {
         XCTAssertEqual(APICredentials.key(for: "two"), "key-two-abcdefghij")
     }
 }
+
+/// Two defects found by using it: a modal with no way out, and a toolbar
+/// button that existed everywhere except the toolbar.
+extension CleanFolderTests {
+    /// "Show What Would Be Sent" ran NSApp.runModal(for:) on a window with no
+    /// control that called stopModal. The session never ended, so the sheet
+    /// could not be dismissed and every other control beeped — the whole
+    /// application had to be force quit.
+    func testNothingOpensAModalSessionItCannotEnd() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/SoquelCore/CleanFolderPanel.swift"),
+            encoding: .utf8)
+        let opens = source.components(separatedBy: "NSApp.runModal(for:").count - 1
+        let comments = source.components(separatedBy: "// call NSApp.runModal(for:").count - 1
+        XCTAssertEqual(opens - comments, 0,
+                       "the clean panel opens a modal session; if it is deliberate it needs a "
+                       + "control that calls stopModal, and a test that proves it")
+    }
+
+    /// The button was in the catalogue and in the right-click menu, but never
+    /// in the bar: `defaultIDs` does not reach anybody with a stored toolbar.
+    func testTurningTheBetaOnPutsTheSparkleInTheBar() {
+        let savedBeta = Prefs.cleanFolder
+        let savedIDs = Settings.stringArray(forKey: "toolbarActions")
+        let savedFlag = Settings.object(forKey: "cleanButtonPlaced")
+        defer {
+            Prefs.cleanFolder = savedBeta
+            Settings.set(savedIDs, forKey: "toolbarActions")
+            Settings.set(savedFlag, forKey: "cleanButtonPlaced")
+        }
+
+        // Somebody with a toolbar they have already arranged.
+        ToolbarCatalogue.enabledIDs = ["up", "find", "palette"]
+        Settings.set(nil, forKey: "cleanButtonPlaced")
+        Prefs.cleanFolder = true
+        ToolbarCatalogue.placeBetaButtons()
+        XCTAssertTrue(ToolbarCatalogue.enabledIDs.contains("clean"),
+                      "the sparkle was not put in the bar")
+
+        // Taking it out by hand has to stick.
+        ToolbarCatalogue.enabledIDs = ToolbarCatalogue.enabledIDs.filter { $0 != "clean" }
+        ToolbarCatalogue.placeBetaButtons()
+        XCTAssertFalse(ToolbarCatalogue.enabledIDs.contains("clean"),
+                       "the button came back after being removed by hand")
+    }
+
+    /// With the beta off it must not be placed at all.
+    func testTheSparkleIsNotPlacedWhileTheBetaIsOff() {
+        let savedBeta = Prefs.cleanFolder
+        let savedIDs = Settings.stringArray(forKey: "toolbarActions")
+        let savedFlag = Settings.object(forKey: "cleanButtonPlaced")
+        defer {
+            Prefs.cleanFolder = savedBeta
+            Settings.set(savedIDs, forKey: "toolbarActions")
+            Settings.set(savedFlag, forKey: "cleanButtonPlaced")
+        }
+        ToolbarCatalogue.enabledIDs = ["up", "find"]
+        Settings.set(nil, forKey: "cleanButtonPlaced")
+        Prefs.cleanFolder = false
+        ToolbarCatalogue.placeBetaButtons()
+        XCTAssertFalse(ToolbarCatalogue.enabledIDs.contains("clean"))
+    }
+}

@@ -15,6 +15,8 @@ final class CleanFolderPanelController: NSWindowController {
     /// Held while its sheet is up; a window controller with nothing referring
     /// to it is released and takes the sheet with it.
     private var pickerHolder: ProviderPickerController?
+    /// Held while it is up, so it can be ended by its own button.
+    private var sentSheet: NSWindow?
 
     private var headline: NSTextField!
     private var detail: NSTextField!
@@ -144,23 +146,54 @@ final class CleanFolderPanelController: NSWindowController {
 
     @objc private func showWhatWouldBeSent() {
         let text = CleanSanitiser.preview(payload)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
-                              styleMask: [.titled, .closable, .resizable],
-                              backing: .buffered, defer: false)
-        window.title = "What would be sent"
-        PrivacyScreen.apply(to: window)
+        // A sheet on this window, not a modal session of its own. It used to
+        // call NSApp.runModal(for:) on a window with no button that called
+        // stopModal, so the session never ended: the sheet could not be
+        // dismissed, and every other control in the application beeped because
+        // the modal session was swallowing the events. The application had to
+        // be force quit.
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
+                             styleMask: [.titled, .resizable],
+                             backing: .buffered, defer: false)
+        sheet.title = "What would be sent"
+        PrivacyScreen.apply(to: sheet)
+
         let view = NSTextView()
         view.string = text.isEmpty ? "Nothing would be sent." : text
         view.isEditable = false
+        view.isSelectable = true
         view.font = Theme.rowNumeric
-        let scroll = NSScrollView(frame: window.contentLayoutRect)
+        view.textContainerInset = NSSize(width: 8, height: 8)
+
+        let scroll = NSScrollView()
         scroll.documentView = view
         scroll.hasVerticalScroller = true
-        scroll.autoresizingMask = [.width, .height]
-        window.contentView?.addSubview(scroll)
-        window.center()
-        NSApp.runModal(for: window)
-        window.orderOut(nil)
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+
+        let close = NSButton(title: "Close", target: self, action: #selector(closeWhatWouldBeSent))
+        close.keyEquivalent = "\r"
+        close.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSView()
+        content.addSubview(scroll)
+        content.addSubview(close)
+        sheet.contentView = content
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
+            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
+            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+            scroll.bottomAnchor.constraint(equalTo: close.topAnchor, constant: -10),
+            close.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+            close.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
+        ])
+
+        sentSheet = sheet
+        window?.beginSheet(sheet) { [weak self] _ in self?.sentSheet = nil }
+    }
+
+    @objc private func closeWhatWouldBeSent() {
+        guard let sentSheet else { return }
+        window?.endSheet(sentSheet)
     }
 
     // MARK: - Asking

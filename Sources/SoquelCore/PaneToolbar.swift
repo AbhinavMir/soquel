@@ -121,6 +121,25 @@ enum ToolbarCatalogue {
         all.filter { $0.id != "clean" || Prefs.cleanFolder }
     }
 
+    /// Puts a beta's button in the bar when the beta is switched on.
+    ///
+    /// Adding it to `defaultIDs` is not enough: anybody who has ever touched
+    /// the toolbar has a stored list, and a new id never reaches it — so the
+    /// button existed in the right-click menu and nowhere else, which is not
+    /// what "add a sparkle in the toolbar" means. Only ever adds, and only
+    /// once: removing it by hand afterwards sticks.
+    static func placeBetaButtons() {
+        guard Prefs.cleanFolder else { return }
+        guard Settings.object(forKey: "cleanButtonPlaced") as? Bool != true else { return }
+        Settings.set(true, forKey: "cleanButtonPlaced")
+        var ids = enabledIDs
+        guard !ids.contains("clean") else { return }
+        ids.append("clean")
+        let order = all.map(\.id)
+        ids.sort { (order.firstIndex(of: $0) ?? 0) < (order.firstIndex(of: $1) ?? 0) }
+        enabledIDs = ids
+    }
+
     static func action(id: String) -> ToolbarAction? { all.first { $0.id == id } }
 
     /// The view each segment of the view-mode pill stands for.

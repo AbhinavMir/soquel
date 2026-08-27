@@ -162,6 +162,9 @@ final class CleanSettingsView: NSView {
 
     @objc private func betaChanged() {
         Prefs.cleanFolder = betaToggle.state == .on
+        // Turning it on puts the sparkle in the bar; turning it off leaves the
+        // id in place but hides the button, so switching back restores it.
+        ToolbarCatalogue.placeBetaButtons()
         // The toolbar and the menus read the setting, and both need telling.
         NotificationCenter.default.post(name: .soquelToolbarChanged, object: nil)
         refresh()

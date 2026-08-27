@@ -75,6 +75,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         BuildAdvisory.checkOnLaunch()
         // Only watches if Settings › Default App asked it to.
         FinderTakeover.startIfEnabled()
+        ToolbarCatalogue.placeBetaButtons()
 
         // First launch only. A file manager that cannot read Desktop or
         // Documents looks broken rather than unpermitted, so it is worth one
