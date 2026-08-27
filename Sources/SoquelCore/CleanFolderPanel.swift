@@ -298,12 +298,43 @@ final class CleanFolderPanelController: NSWindowController {
 
         host?.refreshAllPanes()
         dismiss()
+        report(moved: moved, failures: failures)
+    }
 
-        if !failures.isEmpty {
-            let alert = NSAlert()
+    /// Says what happened, and offers to put it back.
+    ///
+    /// The clean was already one entry on the undo stack, so ⌘Z has always
+    /// undone it — but the panel closed without a word, which left somebody
+    /// looking at a rearranged folder with no sign that undoing it was even
+    /// possible. An undo nobody knows about is not an undo.
+    private func report(moved: [(URL, URL)], failures: [String]) {
+        guard !moved.isEmpty || !failures.isEmpty else { return }
+        let folders = Set(moved.map { $0.1.deletingLastPathComponent() }).count
+
+        let alert = NSAlert()
+        if failures.isEmpty {
+            alert.messageText = "Moved \(moved.count) file\(moved.count == 1 ? "" : "s") "
+                + "into \(folders) folder\(folders == 1 ? "" : "s")"
+            alert.informativeText = "Undo puts every one of them back where it was. "
+                + "⌘Z does the same thing later."
+        } else {
+            alert.alertStyle = .warning
             alert.messageText = "\(moved.count) moved, \(failures.count) did not"
             alert.informativeText = failures.prefix(6).joined(separator: "\n")
-            alert.runModal()
+                + (moved.isEmpty ? "" : "\n\nUndo puts back the ones that moved.")
+        }
+        if !moved.isEmpty { alert.addButton(withTitle: "Undo") }
+        alert.addButton(withTitle: "Done")
+
+        guard alert.runModal() == .alertFirstButtonReturn, !moved.isEmpty else { return }
+        UndoStack.shared.undo { [weak host] _, error in
+            host?.refreshAllPanes()
+            guard let error else { return }
+            let failed = NSAlert()
+            failed.alertStyle = .critical
+            failed.messageText = "Not everything went back"
+            failed.informativeText = error.localizedDescription
+            failed.runModal()
         }
     }
 

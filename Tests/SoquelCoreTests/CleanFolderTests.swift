@@ -754,3 +754,71 @@ extension CleanFolderTests {
             "its Close button did not close it")
     }
 }
+
+/// Putting a clean back.
+extension CleanFolderTests {
+    /// The whole clean is one entry on the undo stack, not one per file.
+    func testACleanUndoesAsOneStepAndPutsEveryFileBack() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let names = ["a.txt", "b.txt", "c.txt"]
+        for name in names {
+            FileManager.default.createFile(
+                atPath: folder.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+
+        // The moves a clean would make.
+        var moved: [(URL, URL)] = []
+        for name in names {
+            let source = folder.appendingPathComponent(name)
+            let target = folder.appendingPathComponent("sorted").appendingPathComponent(name)
+            try FileManager.default.createDirectory(
+                at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: source, to: target)
+            moved.append((source, target))
+        }
+        for name in names {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path))
+        }
+
+        let before = UndoStack.shared.canUndo
+        UndoStack.shared.pushMove(sources: moved.map(\.0), destinations: moved.map(\.1))
+        XCTAssertTrue(UndoStack.shared.canUndo)
+        XCTAssertNotEqual(UndoStack.shared.canUndo, before && false)
+
+        let done = expectation(description: "undone")
+        UndoStack.shared.undo { _, error in
+            XCTAssertNil(error)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 10)
+
+        // Every file back, in one step.
+        for name in names {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path),
+                "\(name) did not come back")
+            XCTAssertFalse(FileManager.default.fileExists(
+                atPath: folder.appendingPathComponent("sorted").appendingPathComponent(name).path),
+                "\(name) is still in the folder the clean made")
+        }
+    }
+
+    /// The result has to offer the undo. An undo nobody is told about is not
+    /// an undo — the panel used to close without a word.
+    func testTheResultOffersAnUndo() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/SoquelCore/CleanFolderPanel.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(source.contains("addButton(withTitle: \"Undo\")"),
+                      "the result does not offer to put the clean back")
+        XCTAssertTrue(source.contains("UndoStack.shared.undo"),
+                      "the Undo button is not wired to the undo stack")
+    }
+}
