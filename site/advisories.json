@@ -21,6 +21,16 @@
       "detail": "The Cancel button on the install dialog closed the window but did not stop the download. The application was replaced regardless, and then offered to restart. Also in these versions, Settings > Default App > \"Open the folder Finder was going to\" asked for permission to control Finder and then did nothing with the answer. Both are fixed in 1.2.2.",
       "fixedIn": "1.2.2",
       "rollBackTo": "1.1.1"
+    },
+    {
+      "affects": [
+        "1.5.0"
+      ],
+      "severity": "serious",
+      "summary": "Updating asks for your login password to reach your saved API key.",
+      "detail": "The key for Clean This Folder was kept in the Keychain, whose access control trusts the exact binary that wrote the item. Every update is a different binary, so every update challenged it and asked for a login password to reach a key you had already given. 1.5.1 keeps the key in a 0600 file instead and never asks.",
+      "fixedIn": "1.5.1",
+      "rollBackTo": "1.4.0"
     }
   ]
 }
