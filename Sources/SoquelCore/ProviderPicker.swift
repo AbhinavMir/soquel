@@ -238,7 +238,7 @@ final class ProviderPickerController: NSWindowController {
         if let sheetParent = window?.sheetParent, let window {
             sheetParent.endSheet(window)
         } else {
-            window?.close()
+            window?.orderOut(nil)
         }
         callback?(chose)
     }

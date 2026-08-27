@@ -647,3 +647,110 @@ extension CleanFolderTests {
         XCTAssertFalse(ToolbarCatalogue.enabledIDs.contains("clean"))
     }
 }
+
+/// The reason every button beeped: nothing kept the panel alive.
+extension CleanFolderTests {
+    /// Every control must be somewhere a click can reach it. A beep on click
+    /// means the event found nothing — a dead target, or a button laid out
+    /// where the window cannot hit-test it.
+    @MainActor
+    func testEveryPanelButtonIsClickable() {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+        let panel = CleanFolderPanelController(folder: folder, host: nil)
+        guard let content = panel.window?.contentView else { return XCTFail("no content view") }
+
+        var buttons: [NSButton] = []
+        func walk(_ view: NSView) {
+            if let button = view as? NSButton { buttons.append(button) }
+            view.subviews.forEach(walk)
+        }
+        walk(content)
+        XCTAssertGreaterThanOrEqual(buttons.count, 3, "the panel should have several buttons")
+        content.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(content.frame.width, 100,
+                             "the content view collapsed — nothing in it can be clicked")
+        XCTAssertGreaterThan(content.frame.height, 100, "the content view collapsed")
+
+        for button in buttons {
+            XCTAssertNotNil(button.action, "\(button.title) has no action")
+            XCTAssertNotNil(button.target, "\(button.title) has no target")
+            XCTAssertTrue(button.target as AnyObject? === panel,
+                          "\(button.title) points at something other than the panel")
+            XCTAssertGreaterThan(button.frame.width, 0, "\(button.title) has no width")
+            XCTAssertGreaterThan(button.frame.height, 0, "\(button.title) has no height")
+            // hitTest takes a point in the *superview's* coordinates, so the
+            // centre is converted there rather than into the view being asked.
+            let centre = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY),
+                                        to: content.superview)
+            let hit = content.hitTest(centre)
+            XCTAssertTrue(hit === button || hit?.isDescendant(of: button) == true,
+                          "a click at the centre of “\(button.title)” lands on "
+                          + "\(hit.map { String(describing: type(of: $0)) } ?? "nothing")")
+        }
+    }
+}
+
+/// The reason the panel wedged twice.
+extension CleanFolderTests {
+    /// The clean panel is itself presented as a sheet on the main window. A
+    /// sheet begun on a sheet is never presented, and a pending sheet blocks
+    /// its parent — so the panel stopped responding, every click in it beeped,
+    /// and the only way out was to force quit. Twice: once for the text view,
+    /// once for the provider picker.
+    func testThePanelNeverBeginsASheetOnItself() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/SoquelCore/CleanFolderPanel.swift"),
+            encoding: .utf8)
+        for line in source.components(separatedBy: "\n") {
+            let code = line.components(separatedBy: "//").first ?? line
+            XCTAssertFalse(code.contains("beginSheet"),
+                           "the clean panel is a sheet, so it must not begin one: \(line.trimmingCharacters(in: .whitespaces))")
+        }
+    }
+
+    /// Pressing a button before the folder has been read used to crash: the
+    /// payload was implicitly unwrapped and the buttons were live from the
+    /// moment the panel opened.
+    @MainActor
+    func testPressingAButtonBeforeTheFolderIsReadDoesNotCrash() {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+        let panel = CleanFolderPanelController(folder: folder, host: nil)
+        _ = panel.window
+        // Immediately, with no wait — the read cannot have finished.
+        panel.perform(NSSelectorFromString("showWhatWouldBeSent"))
+        panel.perform(NSSelectorFromString("suggest"))
+    }
+
+    /// Anything the panel puts on screen has to be closable by its own control.
+    @MainActor
+    func testWhatWouldBeSentOpensAndClosesOnItsOwn() throws {
+        // A small folder of its own: the system temp directory can hold enough
+        // to still be reading when the assertions run.
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        FileManager.default.createFile(
+            atPath: folder.appendingPathComponent("a.txt").path, contents: Data("hello".utf8))
+
+        let panel = CleanFolderPanelController(folder: folder, host: nil)
+        _ = panel.window
+        let read = expectation(description: "folder read")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { read.fulfill() }
+        wait(for: [read], timeout: 5)
+
+        panel.perform(NSSelectorFromString("showWhatWouldBeSent"))
+        let shown = NSApp.windows.first { $0.title == "What would be sent" }
+        XCTAssertNotNil(shown, "the text window never appeared")
+        XCTAssertNil(shown?.sheetParent, "it was presented as a sheet on a sheet")
+        XCTAssertTrue(shown?.isVisible == true, "it appeared but is not on screen")
+
+        panel.perform(NSSelectorFromString("closeWhatWouldBeSent"))
+        XCTAssertFalse(
+            NSApp.windows.first { $0.title == "What would be sent" }?.isVisible ?? false,
+            "its Close button did not close it")
+    }
+}

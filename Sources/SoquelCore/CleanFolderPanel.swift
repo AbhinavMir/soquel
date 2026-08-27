@@ -9,7 +9,10 @@ final class CleanFolderPanelController: NSWindowController {
     private let folder: URL
     private weak var host: MainWindowController?
 
-    private var payload: CleanSanitiser.Payload!
+    /// Nil until the folder has been read. It used to be implicitly
+    /// unwrapped and the buttons were live from the moment the panel opened,
+    /// so pressing one before the read finished crashed the application.
+    private var payload: CleanSanitiser.Payload?
     private var plan: CleanFolder.Plan?
     private var chosen = Set<String>()
     /// Held while its sheet is up; a window controller with nothing referring
@@ -83,10 +86,12 @@ final class CleanFolderPanelController: NSWindowController {
 
         showSendButton = NSButton(title: "Show What Would Be Sent",
                                   target: self, action: #selector(showWhatWouldBeSent))
+        showSendButton.isEnabled = false
         showSendButton.translatesAutoresizingMaskIntoConstraints = false
 
         goButton = NSButton(title: "Suggest an Arrangement",
                             target: self, action: #selector(suggest))
+        goButton.isEnabled = false
         goButton.keyEquivalent = "\r"
         goButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -140,11 +145,13 @@ final class CleanFolderPanelController: NSWindowController {
                     + "\(payload.bytes / 1000) KB would be sent."
                 self.detail.stringValue = payload.notes.joined(separator: " ")
                 self.goButton.isEnabled = files > 0
+                self.showSendButton.isEnabled = true
             }
         }
     }
 
     @objc private func showWhatWouldBeSent() {
+        guard let payload else { NSSound.beep(); return }
         let text = CleanSanitiser.preview(payload)
         // A sheet on this window, not a modal session of its own. It used to
         // call NSApp.runModal(for:) on a window with no button that called
@@ -153,7 +160,7 @@ final class CleanFolderPanelController: NSWindowController {
         // the modal session was swallowing the events. The application had to
         // be force quit.
         let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
-                             styleMask: [.titled, .resizable],
+                             styleMask: [.titled, .closable, .resizable],
                              backing: .buffered, defer: false)
         sheet.title = "What would be sent"
         PrivacyScreen.apply(to: sheet)
@@ -187,18 +194,27 @@ final class CleanFolderPanelController: NSWindowController {
             close.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
         ])
 
+        // An ordinary window, not a sheet. This panel is itself a sheet on the
+        // main window, and beginning a sheet on a sheet leaves the inner one
+        // never presented while still blocking its parent: the panel stopped
+        // responding and every click in it beeped, with no way out but force
+        // quit. A sheet is not the right shape for this anyway — it is a thing
+        // to read beside the panel, not a decision that blocks it.
+        sheet.isReleasedWhenClosed = false
+        sheet.center()
         sentSheet = sheet
-        window?.beginSheet(sheet) { [weak self] _ in self?.sentSheet = nil }
+        sheet.makeKeyAndOrderFront(nil)
     }
 
     @objc private func closeWhatWouldBeSent() {
-        guard let sentSheet else { return }
-        window?.endSheet(sentSheet)
+        sentSheet?.orderOut(nil)
+        sentSheet = nil
     }
 
     // MARK: - Asking
 
     @objc private func suggest() {
+        guard let payload else { NSSound.beep(); return }
         let ready = LLMProvider.isReady()
         guard ready.ok else { return pickProvider() }
         goButton.isEnabled = false
@@ -235,9 +251,14 @@ final class CleanFolderPanelController: NSWindowController {
             guard chose else { return }
             self?.suggest()
         }
-        guard let sheet = picker.window, let parent = window else { return }
+        guard let chooser = picker.window else { return }
         pickerHolder = picker
-        parent.beginSheet(sheet) { [weak self] _ in self?.pickerHolder = nil }
+        // An ordinary window, for the same reason as the text above: this panel
+        // is a sheet, and a sheet begun on a sheet never presents while still
+        // blocking its parent.
+        chooser.isReleasedWhenClosed = false
+        chooser.center()
+        chooser.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Moving
@@ -287,7 +308,15 @@ final class CleanFolderPanelController: NSWindowController {
     }
 
     @objc private func dismiss() {
-        window?.sheetParent?.endSheet(window!) ?? window?.close()
+        guard let window else { return }
+        // A close sheet first, or ending the panel's sheet leaves it orphaned.
+        sentSheet?.orderOut(nil)
+        sentSheet = nil
+        if let parent = window.sheetParent {
+            parent.endSheet(window)
+        } else {
+            window.close()
+        }
     }
 
     @objc fileprivate func tickChanged(_ sender: NSButton) {

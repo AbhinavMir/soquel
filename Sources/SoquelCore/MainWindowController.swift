@@ -1346,11 +1346,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Held only while the picker is shown from SOQUEL_OPEN.
     private var providerPickerHolder: ProviderPickerController?
 
+    /// Held while its sheet is up.
+    ///
+    /// `beginSheet` does not retain the window's controller. Without this the
+    /// controller was a local that deallocated the moment this method returned,
+    /// so every button in the panel had a dead target: each click did nothing
+    /// but beep, Escape included, and the sheet could not be dismissed at all.
+    private var cleanPanel: CleanFolderPanelController?
+
     @objc func menuCleanFolder(_ sender: Any?) {
         guard Prefs.cleanFolder else { NSSound.beep(); return }
         guard let url = focusedList?.url else { NSSound.beep(); return }
+        guard cleanPanel == nil else {
+            cleanPanel?.window.map { $0.makeKeyAndOrderFront(nil) }
+            return
+        }
         let panel = CleanFolderPanelController(folder: url, host: self)
-        panel.window.map { window?.beginSheet($0, completionHandler: nil) }
+        cleanPanel = panel
+        guard let sheet = panel.window, let parent = window else { cleanPanel = nil; return }
+        parent.beginSheet(sheet) { [weak self] _ in self?.cleanPanel = nil }
     }
 
     /// A sentence about what a folder is for, used when it is cleaned and when
