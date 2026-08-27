@@ -31,6 +31,17 @@
       "detail": "The key for Clean This Folder was kept in the Keychain, whose access control trusts the exact binary that wrote the item. Every update is a different binary, so every update challenged it and asked for a login password to reach a key you had already given. 1.5.1 keeps the key in a 0600 file instead and never asks.",
       "fixedIn": "1.5.1",
       "rollBackTo": "1.4.0"
+    },
+    {
+      "affects": [
+        "1.5.0",
+        "1.5.1"
+      ],
+      "severity": "critical",
+      "summary": "Clean This Folder can wedge the application. Force quit is the only way out.",
+      "detail": "Pressing \"Show What Would Be Sent\" opened a window that ran a modal session with nothing able to end it. The window could not be dismissed and every other control beeped, because the session was swallowing the events. The only way out was to force quit Soquel. It affects only the Clean This Folder beta, which is off by default. Fixed in 1.5.2.",
+      "fixedIn": "1.5.2",
+      "rollBackTo": "1.4.0"
     }
   ]
 }
