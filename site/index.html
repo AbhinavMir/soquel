@@ -177,10 +177,10 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.5.3/Soquel-1.5.3.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.6.0/Soquel-1.6.0.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note"><a href="#changelog">Version 1.5.3</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note"><a href="#changelog">Version 1.6.0</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
   <p class="note">Soquel is in beta. Version 2.0 will be the first alpha release.</p>
 
 </header>
@@ -585,6 +585,25 @@ footer a { color: var(--faint); }
 
 <h2 id="changelog">Changelog</h2>
 <div class="log">
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.6.0</p>
+      <span class="rel-d">27 Aug 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.6.0">notes</a>
+    </div>
+    <ul>
+      <li><strong>Clean This Folder says what it did, and offers to put it back.</strong> How many
+          files went into how many folders, with an Undo button beside Done. The whole clean is one
+          step, so nothing has to be unpicked file by file.</li>
+      <li>Fixed: the panel could wedge. Both &ldquo;Show What Would Be Sent&rdquo; and the provider
+          picker opened a sheet on a sheet, which never presents and still blocks its parent — every
+          click beeped and force quit was the only way out.</li>
+      <li>Fixed: pressing a button before the folder had been read crashed.</li>
+      <li>Fixed: the &#10022; button never reached the toolbar, and the API key is now a 0600 file
+          rather than a Keychain item that asked for a password on every update.</li>
+    </ul>
+  </div>
 
   <div class="rel">
     <div class="rel-head">
