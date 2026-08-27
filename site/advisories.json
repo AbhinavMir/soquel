@@ -35,12 +35,13 @@
     {
       "affects": [
         "1.5.0",
-        "1.5.1"
+        "1.5.1",
+        "1.5.2"
       ],
       "severity": "critical",
       "summary": "Clean This Folder can wedge the application. Force quit is the only way out.",
-      "detail": "Pressing \"Show What Would Be Sent\" opened a window that ran a modal session with nothing able to end it. The window could not be dismissed and every other control beeped, because the session was swallowing the events. The only way out was to force quit Soquel. It affects only the Clean This Folder beta, which is off by default. Fixed in 1.5.2.",
-      "fixedIn": "1.5.2",
+      "detail": "Pressing \"Show What Would Be Sent\" left the panel unable to respond: every click in it beeped and force quit was the only way out. The panel is a sheet, and that button opened another sheet on it \u2014 a sheet on a sheet is never presented while still blocking its parent. Pressing a button before the folder had finished being read crashed outright. It affects only the Clean This Folder beta, which is off by default. Fixed in 1.5.3.",
+      "fixedIn": "1.5.3",
       "rollBackTo": "1.4.0"
     }
   ]
