@@ -540,3 +540,44 @@ extension CleanFolderTests {
         }
     }
 }
+
+/// Where the key lives. It was in the Keychain, whose access control trusts
+/// the one binary that wrote an item — so every update was a different binary
+/// and every update asked the user for their login password to reach a key
+/// they had already given.
+extension CleanFolderTests {
+    func testTheKeyFileIsPrivateAndApartFromSettings() {
+        defer { APICredentials.remove(for: "testprovider") }
+        APICredentials.store("test-key-abcdefghij", for: "testprovider")
+
+        XCTAssertEqual(APICredentials.key(for: "testprovider"), "test-key-abcdefghij")
+        XCTAssertTrue(APICredentials.isSet(for: "testprovider"))
+
+        // Not settings.json — that one is documented as editable by hand and is
+        // what people paste into bug reports.
+        XCTAssertEqual(APICredentials.file.lastPathComponent, "credentials.json")
+
+        let mode = (try? FileManager.default.attributesOfItem(atPath: APICredentials.file.path))?[.posixPermissions] as? NSNumber
+        XCTAssertNotNil(mode, "no key file was written")
+        XCTAssertEqual(mode!.int16Value & 0o777, 0o600,
+                       "the key file is readable by somebody other than its owner")
+        XCTAssertTrue(APICredentials.isPrivate())
+
+        APICredentials.remove(for: "testprovider")
+        XCTAssertNil(APICredentials.key(for: "testprovider"))
+        XCTAssertFalse(APICredentials.isSet(for: "testprovider"))
+    }
+
+    /// Removing one provider's key must not take another's with it.
+    func testKeysStayApartInTheFile() {
+        defer {
+            APICredentials.remove(for: "one")
+            APICredentials.remove(for: "two")
+        }
+        APICredentials.store("key-one-abcdefghij", for: "one")
+        APICredentials.store("key-two-abcdefghij", for: "two")
+        APICredentials.remove(for: "one")
+        XCTAssertNil(APICredentials.key(for: "one"))
+        XCTAssertEqual(APICredentials.key(for: "two"), "key-two-abcdefghij")
+    }
+}

@@ -10,6 +10,7 @@ hand, and anything you set by hand takes effect without a restart.
 | `theme.json` | The colours in force, and the background image |
 | `workspaces.json` | Saved pane and tab layouts |
 | `recents.json` | Recently opened, moved, renamed and trashed files |
+| `credentials.json` | API keys for Clean This Folder, one per provider. Mode 0600, never printed, never opened by the application |
 
 ## Version numbers
 
@@ -69,8 +70,12 @@ A plan is read from a tool call in either wire, and — for small local models
 that ignore the tool and write JSON into their reply — from the first complete
 JSON object in the text.
 
-- **The API key is in your Keychain, not in `settings.json`.** One key per
-  provider, so switching between them does not mean pasting a key again. That file is
+- **The API key is in `credentials.json`, mode 0600, not in `settings.json`.**
+  One key per provider, so switching between them does not mean pasting a key
+  again. Not the Keychain: a Keychain item's access control trusts the one
+  binary that wrote it, and every update is a different binary, so every update
+  asked for a login password to reach a key the user had already given. A
+  password prompt on each update is worse than the thing it protected against. That file is
   plain text, meant to be edited by hand, and is what somebody pastes into a
   bug report. Settings › Clean sets and removes the key.
 - **Some files are never opened.** `.env` and anything ending `.pem`, `.key`,
