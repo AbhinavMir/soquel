@@ -52,6 +52,12 @@ rest still go, and it names the one that failed. Conflicts offer keep both, repl
 with both sizes and dates shown, and folders can be merged instead of replaced. `⌘Z` undoes rename,
 create, duplicate, trash and move.
 
+**Clean This Folder** (`⌃⌘L`, opt-in beta). Reads one folder and proposes an arrangement you can
+review row by row before anything moves. Ollama, LM Studio and llama.cpp run locally; hosted options
+include OpenRouter, Anthropic, OpenAI, GLM, DeepSeek, Groq and Together. Hidden files are skipped,
+secret-bearing files are not opened, key-shaped text is removed, and **Show What Would Be Sent**
+shows the exact request first. A completed clean reports what moved and offers one-step **Undo**.
+
 **Transfer queue** (`⌥⌘J`). Throughput and progress per job, with pause, resume and cancel.
 
 **Selection shelf** (`⌃⌘A`). Collect files from any number of folders, then deliver them all at
@@ -87,13 +93,14 @@ rebound. Full reference: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
 | Rename / open | `↩` / `⌘↓` |
 | Quick Look | `Space` |
 | Move to Trash | `⌘⌫` |
+| Clean This Folder (when enabled) | `⌃⌘L` |
 
 ## Layout
 
 ```
 Sources/SoquelCore/    application code
 Sources/Soquel/        executable entry point
-Tests/SoquelCoreTests/ 833 tests
+Tests/SoquelCoreTests/ 929 tests
 scripts/               build-app.sh, make-dmg.sh, install.sh
 docs/                  architecture, keybindings, settings, security
 ```

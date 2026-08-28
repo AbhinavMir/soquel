@@ -63,7 +63,8 @@ pane keeps it and says so.
 | Look inside archive | `⇧⌘O` |
 | Add to Shelf / show Shelf | `⌃⌘A` / `⌃⌘B` |
 
-Delete permanently always asks first. Undo covers rename, create, duplicate, trash, and move.
+Delete permanently always asks first. Undo covers rename, create, duplicate, trash, move, and an
+entire Clean This Folder operation as one step.
 
 ## Paths
 
@@ -98,6 +99,7 @@ Delete permanently always asks first. Undo covers rename, create, duplicate, tra
 | Branches | `⇧⌘B` |
 | Hide from screen sharing | `⌃⌘P` |
 | Show transfers | `⌥⌘J` |
+| Clean This Folder (when enabled in Settings › Clean) | `⌃⌘L` |
 | Edit settings.json | palette or View menu |
 | Reveal in Finder | `⇧⌘R` |
 | Open in Terminal | `⌃⌘T` |

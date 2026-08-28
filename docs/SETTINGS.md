@@ -10,7 +10,7 @@ hand, and anything you set by hand takes effect without a restart.
 | `theme.json` | The colours in force, and the background image |
 | `workspaces.json` | Saved pane and tab layouts |
 | `recents.json` | Recently opened, moved, renamed and trashed files |
-| `credentials.json` | API keys for Clean This Folder, one per provider. Mode 0600, never printed, never opened by the application |
+| `credentials.json` | API keys for Clean This Folder, one per provider. Mode 0600 and never printed or included in diagnostics |
 
 ## Version numbers
 
@@ -35,13 +35,15 @@ sequential, and reaches the stable channel.
 
 **Off by default.** Settings › Clean turns it on. With it off there is no
 `⌃⌘L`, no menu item, no toolbar button and nothing in the command palette, and
-no key is asked for. Turning it on adds a ✦ button you can put in the toolbar
-by right-clicking the bar.
+no key is asked for. Turning it on adds a ✦ button to the toolbar. If you
+remove the button by hand, Soquel does not add it again.
 
 `⌃⌘L` is the only feature that sends the contents of files anywhere. It reads
-one folder — names, and the first 4 KB of each text file — and asks Anthropic's
-API how the folder should be arranged. Nothing moves until the plan is on
-screen and the rows are ticked.
+one folder — names, and the first 4 KB of each text file — and asks the selected
+local or hosted model how the folder should be arranged. Nothing moves until the
+plan is on screen and the rows are ticked. Afterward, Soquel reports how many
+files moved and offers to undo the entire clean as one step; `⌘Z` does the same
+thing later.
 
 Three things are true of it and are worth stating plainly:
 

@@ -291,6 +291,12 @@ footer a { color: var(--faint); }
     <dt>Undo <kbd>⌘Z</kbd></dt>
     <dd>Undoes rename, create, duplicate, trash and move.</dd>
   </div>
+  <div class="row" data-alt="organize organise sort tidy ai llm ollama openai anthropic local private sparkle">
+    <dt>Clean This Folder <kbd>⌃⌘L</kbd></dt>
+    <dd>Proposes where the files should go, shows the exact request and every move first, then offers
+        to undo the entire clean in one step. Ollama, LM Studio and llama.cpp can run it locally.
+        Opt-in under Settings &rsaquo; Clean.</dd>
+  </div>
   <div class="row" data-alt="progress speed pause background copying">
     <dt>Transfer queue <kbd>⌥⌘J</kbd></dt>
     <dd>See copies in progress, and pause, resume or cancel each one.</dd>
@@ -555,13 +561,13 @@ footer a { color: var(--faint); }
       through Open With.</dd>
 
   <dt>Does it send anything anywhere?</dt>
-  <dd>Not unless you switch one thing on. Search by meaning runs on the language
-      model macOS already ships, on your own machine. There is no account and no
-      telemetry, ever. The one exception is opt-in and off by default: Settings →
-      Updates will ask github.com once a day for the latest release tag and
-      compare it with your build. It sends nothing about you or your machine, and
-      it never downloads or installs anything — it tells you, and the button opens
-      the release page.</dd>
+  <dd>There is no account and no telemetry. Search by meaning runs on the language
+      model macOS already ships. Clean This Folder is off by default; if enabled,
+      Ollama, LM Studio and llama.cpp can keep its request local, while a hosted
+      provider receives the exact text shown by <strong>Show What Would Be Sent</strong>.
+      Hidden files are skipped, secret-bearing files are not opened and key-shaped
+      text is removed first. Separately, the opt-in update check asks github.com
+      for the latest release tag and sends nothing about you or your machine.</dd>
 
   <dt>Where does it keep my settings?</dt>
   <dd>Three readable JSON files in <code>~/Library/Application Support/Soquel/</code>:
