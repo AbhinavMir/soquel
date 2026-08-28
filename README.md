@@ -53,8 +53,9 @@ with both sizes and dates shown, and folders can be merged instead of replaced. 
 create, duplicate, trash and move.
 
 **Clean This Folder** (`⌃⌘L`, opt-in beta). Reads one folder and proposes an arrangement you can
-review row by row before anything moves. Ollama, LM Studio and llama.cpp run locally; hosted options
-include OpenRouter, Anthropic, OpenAI, GLM, DeepSeek, Groq and Together. Hidden files are skipped,
+review row by row before anything moves. Local AI is recommended: Ollama, LM Studio and llama.cpp
+need no key and keep the request on your Mac. Use hosted providers only for approved data; protected
+health information requires an executed BAA with the provider. Hidden files are skipped,
 secret-bearing files are not opened, key-shaped text is removed, and **Show What Would Be Sent**
 shows the exact request first. A completed clean reports what moved and offers one-step **Undo**.
 

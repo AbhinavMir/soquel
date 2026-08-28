@@ -294,8 +294,9 @@ footer a { color: var(--faint); }
   <div class="row" data-alt="organize organise sort tidy ai llm ollama openai anthropic local private sparkle">
     <dt>Clean This Folder <kbd>⌃⌘L</kbd></dt>
     <dd>Proposes where the files should go, shows the exact request and every move first, then offers
-        to undo the entire clean in one step. Ollama, LM Studio and llama.cpp can run it locally.
-        Opt-in under Settings &rsaquo; Clean.</dd>
+        to undo the entire clean in one step. Local AI is recommended: Ollama, LM Studio and
+        llama.cpp need no key and keep the request on your Mac. Use hosted APIs only for approved
+        data; protected health information requires an executed BAA. Opt-in under Settings &rsaquo; Clean.</dd>
   </div>
   <div class="row" data-alt="progress speed pause background copying">
     <dt>Transfer queue <kbd>⌥⌘J</kbd></dt>
@@ -563,10 +564,12 @@ footer a { color: var(--faint); }
   <dt>Does it send anything anywhere?</dt>
   <dd>There is no account and no telemetry. Search by meaning runs on the language
       model macOS already ships. Clean This Folder is off by default; if enabled,
-      Ollama, LM Studio and llama.cpp can keep its request local, while a hosted
-      provider receives the exact text shown by <strong>Show What Would Be Sent</strong>.
-      Hidden files are skipped, secret-bearing files are not opened and key-shaped
-      text is removed first. Separately, the opt-in update check asks github.com
+      Ollama, LM Studio and llama.cpp keep its request local and are the recommended
+      choice. A hosted provider receives the exact text shown by <strong>Show What
+      Would Be Sent</strong>; use one only for approved data, and never send protected
+      health information without an executed BAA. Hidden files are skipped,
+      secret-bearing files are not opened and key-shaped text is removed first.
+      Separately, the opt-in update check asks github.com
       for the latest release tag and sends nothing about you or your machine.</dd>
 
   <dt>Where does it keep my settings?</dt>

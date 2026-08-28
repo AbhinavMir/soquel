@@ -62,11 +62,12 @@ answer to. Anything speaking either can be typed in as a custom provider.
 | OpenAI, GLM, DeepSeek, Groq, Together | chat | yes |
 | Anything else | either, your choice | your choice |
 
-**The default is Ollama**, because a model on this machine sends nothing over a
-network at all, which for a feature that reads your files is the best answer
-available. Settings › Clean probes the local ports and says which of them is
-actually running, and asks a server for its model list so a name can be picked
-rather than remembered.
+**The default and recommendation is local AI.** Ollama, LM Studio and llama.cpp
+need no key and send nothing over a network. Use a hosted API only for data
+approved for that provider. Protected health information must not be sent unless
+an executed Business Associate Agreement (BAA) covers the provider and intended
+use. Settings › Clean probes local ports, says which server is running, and asks
+it for the model list so a name can be picked rather than remembered.
 
 A plan is read from a tool call in either wire, and — for small local models
 that ignore the tool and write JSON into their reply — from the first complete

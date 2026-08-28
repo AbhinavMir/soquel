@@ -16,6 +16,7 @@ final class ProviderPickerController: NSWindowController {
     private var keyLabel: NSTextField!
     private var keyLink: NSButton!
     private var modelField: NSComboBox!
+    private var hostedApproval: NSButton!
     private var doneButton: NSButton!
     private var footnote: NSTextField!
 
@@ -42,9 +43,9 @@ final class ProviderPickerController: NSWindowController {
         title.translatesAutoresizingMaskIntoConstraints = false
 
         let blurb = NSTextField(labelWithString:
-            "This is the only part of Soquel that sends the contents of your files anywhere. "
-            + "The first three run on your own machine — no key, and nothing leaves it at all. "
-            + "The rest need a key.")
+            "Local AI is recommended. The first three run on this Mac — no key, and nothing "
+            + "leaves it. Use a hosted API only for data approved for that provider; protected "
+            + "health information requires an executed BAA.")
         blurb.font = Theme.rowSecondary
         blurb.textColor = .secondaryLabelColor
         blurb.lineBreakMode = .byWordWrapping
@@ -84,6 +85,12 @@ final class ProviderPickerController: NSWindowController {
         keyRow.spacing = 8
         keyRow.translatesAutoresizingMaskIntoConstraints = false
 
+        hostedApproval = NSButton(
+            checkboxWithTitle: "This provider is approved for these files, with an executed BAA if they contain PHI",
+            target: nil, action: nil)
+        hostedApproval.font = Theme.status
+        hostedApproval.translatesAutoresizingMaskIntoConstraints = false
+
         footnote = NSTextField(labelWithString: "")
         footnote.font = Theme.status
         footnote.textColor = .secondaryLabelColor
@@ -100,7 +107,7 @@ final class ProviderPickerController: NSWindowController {
         cancel.keyEquivalent = "\u{1b}"
         cancel.translatesAutoresizingMaskIntoConstraints = false
 
-        [title, blurb, row, keyRow!, footnote!, doneButton!, cancel].forEach(content.addSubview)
+        [title, blurb, row, keyRow!, hostedApproval!, footnote!, doneButton!, cancel].forEach(content.addSubview)
         window?.contentView = content
 
         NSLayoutConstraint.activate([
@@ -120,7 +127,10 @@ final class ProviderPickerController: NSWindowController {
             keyRow.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             keyRow.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -20),
 
-            footnote.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 10),
+            hostedApproval.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
+            hostedApproval.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+
+            footnote.topAnchor.constraint(equalTo: hostedApproval.bottomAnchor, constant: 6),
             footnote.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             footnote.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
 
@@ -171,6 +181,8 @@ final class ProviderPickerController: NSWindowController {
         // provider that wants nothing should not look like one that wants
         // something you have not given it.
         keyRow.isHidden = !provider.needsKey
+        hostedApproval.isHidden = !provider.needsKey
+        hostedApproval.state = .off
         keyLink.isHidden = provider.keyURL == nil
         keyLabel.stringValue = "Key"
         if provider.needsKey, APICredentials.key(for: id) != nil {
@@ -189,8 +201,8 @@ final class ProviderPickerController: NSWindowController {
         }
 
         footnote.stringValue = provider.isLocal
-            ? "Nothing is sent over a network. If this is not running yet, start it and press Use This again."
-            : "The key is kept in your Keychain, never in settings.json, and used only by this feature."
+            ? "Recommended: nothing is sent over a network. If it is not running, start it and press Use This again."
+            : "Hosted: use only for approved data. PHI requires an executed BAA. The key is stored mode 0600 and used only here."
     }
 
     /// Marks the ones that answer, so somebody already running Ollama sees it
@@ -211,6 +223,11 @@ final class ProviderPickerController: NSWindowController {
     @objc private func done() {
         guard let provider = LLMProvider.preset(id: chosen) else { return }
         let typed = keyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if provider.needsKey, hostedApproval.state != .on {
+            footnote.stringValue = "Confirm that this provider is approved for these files before adding or using its key."
+            footnote.textColor = Theme.danger
+            return
+        }
         if provider.needsKey, !typed.isEmpty {
             guard APICredentials.looksLikeAKey(typed) else {
                 footnote.stringValue = "That does not look like a key — it has a space in it, or is very short. Nothing was saved."

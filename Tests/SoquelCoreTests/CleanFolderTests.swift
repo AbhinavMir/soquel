@@ -822,3 +822,53 @@ extension CleanFolderTests {
                       "the Undo button is not wired to the undo stack")
     }
 }
+
+/// Local is the recommendation; hosted providers need an explicit data-use check.
+extension CleanFolderTests {
+    @MainActor
+    func testHostedProviderRequiresApprovalAndNamesTheBAA() {
+        let saved = LLMProvider.chosenID
+        defer { LLMProvider.chosenID = saved }
+        LLMProvider.chosenID = "openai"
+
+        let picker = ProviderPickerController { _ in }
+        guard let content = picker.window?.contentView else { return XCTFail("no picker") }
+        var buttons: [NSButton] = []
+        func walk(_ view: NSView) {
+            if let button = view as? NSButton { buttons.append(button) }
+            view.subviews.forEach(walk)
+        }
+        walk(content)
+
+        guard let approval = buttons.first(where: { $0.title.contains("executed BAA") }) else {
+            return XCTFail("hosted provider has no BAA approval")
+        }
+        XCTAssertFalse(approval.isHidden)
+        XCTAssertEqual(approval.state, .off, "hosted approval must never be assumed")
+
+        buttons.first(where: { $0.title == "Use This" })?.performClick(nil)
+        let messages = content.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
+        XCTAssertTrue(messages.contains { $0.contains("Confirm that this provider is approved") },
+                      "a hosted key could be used without approval")
+    }
+
+    @MainActor
+    func testLocalProviderNeedsNoHostedApproval() {
+        let saved = LLMProvider.chosenID
+        defer { LLMProvider.chosenID = saved }
+        LLMProvider.chosenID = "ollama"
+
+        let picker = ProviderPickerController { _ in }
+        guard let content = picker.window?.contentView else { return XCTFail("no picker") }
+        var approval: NSButton?
+        func walk(_ view: NSView) {
+            if let button = view as? NSButton, button.title.contains("executed BAA") {
+                approval = button
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(content)
+        XCTAssertTrue(approval?.isHidden == true,
+                      "local AI was made to look like it sends data to a hosted provider")
+    }
+}

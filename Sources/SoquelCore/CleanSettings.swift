@@ -41,10 +41,9 @@ final class CleanSettingsView: NSView {
 
     private func build() {
         let intro = label(
-            "Clean This Folder (⇧⌘L) suggests an arrangement for the folder you are in. It is the "
-            + "only part of Soquel that sends the contents of your files anywhere: the names, and "
-            + "the first 4 KB of each text file, go to Anthropic's API. Everything else in Soquel "
-            + "stays on this machine.",
+            "Clean This Folder (⌃⌘L) suggests an arrangement for the folder you are in. Local AI "
+            + "is recommended: Ollama, LM Studio and llama.cpp keep the request on this Mac. A "
+            + "hosted provider receives file names and the first 4 KB of each text file.",
             secondary: true)
 
         let promise = label(
@@ -61,8 +60,8 @@ final class CleanSettingsView: NSView {
 
         let betaDetail = label(
             "Off by default. With it off there is no ⌃⌘L, no menu item, no toolbar button and no "
-            + "command in the palette, and no key is asked for. Turning it on adds a ✦ button you "
-            + "can put in the toolbar by right-clicking it.",
+            + "command in the palette, and no key is asked for. Turning it on adds a ✦ button to "
+            + "the toolbar.",
             secondary: true, lines: 4)
         self.betaDetail = betaDetail
 
@@ -80,10 +79,9 @@ final class CleanSettingsView: NSView {
         providerRow.translatesAutoresizingMaskIntoConstraints = false
 
         let providerDetail = label(
-            "Anything that speaks Anthropic's API or the /chat/completions shape that OpenAI "
-            + "defined — which is Ollama, LM Studio, llama.cpp, OpenRouter, GLM, DeepSeek, Groq "
-            + "and most of the rest. A model on this machine needs no key and sends nothing over "
-            + "a network, which for a feature that reads your files is the best answer there is.",
+            "Use local AI unless the files are approved for a hosted service. For protected health "
+            + "information, use a hosted API only under an executed BAA with that provider. Local "
+            + "models need no key and send nothing over a network.",
             secondary: true, lines: 5)
         self.providerDetail = providerDetail
 
@@ -196,8 +194,8 @@ final class CleanSettingsView: NSView {
         keyButton.isHidden = false
         let set = APICredentials.isSet(for: provider.id)
         keyStatus.stringValue = set
-            ? "A key for \(provider.name) is in your Keychain."
-            : "No key for \(provider.name)." + (provider.keyURL.map { " Get one at \($0)" } ?? "")
+            ? "A key for \(provider.name) is saved in Soquel's private credentials file."
+            : "No key for \(provider.name). Use hosted APIs only for approved data; PHI requires an executed BAA."
         keyStatus.textColor = set ? .secondaryLabelColor : Theme.danger
         keyButton.title = set ? "Replace Key…" : "Set Key…"
         removeButton.isHidden = !set
@@ -213,29 +211,6 @@ final class CleanSettingsView: NSView {
 
     @objc private func setKey() {
         changeProvider()
-    }
-
-    @objc private func setKeyLegacy() {
-        let alert = NSAlert()
-        let provider = LLMProvider.current
-        alert.messageText = "Key for \(provider.name)"
-        alert.informativeText = (provider.keyURL.map { "From \($0). " } ?? "")
-            + "Kept in your Keychain, never in settings.json, and used only by Clean This Folder. "
-            + "One key is remembered per provider."
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard APICredentials.looksLikeAKey(field.stringValue) else {
-            let bad = NSAlert()
-            bad.messageText = "That does not look like an API key"
-            bad.informativeText = "A key has no spaces and is longer than that. Nothing was saved."
-            bad.runModal()
-            return
-        }
-        APICredentials.store(field.stringValue, for: provider.id)
-        refresh()
     }
 
     @objc private func removeKey() {
