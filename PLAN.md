@@ -6,7 +6,7 @@ Branch: `main`. Soquel 1.7.0 is the current stable production release.
 
 - **1.7.0** promotes local AI first and requires hosted-data approval, including a BAA for PHI.
 - **1.6.0** introduced the visible one-step Undo result for Clean This Folder.
-- The 1.7.0 DMG is signed, notarised and stapled; production verification is recorded below.
+- The 1.7.0 DMG is signed, notarised and stapled. Gatekeeper reports `accepted`, GitHub Latest is `v1.7.0`, trysoquel.com serves `Soquel-1.7.0.dmg`, and `/Applications/Soquel.app` is 1.7.0.
 - 931 tests pass, with 1 skipped.
 
 ## Clean This Folder
