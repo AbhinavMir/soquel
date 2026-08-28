@@ -1,12 +1,12 @@
 # Working state
 
-Branch: `main`. Soquel 1.7.0 is being prepared as the next stable production release.
+Branch: `main`. Soquel 1.7.0 is the current stable production release.
 
 ## Current release
 
 - **1.7.0** promotes local AI first and requires hosted-data approval, including a BAA for PHI.
 - **1.6.0** introduced the visible one-step Undo result for Clean This Folder.
-- Release verification is pending.
+- The 1.7.0 DMG is signed, notarised and stapled; production verification is recorded below.
 - 931 tests pass, with 1 skipped.
 
 ## Clean This Folder

@@ -177,10 +177,10 @@ footer a { color: var(--faint); }
   <div class="actions">
     <!-- Points at the release, not at a file served from here. -->
     <a class="button" id="download"
-       href="https://github.com/AbhinavMir/soquel/releases/download/v1.6.0/Soquel-1.6.0.dmg">Download for macOS</a>
+       href="https://github.com/AbhinavMir/soquel/releases/download/v1.7.0/Soquel-1.7.0.dmg">Download for macOS</a>
     <a class="button quiet" href="https://github.com/AbhinavMir/soquel">Source</a>
   </div>
-  <p class="note"><a href="#changelog">Version 1.6.0</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
+  <p class="note"><a href="#changelog">Version 1.7.0</a> · Free and MIT licensed · Apple silicon · macOS 13 or later</p>
   <p class="note">Soquel is in beta. Version 2.0 will be the first alpha release.</p>
 
 </header>
@@ -594,6 +594,24 @@ footer a { color: var(--faint); }
 
 <h2 id="changelog">Changelog</h2>
 <div class="log">
+
+  <div class="rel">
+    <div class="rel-head">
+      <p class="rel-v">1.7.0</p>
+      <span class="rel-d">27 Aug 2026</span>
+      <a class="rel-dl" href="https://github.com/AbhinavMir/soquel/releases/tag/v1.7.0">notes</a>
+    </div>
+    <ul>
+      <li><strong>Local AI comes first.</strong> Ollama, LM Studio and llama.cpp are first in the
+          provider picker, Ollama is the default, and the app recommends the local path because it
+          needs no key and keeps the request on your Mac.</li>
+      <li><strong>Hosted use requires an explicit data approval.</strong> Before adding or using a
+          hosted API key, confirm that the provider is approved for the files and that an executed
+          BAA covers any protected health information.</li>
+      <li>Removed stale Keychain wording left in the provider interface. Keys live in Soquel's
+          separate mode-0600 credentials file.</li>
+    </ul>
+  </div>
 
   <div class="rel">
     <div class="rel-head">
